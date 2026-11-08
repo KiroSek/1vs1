@@ -2,7 +2,7 @@
 *{box-sizing:border-box;user-select:none}
 html,body{margin:0;height:100%;background:#000;color:var(--paper);overflow:hidden}
 #c{position:fixed;inset:0;width:100%;height:100%;display:block}
-#vignette{position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at center,transparent 55%,rgba(0,0,0,.65) 100%)}
+#vignette{display:none}
 .hidden{display:none!important}
 .screen{position:fixed;inset:0;display:flex;z-index:10}
 #menu{background:linear-gradient(90deg,rgba(0,0,0,.85) 0%,rgba(0,0,0,.35) 55%,transparent 100%);align-items:center;padding:0 8vw;gap:8vw}
@@ -35,18 +35,28 @@ input[type=range]{width:100%;accent-color:var(--red)}
 .keys{font-size:14px;line-height:1.9;color:#b7ae98}.keys b{color:var(--gold);margin-left:8px}
 /* HUD */
 #hud{position:fixed;inset:0;pointer-events:none;z-index:5}
-.bars{position:absolute;left:50%;transform:translateX(-50%);width:min(560px,60vw);text-align:center}
-.bars.top{top:22px}.bars.bottom{bottom:26px}
-.bars .nm{font-size:13px;letter-spacing:.35em;color:#cfc6b0;text-shadow:0 1px 4px #000;margin-bottom:5px;text-transform:uppercase}
-.posture{height:7px;position:relative;margin-bottom:4px}
-.posture i{position:absolute;left:50%;top:0;height:100%;width:100%;transform:translateX(-50%) scaleX(0);background:#ece6d6;box-shadow:0 0 8px rgba(255,255,255,.5);transition:background .1s}
-.posture.warn i{background:#ff9a2e;box-shadow:0 0 10px #ff7a00}.posture.broken i{background:#ff2020;box-shadow:0 0 14px #f00}
-.hp{height:11px;background:rgba(0,0,0,.65);border:1px solid #4a4030;position:relative}
+/* Sekiro-style layout: health bars on the left, posture gauges centred (enemy top, player bottom) */
+.bars{position:absolute;left:38px;width:min(380px,34vw);text-align:left}
+.bars.top{top:30px}.bars.bottom{bottom:40px}
+.bars .nm{font-size:13px;letter-spacing:.35em;color:#cfc6b0;text-shadow:0 1px 4px #000;margin-bottom:6px;text-transform:uppercase}
+.posture{position:fixed;left:50%;transform:translateX(-50%);width:min(500px,42vw);height:9px;background:linear-gradient(90deg,transparent,rgba(0,0,0,.55) 15%,rgba(0,0,0,.55) 85%,transparent)}
+.bars.top .posture{top:30px}.bars.bottom .posture{bottom:44px}
+.posture::after{content:'';position:absolute;left:50%;top:-4px;bottom:-4px;width:3px;transform:translateX(-50%);background:#c9a45c;box-shadow:0 0 6px #c9a45c}
+.posture i{position:absolute;left:50%;top:0;height:100%;width:100%;transform:translateX(-50%) scaleX(0);background:linear-gradient(90deg,#ff9a2e,#ffe6b0 50%,#ff9a2e);box-shadow:0 0 10px rgba(255,180,80,.7);transition:background .1s}
+.posture.warn i{background:linear-gradient(90deg,#ff4a10,#ffb060 50%,#ff4a10);box-shadow:0 0 14px #ff6a00}.posture.broken i{background:#ff2020;box-shadow:0 0 18px #f00;animation:brk .25s infinite alternate}
+@keyframes brk{to{opacity:.55}}
+.hp{height:9px;background:rgba(0,0,0,.65);border:1px solid #4a4030;position:relative;box-shadow:0 0 0 2px rgba(0,0,0,.4)}
 .hp b,.hp i{position:absolute;left:0;top:0;bottom:0;display:block}
 .hp i{background:linear-gradient(#e0262c,#8e0f14);width:100%}.hp b{background:#e8c9a0;width:100%;transition:width .9s .4s}
 #lock{position:absolute;width:12px;height:12px;border:1.5px solid rgba(255,255,255,.75);border-radius:50%;transform:translate(-50%,-50%);box-shadow:0 0 6px rgba(255,60,40,.8);display:none}
 #banner{position:absolute;left:0;right:0;top:36%;text-align:center;font-size:min(7vw,80px);letter-spacing:.3em;font-weight:700;opacity:0;color:#fff;text-shadow:0 0 30px var(--red),0 3px 10px #000}
 #banner.show{animation:ban 1.3s ease-out}
+#banner.big{font-size:min(14vw,170px);letter-spacing:0;top:28%;font-weight:900;text-shadow:0 0 40px rgba(255,40,30,.8),0 4px 18px #000}
+#banner.big.show{animation:banBig 2s ease-out}
+@keyframes banBig{0%{opacity:0;transform:scale(1.8);filter:blur(8px)}10%{opacity:1;transform:scale(1);filter:none}70%{opacity:1}100%{opacity:0;transform:scale(.96)}}
+#title{position:absolute;left:0;right:0;bottom:22%;text-align:center;font-size:min(5vw,56px);letter-spacing:.25em;color:#f2ead8;opacity:0;transition:opacity .8s;text-shadow:0 0 30px #000,0 0 20px rgba(196,22,28,.6)}
+#title small{display:block;font-size:14px;letter-spacing:.6em;color:var(--gold);margin-bottom:10px}
+#title.show{opacity:1}
 @keyframes ban{0%{opacity:0;transform:scale(1.4)}12%{opacity:1;transform:scale(1)}75%{opacity:1}100%{opacity:0}}
 #hint{position:absolute;left:20px;bottom:70px;font-size:13px;color:#b7ae98;line-height:1.6;text-shadow:0 1px 3px #000}
 #count{position:absolute;inset:0;display:grid;place-items:center;font-size:130px;font-weight:700;color:#fff;text-shadow:0 0 40px var(--red)}

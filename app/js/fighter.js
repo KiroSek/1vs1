@@ -1,457 +1,459 @@
 import * as THREE from 'three';
 import { clone } from 'three/addons/utils/SkeletonUtils.js';
-import { ARENA_R } from './arena.js';
-import { Trail } from './fx.js';
+import { MOVES, REACT, sample } from './moves.js';
+import { dress, OUTFITS } from './gear.js';
+import { SlashTrail } from './fx.js';
 import { sfx } from './audio.js';
+import { bounds } from './arena.js';
 
 const V3 = THREE.Vector3, Q = THREE.Quaternion, UP = new V3(0, 1, 0);
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 const angDiff = (a, b) => { let d = (b - a) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d; };
+const smooth = u => u * u * (3 - 2 * u);
+export const PARRY_WINDOW = 0.2;
 
-// ---------- full-body pose data ----------
-// layout: 0-2 right-hand (fwd,right,up) | 3-5 blade dir | 6 lean | 7 torso yaw | 8 roll | 9 hip yaw | 10 hips fwd | 11 hips right | 12 hips down | 13-15 R foot (fwd,right,lift) | 16-18 L foot
-const BASE = { h: [.42, .1, 1.12], b: [.88, 0, .5], lean: .06, yaw: 0, roll: 0, hy: 0, hf: 0, hr: 0, hd: .07, rf: [.3, .14, 0], lf: [-.24, -.17, 0] };
-const SC = ['lean', 'yaw', 'roll', 'hy', 'hf', 'hr', 'hd'];
-const mk = (o = {}) => [...(o.h || BASE.h), ...(o.b || BASE.b), ...SC.map(k => o[k] !== undefined ? o[k] : BASE[k]), ...(o.rf || BASE.rf), ...(o.lf || BASE.lf)];
-const GUARD = mk();
-const RUN = mk({ h: [.28, .12, 1.0], b: [.85, 0, .45], lean: .2, hd: 0 });
-const BLOCK = mk({ h: [.45, 0, 1.15], b: [.3, -.28, .9], lean: .12, hd: .13, hf: -.05, rf: [.25, .16, 0], lf: [-.32, -.2, 0] });
-const BROKEN = mk({ h: [.3, .15, .55], b: [.2, .1, -.95], lean: .62, hd: .45, hf: .1, rf: [.32, .2, 0], lf: [-.2, -.3, 0] });
-const VICTORY = mk({ h: [.4, .1, 1.0], b: [.2, 0, -.97], lean: .02, hd: .03, rf: [.25, .14, 0], lf: [-.25, -.17, 0] });
-const FALLBACK = mk({ h: [.2, .4, 1.2], b: [.3, .7, .2], lean: -.5, hf: -.4, hd: .2 });
-
-const KF = {
-  light1: [[0, GUARD],
-  [.2, mk({ h: [.2, .3, 1.7], b: [-.3, .3, .9], lean: -.1, yaw: -.45, hy: -.35, hf: -.1, hd: .12, lf: [-.3, -.16, 0] })],
-  [.36, mk({ h: [.1, .35, 1.95], b: [-.55, .25, .8], lean: -.18, yaw: -.6, hy: -.5, hf: -.18, hd: .1 })],
-  [.5, mk({ h: [.65, -.05, 1.2], b: [.85, -.35, -.1], lean: .22, yaw: .35, hy: .35, hf: .3, hd: .2, rf: [.55, .15, 0], lf: [-.18, -.18, 0] })],
-  [.62, mk({ h: [.55, -.4, .8], b: [.5, -.8, -.4], lean: .3, yaw: .55, hy: .5, hf: .42, hd: .22, rf: [.62, .15, 0], lf: [-.12, -.2, 0] })],
-  [.8, mk({ h: [.5, -.3, .8], b: [.55, -.6, -.3], lean: .22, yaw: .4, hy: .3, hf: .3, hd: .18, rf: [.62, .15, 0], lf: [-.12, -.2, 0] })], [1, GUARD]],
-  light2: [[0, GUARD],
-  [.2, mk({ h: [.35, -.45, 1.3], b: [.3, -.9, .1], yaw: .5, hy: .4, hf: -.05, hd: .12 })],
-  [.36, mk({ h: [.25, -.55, 1.3], b: [.1, -.95, .15], yaw: .65, hy: .55, hf: -.12, hd: .15 })],
-  [.5, mk({ h: [.85, 0, 1.3], b: [1, 0, .05], lean: .12, hf: .3, hd: .18, rf: [.5, .15, 0] })],
-  [.62, mk({ h: [.45, .55, 1.25], b: [.35, .9, .1], lean: .15, yaw: -.65, hy: -.55, hf: .35, hd: .2, rf: [.52, .2, 0], lf: [-.2, -.2, 0] })],
-  [.8, mk({ h: [.4, .5, 1.2], b: [.3, .85, .1], yaw: -.5, hy: -.4, hf: .25, hd: .15, rf: [.52, .2, 0] })], [1, GUARD]],
-  light3: [[0, GUARD],
-  [.2, mk({ h: [.4, -.3, .65], b: [.6, -.5, -.6], lean: .2, yaw: .35, hy: .3, hd: .3 })],
-  [.36, mk({ h: [.5, -.4, .5], b: [.5, -.6, -.65], lean: .24, yaw: .5, hy: .45, hd: .36, hf: .05 })],
-  [.5, mk({ h: [.8, 0, 1.2], b: [.9, .2, .3], lean: .1, yaw: -.1, hd: .24, hf: .35, rf: [.65, .14, 0], lf: [-.15, -.2, 0] })],
-  [.63, mk({ h: [.45, .4, 1.95], b: [.1, .5, .85], lean: -.12, yaw: -.55, hy: -.5, hd: .12, hf: .3, rf: [.68, .14, 0], lf: [-.1, -.2, .05] })],
-  [.82, mk({ h: [.4, .35, 1.8], b: [.1, .5, .8], lean: -.08, yaw: -.4, hy: -.3, hd: .1, hf: .22, rf: [.68, .14, 0] })], [1, GUARD]],
-  heavy: [[0, GUARD],
-  [.12, mk({ h: [.2, .15, 1.4], b: [0, .1, 1], lean: -.1, hd: .1 })],
-  [.3, mk({ h: [-.05, .2, 2.1], b: [-.5, .15, .85], lean: -.3, yaw: -.2, hy: -.2, hf: -.3, hd: .05, rf: [.2, .14, 0], lf: [-.35, -.16, 0] })],
-  [.46, mk({ h: [-.08, .2, 2.15], b: [-.55, .15, .8], lean: -.34, yaw: -.25, hy: -.25, hf: -.34, hd: .04, rf: [.2, .14, 0], lf: [-.35, -.16, 0] })],
-  [.5, mk({ h: [.2, .1, 1.9], b: [.2, .1, 1], lean: -.05, hf: -.1, hd: .15 })],
-  [.6, mk({ h: [.9, 0, 1.05], b: [.9, 0, -.45], lean: .5, hf: .55, hd: .36, rf: [.88, .14, 0], lf: [-.1, -.18, 0] })],
-  [.72, mk({ h: [.85, 0, .75], b: [.8, 0, -.6], lean: .55, hf: .6, hd: .4, rf: [.88, .14, 0], lf: [-.1, -.18, 0] })],
-  [.88, mk({ h: [.7, 0, .8], b: [.8, 0, -.5], lean: .35, hf: .4, hd: .3, rf: [.8, .14, 0] })], [1, GUARD]],
-  deathblow: [[0, GUARD],
-  [.15, mk({ h: [.2, .15, 1.1], b: [.85, 0, .15], lean: -.1, yaw: -.4, hy: -.35, hf: -.1, hd: .15 })],
-  [.3, mk({ h: [.15, .25, 1.0], b: [.9, .1, .1], lean: -.14, yaw: -.5, hy: -.45, hf: -.15, hd: .2 })],
-  [.37, mk({ h: [1.15, 0, 1.15], b: [1, 0, .05], lean: .45, hf: .55, hd: .36, rf: [.9, .14, 0], lf: [-.05, -.18, 0] })],
-  [.62, mk({ h: [1.15, 0, 1.15], b: [1, 0, .05], lean: .45, hf: .55, hd: .38, rf: [.9, .14, 0], lf: [-.05, -.18, 0] })],
-  [.75, mk({ h: [1.1, .12, 1.15], b: [1, .15, .1], lean: .4, yaw: .25, hf: .5, hd: .36, rf: [.9, .14, 0], lf: [-.05, -.18, 0] })],
-  [.9, mk({ h: [.5, .15, 1.0], b: [.8, 0, .2], lean: .15, hf: .2, hd: .15, rf: [.5, .14, 0] })], [1, GUARD]],
-  stagger: [[0, GUARD],
-  [.15, mk({ h: [.05, .3, 1.0], b: [.4, .4, -.5], lean: -.4, roll: .3, hf: -.4, hd: .1, rf: [.15, .15, .05], lf: [-.4, -.17, 0] })],
-  [.55, mk({ h: [.1, .3, 1.0], b: [.5, .3, -.3], lean: -.3, roll: .2, hf: -.28, hd: .12, lf: [-.35, -.17, 0] })], [1, GUARD]],
-  parried: [[0, mk({ h: [.6, -.35, .9], b: [.5, -.8, -.3], hf: .3, lean: .3, hd: .2 })],
-  [.2, mk({ h: [-.1, .3, 1.95], b: [-.35, .4, .8], lean: -.5, roll: .2, yaw: .4, hy: .3, hf: -.45, hd: .22, rf: [-.1, .14, .12], lf: [-.5, -.17, 0] })],
-  [.55, mk({ h: [.0, .3, 1.7], b: [-.2, .4, .8], lean: -.3, hf: -.3, hd: .18, rf: [.1, .14, 0], lf: [-.45, -.17, 0] })], [1, GUARD]],
-  flick: [[0, BLOCK],
-  [.25, mk({ h: [.35, -.35, 1.5], b: [.2, -.8, .6], yaw: .5, hy: .4, hf: .1, hd: .12, lean: .05 })],
-  [.55, mk({ h: [.65, .25, 1.3], b: [.55, .8, .45], yaw: -.6, hy: -.5, hf: .3, hd: .15, lean: .1, rf: [.4, .16, 0] })], [1, BLOCK]],
-};
-
-export const ACT = {
-  light1: { dur: .55, hit: [.2, .34], dmg: 9, pd: 16, range: 2.15, lunge: 3 },
-  light2: { dur: .55, hit: [.2, .34], dmg: 9, pd: 16, range: 2.15, lunge: 3 },
-  light3: { dur: .72, hit: [.26, .4], dmg: 11, pd: 20, range: 2.25, lunge: 3.4 },
-  heavy: { dur: 1.15, hit: [.58, .72], dmg: 24, pd: 36, range: 2.5, lunge: 4.2 },
-  dodge: { dur: .5 }, stagger: { dur: .38 }, parried: { dur: .8 }, broken: { dur: 4.2 },
-  deathblow: { dur: 1.5, hit: [.52, .62], range: 3 }, dying: { dur: 1.7 }, victory: { dur: 99 },
-};
-const isAttack = a => a === 'light1' || a === 'light2' || a === 'light3' || a === 'heavy' || a === 'deathblow';
-export const PARRY_WINDOW = 0.24;
-
-// ---------- katana ----------
-function makeKatana() {
-  const g = new THREE.Group();
-  const L = 0.72, w = 0.032, th = 0.007;
-  const s = new THREE.Shape(); s.moveTo(0, -w / 2); s.lineTo(L - 0.06, -w / 2); s.lineTo(L, w / 2 - 0.005); s.lineTo(0, w / 2); s.closePath();
-  const bg = new THREE.ExtrudeGeometry(s, { depth: th, bevelEnabled: false }); bg.translate(0, 0, -th / 2); bg.rotateY(-Math.PI / 2);
-  const pos = bg.attributes.position; for (let i = 0; i < pos.count; i++) { const z = pos.getZ(i); pos.setY(i, pos.getY(i) + 0.03 * (z / L) * (z / L)); } bg.computeVertexNormals();
-  const blade = new THREE.Mesh(bg, new THREE.MeshStandardMaterial({ color: 0xeef2f6, metalness: 1, roughness: 0.16 })); blade.position.z = 0.07; g.add(blade);
-  const c = document.createElement('canvas'); c.width = c.height = 32; const x = c.getContext('2d'); x.fillStyle = '#151a2e'; x.fillRect(0, 0, 32, 32); x.strokeStyle = '#59607d'; x.lineWidth = 3; x.beginPath(); x.moveTo(0, 0); x.lineTo(32, 32); x.moveTo(32, 0); x.lineTo(0, 32); x.stroke();
-  const tex = new THREE.CanvasTexture(c); tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(1, 6); tex.colorSpace = THREE.SRGBColorSpace;
-  const hg = new THREE.CylinderGeometry(0.017, 0.015, 0.32, 10); hg.rotateX(Math.PI / 2); hg.translate(0, 0, -0.1);
-  g.add(new THREE.Mesh(hg, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.8 })));
-  const gold = new THREE.MeshStandardMaterial({ color: 0xc9a24a, metalness: 0.9, roughness: 0.3 });
-  const tg = new THREE.CylinderGeometry(0.052, 0.052, 0.009, 20); tg.rotateX(Math.PI / 2); const tsuba = new THREE.Mesh(tg, new THREE.MeshStandardMaterial({ color: 0x1a1a1c, metalness: 0.8, roughness: 0.35 })); tsuba.position.z = 0.066; g.add(tsuba);
-  const hb = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.038, 0.02), gold); hb.position.z = 0.08; g.add(hb);
-  const kg = new THREE.CylinderGeometry(0.019, 0.019, 0.02, 10); kg.rotateX(Math.PI / 2); const ka = new THREE.Mesh(kg, gold); ka.position.z = -0.27; g.add(ka);
-  g.traverse(o => { o.castShadow = true; });
-  return g;
+// ---------- clip library (shared by all fighters) ----------
+const LOWER = /^(root|pelvis|thigh_|calf_|foot_|ball_)/;
+let LIB = null;
+export function prepareClips(gltfA, gltfB) {
+  const all = {}; for (const c of [...gltfA.animations, ...gltfB.animations]) all[c.name] = c;
+  const mask = (clip, lower) => new THREE.AnimationClip(clip.name + (lower ? '#lo' : '#up'), clip.duration, clip.tracks.filter(t => LOWER.test(t.name.split('.')[0]) === lower));
+  const lo = {}, up = {};
+  for (const n of ['Walk_Fwd_Loop', 'Walk_Bwd_Loop', 'Walk_L_Loop', 'Walk_R_Loop', 'Jog_Fwd_Loop', 'Jog_Bwd_Loop', 'Jog_Left_Loop', 'Jog_Right_Loop', 'Sprint_Loop', 'Sword_Regular_A', 'Idle_Loop', 'Sword_Idle']) lo[n] = mask(all[n], true);
+  for (const n of ['Sword_Regular_A', 'Sword_Block', 'Sprint_Loop', 'Jog_Fwd_Loop']) up[n] = mask(all[n], false);
+  LIB = { all, lo, up };
+  return LIB;
 }
-function makeSheath() {
-  const g = new THREE.Group(), m = new THREE.MeshStandardMaterial({ color: 0x0d0d10, roughness: 0.25, metalness: 0.2 });
-  const b = new THREE.Mesh(new THREE.BoxGeometry(0.042, 0.06, 0.8), m); b.position.z = -0.4; g.add(b);
-  const k = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.07, 0.04), new THREE.MeshStandardMaterial({ color: 0xc9a24a, metalness: .9, roughness: .3 })); k.position.z = -0.02; g.add(k);
-  const co = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.045, 0.1), m); co.position.z = -0.1; co.rotation.x = 0.2; g.add(co);
-  return g;
-}
-const STYLES = {
-  player: { cloth: 0x4a68a8, hakama: 0x14182a, accent: 0xc9a24a, hat: 'kasa' },
-  enemy: { cloth: 0x9a3436, hakama: 0x1a0d0d, accent: 0xd8c27a, hat: 'kabuto' },
-};
+// locomotion clip sets: [clip, natural speed m/s]
+const WALK = { F: ['Walk_Fwd_Loop', 1.25], B: ['Walk_Bwd_Loop', 1.2], L: ['Walk_L_Loop', 1.0], R: ['Walk_R_Loop', 1.0] };
+const JOG = { F: ['Jog_Fwd_Loop', 3.4], B: ['Jog_Bwd_Loop', 2.6], L: ['Jog_Left_Loop', 2.4], R: ['Jog_Right_Loop', 2.4] };
 
 export class Fighter {
-  constructor(scene, gltf, style, name) {
-    this.scene = scene; this.name = name;
-    this.group = new THREE.Group(); this.body = new THREE.Group();
-    this.model = clone(gltf.scene); this.body.add(this.model); this.group.add(this.body); scene.add(this.group);
-    this.group.updateMatrixWorld(true);
-    const ht = this.model.getObjectByName('mixamorigHeadTop_End').getWorldPosition(new V3()).y, ft = this.model.getObjectByName('mixamorigLeftToe_End').getWorldPosition(new V3()).y;
-    this.model.scale.multiplyScalar(1.8 / (ht - ft + 0.02));
+  constructor(scene, base, style, name) {
+    this.scene = scene; this.name = name; this.style = style;
+    this.group = new THREE.Group(); this.body = new THREE.Group(); scene.add(this.group); this.group.add(this.body);
+    this.model = clone(base.scene); this.body.add(this.model);
     this.model.updateMatrixWorld(true);
-    const st = STYLES[style];
-    this.model.traverse(o => {
-      if (o.isMesh || o.isSkinnedMesh) {
-        o.castShadow = true; o.frustumCulled = false;
-        if (o.material) { o.material = o.material.clone(); o.material.color.set(st.cloth); if (o.name.includes('visor')) o.material.color.set(0x050505); o.material.roughness = 0.85; o.material.metalness = 0; }
-      }
-    });
-    const B = n => this.model.getObjectByName('mixamorig' + n);
-    this.b = { hips: B('Hips'), sp: [B('Spine'), B('Spine1'), B('Spine2')], head: B('Head'), rs: B('RightArm'), rf: B('RightForeArm'), rh: B('RightHand'), ls: B('LeftArm'), lf: B('LeftForeArm'), lh: B('LeftHand') };
-    const wp = o => o.getWorldPosition(new V3());
-    this.len = { r1: wp(this.b.rs).distanceTo(wp(this.b.rf)), r2: wp(this.b.rf).distanceTo(wp(this.b.rh)), l1: wp(this.b.ls).distanceTo(wp(this.b.lf)), l2: wp(this.b.lf).distanceTo(wp(this.b.lh)) };
-    // animation mixer (locomotion legs)
-    this.mixer = new THREE.AnimationMixer(this.model);
-    this.an = {}; for (const n of ['Idle', 'Walk', 'Run']) { const a = this.mixer.clipAction(gltf.animations.find(c => c.name === n)); a.play(); a.setEffectiveWeight(n === 'Idle' ? 1 : 0); this.an[n] = a; }
-    this.mixer.update(0); this.model.updateMatrixWorld(true);
-    // legs for foot IK
-    this.leg = {};
-    for (const [k, s] of [['r', 'Right'], ['l', 'Left']]) {
-      const u = B(s + 'UpLeg'), kn = B(s + 'Leg'), f = B(s + 'Foot');
-      this.leg[k] = { u, k: kn, f, l1: wp(u).distanceTo(wp(kn)), l2: wp(kn).distanceTo(wp(f)), bind: f.getWorldQuaternion(new Q()) };
-    }
-    this.ankleH = wp(this.leg.r.f).y;
-    this.attach(st);
-    this.katana = makeKatana(); scene.add(this.katana);
-    this.trail = new Trail(scene);
+    this.gear = dress(this.model, scene, OUTFITS[style]);
+    this.katana = this.gear.katana; this.saya = this.gear.saya;
+    const B = n => this.model.getObjectByName(n);
+    this.b = { pelvis: B('pelvis'), sp1: B('spine_01'), sp2: B('spine_02'), sp3: B('spine_03'), neck: B('neck_01'), head: B('Head'), hand: B('hand_r'), farm: B('lowerarm_r'), uarm: B('upperarm_r'), handL: B('hand_l') };
+    // grip frame: blade along the hand's +Z, edge toward the knuckles (hand X, away from the forearm)
+    const hx = new V3(1, 0, 0).applyQuaternion(this.b.hand.getWorldQuaternion(new Q()));
+    const fdir = this.b.hand.getWorldPosition(new V3()).sub(this.b.farm.getWorldPosition(new V3()));
+    this.edgeSign = Math.sign(hx.dot(fdir)) || 1;
+    this.gripQ = new Q().setFromAxisAngle(new V3(0, 0, 1), -Math.PI / 2 * this.edgeSign);
+    // animation
+    this.mixer = new THREE.AnimationMixer(this.model); this.acts = new Map();
+    this.full = [];                 // full-body layer entries {a, w}
+    this.lw = {}; this.uw = { stance: 1, block: 0, run: 0 };
+    this.phase = 0; this.locoV = new V3(); this.visYaw = 0; this.visYawT = 0;
+    this.trail = new SlashTrail(scene);
+    this.tipPrev = null; this.basePrev = null;
+    this.colliders = [{ c: new V3(), r: 0.2 }, { c: new V3(), r: 0.22 }];
+    for (const r of this.gear.ropes) r.rope.colliders = this.colliders;
     // state
-    this.pos = new V3(); this.yaw = 0; this.speed = 0; this.vel = new V3(); this.locoV = new V3();
-    this.hp = 100; this.posture = 0; this.act = 'idle'; this.t = 0; this.dur = 1; this.seq = 0; this.cur = GUARD.slice();
-    this.blockStart = -9; this.time = 0; this.lastPost = 0; this.flick = 0; this.flickN = 0; this.dead = false; this.remote = false;
-    this.swung = false; this.hitDone = false; this.queued = false; this.fall = 0; this.target = { x: 0, z: 0, yaw: 0 };
-    this.combo = 0; this.jolt = 0; this.ikW = 1; this.rollSign = 1; this.dieKind = 'back'; this.dodgeDir = new V3(0, 0, -1); this.opp = null; this.lives = 2; this.invuln = false; this.maxHp = 100; this.tempo = 1; this.dmgMul = 1; this.fMul = 1; this.parryWin = PARRY_WINDOW; this.iExtra = 0; this.postRegen = 1;
-    this.spX = new Float32Array(6); this.spV = new Float32Array(6); this.spInit = false;
+    this.pos = new V3(); this.yaw = 0; this.vel = new V3(); this.speed = 0;
+    this.maxHp = 100; this.hp = 100; this.posture = 0; this.lives = 2; this.dead = false; this.remote = false; this.invuln = false;
+    this.act = 'idle'; this.t = 0; this.seq = 0; this.time = 0; this.lastPost = -9;
+    this.guard = false; this.guardStart = -9; this.lastGuardPress = -9; this.guardSpam = 0; this.counterT = 0;
+    this.hitDone = false; this.queued = null; this.jolt = 0; this.joltDir = 1; this.flash = 0;
+    this.dodgeDir = new V3(0, 0, -1); this.sprint = false; this.sheathed = false; this.opp = null; this.target = { x: 0, z: 0, yaw: 0 };
+    this.tempo = 1; this.dmgMul = 1; this.fMul = 1; this.parryWin = PARRY_WINDOW; this.iExtra = 0; this.postRegen = 1; this.scaleF = 1;
+    this.events = [];
   }
 
-  attach(st) {
-    const inv = 1 / this.model.getObjectByName('mixamorigHips').getWorldScale(new V3()).x;
-    const add = (bone, obj, x = 0, y = 0, z = 0) => {
-      const h = new THREE.Group(); const q = bone.getWorldQuaternion(new Q()).invert(); h.quaternion.copy(q); h.scale.setScalar(inv);
-      obj.position.set(x, y, z); h.add(obj); bone.add(h); obj.traverse(o => { o.castShadow = true; });
-    };
-    const cloth = new THREE.MeshStandardMaterial({ color: st.hakama, roughness: 0.95, side: THREE.DoubleSide });
-    const pts = [[0.19, 0.14], [0.21, 0.0], [0.24, -0.3], [0.27, -0.6], [0.3, -0.8]].map(p => new THREE.Vector2(p[0], p[1]));
-    add(this.b.hips, new THREE.Mesh(new THREE.LatheGeometry(pts, 20), cloth));
-    const obi = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.032, 8, 20), new THREE.MeshStandardMaterial({ color: st.accent, roughness: 0.6 })); obi.rotation.x = Math.PI / 2; add(this.b.hips, obi, 0, 0.14, 0);
-    const sh = makeSheath(); sh.rotation.x = -0.45; sh.rotation.y = 0.12; add(this.b.hips, sh, 0.22, 0.12, 0.12);
-    for (const [bone, sx] of [[this.b.rs, -1], [this.b.ls, 1]]) {
-      const pl = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.025, 0.2), new THREE.MeshStandardMaterial({ color: 0x151518, roughness: 0.5, metalness: 0.4 })); pl.rotation.z = sx * -0.25; add(bone, pl, sx * 0.1, 0.07, 0);
-    }
-    if (st.hat === 'kasa') {
-      add(this.b.head, new THREE.Mesh(new THREE.ConeGeometry(0.34, 0.15, 24, 1, true), new THREE.MeshStandardMaterial({ color: 0xc9b07a, roughness: 1, side: THREE.DoubleSide })), 0, 0.3, 0.02);
-    } else {
-      add(this.b.head, new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.014, 6, 20, Math.PI), new THREE.MeshStandardMaterial({ color: st.accent, metalness: .9, roughness: .3 })), 0, 0.2, 0.2);
-      add(this.b.head, new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, 0.05, 16), new THREE.MeshStandardMaterial({ color: 0x1a0d0d, roughness: .5, metalness: .4 })), 0, 0.14, 0);
-    }
+  // ---------- helpers ----------
+  action(clip) {
+    let a = this.acts.get(clip); if (a) return a;
+    a = this.mixer.clipAction(clip); a.play(); a.paused = true; a.setEffectiveWeight(0); a.enabled = true; this.acts.set(clip, a); return a;
   }
+  get moveDef() { return MOVES[this.act] || REACT[this.act] || null; }
+  get isAttack() { return !!MOVES[this.act]; }
+  get fwd() { return new V3(Math.sin(this.yaw), 0, Math.cos(this.yaw)); }
+  get hitPoint() { return new V3(this.pos.x, 1.25, this.pos.z); }
+  get broken() { return this.act === 'guardBreak' && this.t < REACT.guardBreak.dur - 0.7; }
+  get brokenLeft() { return this.broken ? REACT.guardBreak.dur - 0.7 - this.t : 0; }
+  get chest() { return this.b.sp3.getWorldPosition(new V3()); }
+  inActive() { const m = MOVES[this.act]; return m && this.t >= m.hit[0] && this.t <= m.hit[1]; }
+  perilousWarn() { const m = MOVES[this.act]; return m && m.perilous && this.t < m.hit[0]; }
 
-  restyle(color, scale = 1) {
-    this.model.traverse(o => { if ((o.isMesh || o.isSkinnedMesh) && o.material && !o.name.includes('visor')) o.material.color.set(color); });
-    this.group.scale.setScalar(scale); this.katana.scale.setScalar(scale); this.scaleF = scale;
+  setAct(name, t0 = 0) {
+    this.act = name; this.t = t0; this.seq++; this.hitDone = false; this.queued = null;
+    const m = MOVES[name]; if (m) { this.swungSfx = false; if (m.perilous) this.emit('perilous'); }
+    if (name === 'idle') this.visYawT = 0;
   }
-  get hitPoint() { return new V3(this.pos.x, 1.3, this.pos.z); }
-  get brokenLeft() { return this.act === 'broken' ? this.dur - this.t : 0; }
+  emit(type, data) { this.events.push({ type, data }); }
 
-  setAct(name, dur) {
-    this.act = name; this.t = 0; this.dur = dur || (ACT[name] || {}).dur || 1; this.seq++; this.swung = false; this.hitDone = false; this.queued = false;
-    if (name === 'block') this.blockStart = this.time;
-    if (name === 'stagger') { this.rollSign = Math.random() < .5 ? 1 : -1; this.jolt = 1; }
-    if (name === 'parried' || name === 'broken') this.jolt = 1;
-  }
   spawn(x, z, yaw) {
-    this.pos.set(x, 0, z); this.yaw = yaw; this.target = { x, z, yaw }; this.hp = this.maxHp; this.posture = 0; this.dead = false; this.fall = 0; this.speed = 0;
-    this.vel.set(0, 0, 0); this.locoV.set(0, 0, 0); this.dieKind = 'back'; this.setAct('idle'); this.cur = GUARD.slice(); this.jolt = 0; this.invuln = false; this.spInit = false; this.flick = 0; this.queued = false;
+    this.pos.set(x, 0, z); this.yaw = yaw; this.target = { x, z, yaw }; this.hp = this.maxHp; this.posture = 0; this.dead = false;
+    this.vel.set(0, 0, 0); this.locoV.set(0, 0, 0); this.speed = 0; this.setAct('idle'); this.jolt = 0; this.invuln = false; this.guard = false;
+    this.counterT = 0; this.visYaw = this.visYawT = 0; this.sheathed = false; this.full.length = 0;
+    for (const a of this.acts.values()) a.setEffectiveWeight(0);
+    this.trail.clear(); for (const r of this.gear.ropes) r.rope.reset();
   }
 
-  // ----- combat resolution (on the defender) -----
-  resolveStrike(kind, fromPos, mul = 1, fmul = 1) {
-    if (this.dead || this.act === 'dying' || this.invuln) return { res: 'miss' };
-    const heavy = kind === 'heavy', a = ACT[kind] || ACT.light1;
-    const toAtt = new V3(fromPos.x - this.pos.x, 0, fromPos.z - this.pos.z).normalize();
-    if (kind === 'deathblow') {   // critical hit: 38% of max health, not an instant kill
-      if (this.act !== 'broken') return { res: 'miss' };
+  // ================= combat resolution (runs on the DEFENDER's machine) =================
+  resolveStrike(kind, from, mul = 1, fmul = 1) {
+    const m = MOVES[kind]; if (!m) return { res: 'miss' };
+    if (this.dead || this.invuln || this.act === 'revive') return { res: 'miss' };
+    const toAtt = new V3(from.x - this.pos.x, 0, from.z - this.pos.z).normalize();
+    if (kind === 'deathblow') {
+      if (!(this.act === 'guardBreak')) return { res: 'miss' };
       this.yaw = Math.atan2(toAtt.x, toAtt.z); this.hp -= this.maxHp * 0.38 * fmul; this.posture = 0; this.lastPost = this.time;
-      if (this.hp <= 0) { this.hp = 0; this.dieKind = 'fwd'; this.die(); return { res: 'finisher', killed: true }; }
-      this.setAct('stagger', 1.2); this.vel.addScaledVector(toAtt, -4); return { res: 'finisher', killed: false };
+      if (this.hp <= 0) { this.hp = 0; this.die(true); return { res: 'finisher', killed: true }; }
+      this.setAct('dbVictim'); this.vel.addScaledVector(toAtt, -3); return { res: 'finisher', killed: false };
     }
-    if (this.act === 'dodge' && this.t > 0.04 && this.t < 0.34 + this.iExtra) return { res: 'dodge' };
-    const facing = new V3(Math.sin(this.yaw), 0, Math.cos(this.yaw)).dot(toAtt) > 0.15;
-    if (this.act === 'block' && facing) {
-      if (this.time - this.blockStart <= this.parryWin) {
-        this.posture = Math.max(0, this.posture - 10); this.flick = 0.32; this.flickN++;
-        return { res: 'parry', heavy, apost: heavy ? 34 : 24 };
+    // dodge i-frames; stepping INTO a thrust = Mikiri counter
+    if ((this.act === 'dodgeL' || this.act === 'dodgeR' || this.act === 'roll') && this.t > 0.02 && this.t < 0.34 + this.iExtra) {
+      if (m.kind === 'thrust' && this.dodgeDir.dot(toAtt) > 0.35) { this.posture = Math.max(0, this.posture - 10); return { res: 'mikiri', apost: 46 }; }
+      return { res: 'dodge' };
+    }
+    const facing = this.fwd.dot(toAtt) > 0.15;
+    // two blades meeting mid-swing
+    if (facing && this.isAttack && this.inActive() && !m.perilous && this.act !== 'deathblow') { this.posture += 6; this.lastPost = this.time; this.setAct('deflected'); return { res: 'clash', apost: 10 }; }
+    const guarding = (this.guard && (this.act === 'idle' || this.act === 'deflect')) || this.act === 'deflect';
+    if (guarding && facing) {
+      const win = this.parryWin * (this.guardSpam > 1 ? 0.45 : 1);
+      if (this.time - this.guardStart <= win && m.kind !== 'kick') {   // perfect deflect (works on perilous thrusts too)
+        this.posture = Math.max(0, this.posture + (m.heavy ? 4 : 2)); this.lastPost = this.time; this.counterT = 0.85;
+        this.setAct('deflect'); this.jolt = 0.35; this.joltDir = Math.random() < .5 ? 1 : -1;
+        return { res: 'deflect', heavy: !!m.heavy, apost: m.deflPost, kind: m.kind };
       }
-      this.hp = Math.max(1, this.hp - a.dmg * mul * 0.06); this.posture += a.pd; this.lastPost = this.time;
-      this.vel.addScaledVector(toAtt, -3.6);
-      const broke = this.checkBreak(); return { res: 'block', heavy, broke };
+      if (!m.perilous) {
+        this.posture += m.post * (this.act === 'deflect' ? 0.6 : 1); this.lastPost = this.time; this.vel.addScaledVector(toAtt, m.heavy ? -4.2 : -2.6);
+        this.jolt = m.heavy ? 1 : 0.6; this.joltDir = Math.random() < .5 ? 1 : -1;
+        if (this.checkBreak()) return { res: 'block', heavy: !!m.heavy, broke: true };
+        return { res: 'block', heavy: !!m.heavy };
+      }
     }
-    const dmg = a.dmg * mul * (this.act === 'broken' ? 1.6 : 1);
-    this.hp -= dmg; this.posture += a.pd * 0.5; this.lastPost = this.time;
-    this.vel.addScaledVector(toAtt, -(heavy ? 5 : 3));
-    if (this.hp <= 0) { this.hp = 0; this.die(); return { res: 'hit', heavy, killed: true }; }
+    // clean hit
+    const brokenNow = this.act === 'guardBreak';
+    this.hp -= m.dmg * mul * (brokenNow ? 1.4 : 1); this.posture += m.hitPost; this.lastPost = this.time;
+    this.vel.addScaledVector(toAtt, -(m.heavy ? 4.5 : 2.6)); this.jolt = 1; this.joltDir = Math.random() < .5 ? 1 : -1;
+    if (this.hp <= 0) { this.hp = 0; this.die(false); return { res: 'hit', heavy: !!m.heavy, killed: true, kind: m.kind }; }
     let broke = false;
-    if (this.act !== 'broken') { broke = this.checkBreak(); if (!broke) this.setAct('stagger', heavy ? 0.65 : 0.38); }
-    return { res: 'hit', heavy, broke };
+    const armored = this.isAttack && MOVES[this.act].armor && this.t < MOVES[this.act].hit[0] && !m.heavy;
+    if (!brokenNow) { broke = this.checkBreak(); if (!broke && !armored) this.setAct(m.heavy || m.kind === 'kick' ? 'hitHeavy' : m.dir === 'down' ? 'hitU' : m.dir === 'up' ? 'hitD' : Math.random() < .5 ? 'hitL' : 'hitR'); }
+    return { res: 'hit', heavy: !!m.heavy, broke, kind: m.kind };
   }
-  checkBreak() { if (this.posture >= 100 && this.act !== 'broken') { this.posture = 100; this.setAct('broken'); return true; } return false; }
-  applyOutcome(r) { if (r.res === 'parry') { this.posture += r.apost; this.lastPost = this.time; if (!this.checkBreak()) this.setAct('parried'); } }
-  die() { this.dead = true; this.lives = Math.max(0, this.lives - 1); this.setAct('dying'); }
+  checkBreak() { if (this.posture >= 100 && this.act !== 'guardBreak') { this.posture = 100; this.guard = false; this.setAct('guardBreak'); this.emit('broken'); return true; } return false; }
+  // attacker side
+  applyOutcome(r) {
+    if (r.res === 'deflect' || r.res === 'clash') { this.posture += r.apost; this.lastPost = this.time; this.vel.addScaledVector(this.fwd, -2.2); if (!this.checkBreak()) this.setAct('deflected'); }
+    else if (r.res === 'mikiri') { this.posture += r.apost; this.lastPost = this.time; if (!this.checkBreak()) this.setAct('hitHeavy'); }
+  }
+  die(fwd) { this.dead = true; this.lives = Math.max(0, this.lives - 1); this.guard = false; this.setAct(fwd ? 'dieFwd' : 'die'); }
+  revive() { this.dead = false; this.hp = this.maxHp; this.posture = 0; this.invuln = true; this.setAct('revive'); this.emit('revive'); }
 
-  // ----- update -----
+  // ================= update =================
   update(dt, inp, opp) {
-    this.opp = opp; this.time += dt; this.t += dt * (isAttack(this.act) && this.act !== 'deathblow' ? this.tempo : 1); if (this.flick > 0) this.flick -= dt; this.jolt = Math.max(0, this.jolt - dt * 4.5);
-    if (this.remote) this.updateRemote(dt); else this.updateLocal(dt, inp || { move: null, light: 0, heavy: 0, dodge: 0, finisher: 0, block: false }, opp);
-    if (!isFinite(this.pos.x + this.pos.z + this.yaw)) { console.error('NaN fighter state', this.act); this.pos.set(0, 0, this.name === 'You' ? -4 : 4); this.yaw = 0; this.vel.set(0, 0, 0); this.locoV.set(0, 0, 0); }
+    this.opp = opp; this.time += dt; this.jolt = Math.max(0, this.jolt - dt * 4); this.counterT = Math.max(0, this.counterT - dt);
+    const md = this.moveDef, tempo = MOVES[this.act] && this.act !== 'deathblow' ? this.tempo : 1;
+    this.t += dt * tempo;
+    if (this.remote) this.updateRemote(dt); else this.updateLocal(dt, inp || {}, opp);
+    if (!isFinite(this.pos.x + this.pos.z + this.yaw)) { this.pos.set(0, 0, 0); this.yaw = 0; this.vel.set(0, 0, 0); }
     this.group.position.copy(this.pos); this.group.rotation.y = this.yaw;
-    // falling when dying
-    if (this.act === 'dying') {
-      const fwd = this.dieKind === 'fwd', t0 = fwd ? 0.75 : 0.35;
-      this.fall = clamp((this.t - t0) / 0.8, 0, 1); const e = this.fall * this.fall * (3 - 2 * this.fall);
-      this.body.rotation.x = (fwd ? 1.45 : -1.5) * e; this.fallY = e * 0.12;
-    } else { this.fall = 0; this.fallY = 0; this.body.rotation.x = 0; }
-    const c = this.cur;
-    this.body.position.set(-c[11], this.fallY - c[12] + Math.sin(this.time * 1.9) * 0.004, c[10]);
-    // locomotion anim weights (used when legs are not foot-IK'd)
-    const s = this.speed, wW = s < 3 ? Math.min(1, s / 1.4) : Math.max(0, 1 - (s - 3) / 1.5), wR = clamp((s - 3) / 1.5, 0, 1);
-    this.an.Idle.setEffectiveWeight(Math.max(0, 1 - wW - wR)); this.an.Walk.setEffectiveWeight(wW); this.an.Run.setEffectiveWeight(wR);
-    this.an.Walk.timeScale = clamp(s / 2.2, .5, 1.3); this.an.Run.timeScale = this.act === 'dodge' ? 1.5 : clamp(s / 4.8, .6, 1.3);
-    this.mixer.update(dt);
-    this.group.updateMatrixWorld(true);
-    this.pose(dt);
+    this.visYaw += angDiff(this.visYaw, this.visYawT) * Math.min(1, dt * 10); this.body.rotation.y = this.visYaw;
+    this.animate(dt);
   }
 
   updateRemote(dt) {
     const k = 1 - Math.exp(-14 * dt), ox = this.pos.x, oz = this.pos.z;
     this.pos.x += (this.target.x - this.pos.x) * k; this.pos.z += (this.target.z - this.pos.z) * k;
     this.yaw += angDiff(this.yaw, this.target.yaw) * k;
-    this.speed += (Math.hypot(this.pos.x - ox, this.pos.z - oz) / Math.max(dt, 1e-3) - this.speed) * 0.3;
-    if (this.act === 'broken' && this.opp && this.opp.act === 'deathblow') this.yaw += angDiff(this.yaw, Math.atan2(this.opp.pos.x - this.pos.x, this.opp.pos.z - this.pos.z)) * k;
-    this.events();
+    this.locoV.set((this.pos.x - ox) / Math.max(dt, 1e-3), 0, (this.pos.z - oz) / Math.max(dt, 1e-3));
+    this.speed = this.locoV.length();
+    const md = this.moveDef; if (md && this.t >= md.dur && this.act !== 'die' && this.act !== 'dieFwd') this.act = 'idle';
+    this.sfxEvents();
   }
   setRemote(s) {
-    this.target.x = s.x; this.target.z = s.z; this.target.yaw = s.yaw; this.hp = s.hp; this.posture = s.po; this.lives = s.lv === undefined ? this.lives : s.lv;
-    if (s.seq !== this.seq || s.act !== this.act) { if (s.act === 'dying' && this.act === 'broken') this.dieKind = 'fwd'; this.setAct(s.act, s.dur); this.seq = s.seq; }
-    if (s.fl !== this.flickN) { this.flickN = s.fl; this.flick = 0.32; }
-    this.dead = s.act === 'dying';
+    this.target.x = s.x; this.target.z = s.z; this.target.yaw = s.yaw; this.hp = s.hp; this.posture = s.po; this.lives = s.lv ?? this.lives;
+    this.guard = !!s.g; this.sheathed = !!s.sh; this.visYawT = s.vy || 0;
+    if (s.seq !== this.seq) { this.act = s.act; this.t = Math.max(0, s.t || 0); this.seq = s.seq; this.hitDone = false; if (MOVES[s.act]) this.swungSfx = false; if (MOVES[s.act] && MOVES[s.act].perilous && s.t < 0.15) this.emit('perilous'); if (s.act === 'revive') this.emit('revive'); if (s.act === 'guardBreak') this.emit('broken'); }
+    if (s.gs !== this.gsN) { this.gsN = s.gs; this.guardStart = this.time; }
+    this.dead = s.act === 'die' || s.act === 'dieFwd';
   }
-  snapshot() { return { x: this.pos.x, z: this.pos.z, yaw: this.yaw, act: this.act, dur: this.dur, seq: this.seq, hp: this.hp, po: this.posture, fl: this.flickN, lv: this.lives }; }
+  snapshot() { return { x: this.pos.x, z: this.pos.z, yaw: this.yaw, act: this.act, t: this.t, seq: this.seq, hp: this.hp, po: this.posture, lv: this.lives, g: this.guard ? 1 : 0, sh: this.sheathed ? 1 : 0, vy: this.visYawT, gs: this.gsCount || 0 }; }
 
-  events() {
-    if (isAttack(this.act) && !this.swung && this.t >= ACT[this.act].hit[0] - 0.05) {
-      this.swung = true; this.act === 'deathblow' ? sfx.deathblow() : sfx.swing(this.act === 'heavy');
-    }
+  sfxEvents() {
+    const m = MOVES[this.act];
+    if (m && !this.swungSfx && this.t >= m.hit[0] - 0.06) { this.swungSfx = true; this.act === 'deathblow' ? sfx.deathblow() : sfx.swing(m.heavy || m.kind === 'thrust'); }
   }
 
   updateLocal(dt, inp, opp) {
-    const A = this.act, def = ACT[A];
-    if (this.dead) { this.speed = 0; return; }
-    const oppAlive = opp && !opp.dead && opp.act !== 'dying';
+    const A = this.act, md = this.moveDef;
+    const oppAlive = opp && !opp.dead;
     const toOpp = oppAlive ? new V3(opp.pos.x - this.pos.x, 0, opp.pos.z - this.pos.z) : null;
-    const dist = toOpp ? toOpp.length() : 99; if (toOpp && dist > 0.001) toOpp.divideScalar(dist);
-    if (A !== 'broken' && this.time - this.lastPost > 1.6) this.posture = Math.max(0, this.posture - (A === 'block' ? 18 : 11) * this.postRegen * (0.45 + 0.55 * this.hp / this.maxHp) * dt);
-    const aimDir = () => (toOpp && (inp.lock || dist < 4.5)) ? toOpp : (inp.aim || new V3(Math.sin(this.yaw), 0, Math.cos(this.yaw)));
-    const faceTo = d => { this.yaw = Math.atan2(d.x, d.z); };
-    let moveSpeed = 0, moveDir = null;
-    const startAct = name => { faceTo(aimDir()); this.setAct(name); };
+    const dist = toOpp ? toOpp.length() : 99; if (toOpp && dist > 1e-3) toOpp.divideScalar(dist);
+    const locked = !!(toOpp && inp.lock);
+    // posture recovery: faster when guarding still, slower at low health, paused right after taking posture
+    if (A !== 'guardBreak' && !this.dead && this.time - this.lastPost > 1.5) this.posture = Math.max(0, this.posture - (this.guard ? 15 : 8.5) * this.postRegen * (0.3 + 0.7 * this.hp / this.maxHp) * dt);
+    const aim = () => locked || (toOpp && dist < 4) ? toOpp : (inp.move && inp.move.lengthSq() > 0.01 ? inp.move.clone().normalize() : this.fwd);
+    const face = (d, rate) => { const y = Math.atan2(d.x, d.z); this.yaw += rate ? angDiff(this.yaw, y) * Math.min(1, rate * dt) : angDiff(this.yaw, y); };
+    // guard press bookkeeping (deflect window + anti-spam)
+    if (inp.guard && !this.guardHeld) { this.guardStart = this.time; this.guardSpam = this.time - this.lastGuardPress < 0.45 ? this.guardSpam + 1 : 0; this.lastGuardPress = this.time; this.gsCount = (this.gsCount || 0) + 1; }
+    this.guardHeld = !!inp.guard;
 
-    const free = A === 'idle' || A === 'block';
-    const recov = isAttack(A) && A !== 'deathblow' && this.t >= def.hit[1] + 0.08;
-
-    if (free || recov) {
-      if (inp.dodge > 0) {
+    const idle = A === 'idle';
+    const recov = md && MOVES[A] && this.t >= (MOVES[A].cancel);
+    const reactDone = md && !MOVES[A] && this.t >= md.dur;
+    const canAct = idle || recov || (A === 'deflect' && this.t > 0.12) || ((A === 'dodgeL' || A === 'dodgeR' || A === 'roll') && this.t > 0.42);
+    if (this.dead) { this.guard = false; }
+    else if (canAct && A !== 'draw' && A !== 'sheathe' && A !== 'revive') {
+      if (inp.dodge > 0 && this.act !== 'roll') {
         inp.dodge = 0;
-        const m = inp.move && inp.move.lengthSq() > 0.01 ? inp.move.clone().normalize() : aimDir().clone().multiplyScalar(-1);
-        this.dodgeDir = m; if (inp.lock && toOpp) faceTo(toOpp); else if (inp.move && inp.move.lengthSq() > 0.01) this.yaw = Math.atan2(m.x, m.z);
-        this.setAct('dodge'); sfx.dodge(); return;
+        const mv = inp.move && inp.move.lengthSq() > 0.01 ? inp.move.clone().normalize() : (toOpp ? toOpp.clone().negate() : this.fwd.negate());
+        this.dodgeDir.copy(mv);
+        if (locked) face(toOpp);
+        const lf = this.fwd, side = new V3(lf.z, 0, -lf.x).dot(mv), fw = lf.dot(mv);   // side>0 = to the character's left
+        if (!locked && fw > 0.5) { this.yaw = Math.atan2(mv.x, mv.z); this.setAct('roll'); this.visYawT = 0; }
+        else { const left = Math.abs(side) > 0.3 ? side > 0 : (this.lastSideL = !this.lastSideL); this.setAct(left ? 'dodgeL' : 'dodgeR'); this.visYawT = fw < -0.5 ? (left ? 1.25 : -1.25) : fw > 0.5 ? (left ? -0.9 : 0.9) : 0; }
+        sfx.dodge(); this.emit('dodge'); return this.integrate(dt, null, 0, opp);
       }
-      if (inp.finisher > 0 && oppAlive && opp.act === 'broken' && dist < 3.4 && free) {
+      if (inp.finisher > 0 && oppAlive && opp.broken && dist < 3.4) {
         inp.finisher = 0; const d = toOpp.clone();
-        this.pos.x = opp.pos.x - d.x * 1.15; this.pos.z = opp.pos.z - d.z * 1.15; faceTo(d); opp.yaw = Math.atan2(-d.x, -d.z); this.vel.set(0, 0, 0); this.locoV.set(0, 0, 0);
-        this.setAct('deathblow'); return;
+        this.pos.set(opp.pos.x - d.x * 1.05, 0, opp.pos.z - d.z * 1.05); face(d); opp.yaw = Math.atan2(-d.x, -d.z); this.vel.set(0, 0, 0); this.locoV.set(0, 0, 0);
+        this.setAct('deathblow'); this.guard = false; return this.integrate(dt, null, 0, opp);
       }
-      if (inp.heavy > 0) { inp.heavy = 0; startAct('heavy'); return; }
-      if (inp.light > 0 && free) { inp.light = 0; startAct('light1'); return; }
+      if (inp.heavy > 0) { inp.heavy = 0; face(aim()); this.setAct(inp.heavyKind || 'heavy'); this.guard = false; return this.integrate(dt, null, 0, opp); }
+      if (inp.light > 0) {
+        inp.light = 0; let next = inp.lightKind || 'slash1';
+        if (MOVES[A] && MOVES[A].next && this.t < MOVES[A].dur - 0.05) next = MOVES[A].next;
+        if (this.counterT > 0 && !MOVES[A]) next = 'counter';
+        this.counterT = 0; face(aim()); this.setAct(next); this.guard = false; return this.integrate(dt, null, 0, opp);
+      }
+      if ((recov || A === 'deflect') && inp.guard) { this.setAct('idle'); }
     }
-    if (isAttack(A)) {
-      if (inp.light > 0 && A !== 'deathblow' && this.t > def.hit[0]) { inp.light = 0; this.queued = true; }
-      if (this.queued && A.startsWith('light') && this.t >= def.hit[1] + 0.06) { startAct(A === 'light1' ? 'light2' : A === 'light2' ? 'light3' : 'light1'); return; }
-      if (recov && inp.block) { this.setAct('block'); return; }
-    }
+    // combo buffering: an attack press during the swing queues the next link
+    if (MOVES[A] && inp.light > 0 && this.t > MOVES[A].hit[0] - 0.1 && MOVES[A].next) { this.queued = MOVES[A].next; inp.light = 0; }
+    if (MOVES[A] && this.queued && this.t >= MOVES[A].cancel) { const q = this.queued; face(aim()); this.setAct(q); return this.integrate(dt, null, 0, opp); }
 
-    switch (A) {
-      case 'idle': case 'block': {
-        const want = inp.block ? 'block' : 'idle';
-        if (want !== A) this.setAct(want);
+    let moveDir = null, moveSpeed = 0;
+    switch (this.act) {
+      case 'idle': {
+        this.guard = !!inp.guard;
         const mv = inp.move && inp.move.lengthSq() > 0.01 ? inp.move.clone().normalize() : null;
-        const top = inp.block ? 2.0 : inp.walk ? 2.2 : 4.8;
-        moveSpeed = mv ? top : 0; moveDir = mv;
-        if (inp.block && toOpp) this.yaw += angDiff(this.yaw, Math.atan2(toOpp.x, toOpp.z)) * Math.min(1, 14 * dt);
-        else if (mv) this.yaw += angDiff(this.yaw, Math.atan2(mv.x, mv.z)) * Math.min(1, 14 * dt);
-        else if (toOpp && inp.lock) this.yaw += angDiff(this.yaw, Math.atan2(toOpp.x, toOpp.z)) * Math.min(1, 6 * dt);
+        this.sprint = !!inp.sprint && !this.guard && !!mv;
+        const top = this.guard ? 1.6 : inp.walk ? 1.4 : locked ? (this.sprint ? 4.6 : 2.9) : this.sprint ? 5.6 : 3.8;
+        moveDir = mv; moveSpeed = mv ? top : 0;
+        if (locked && !this.sprint) face(toOpp, 12);
+        else if (mv) face(mv, this.sprint ? 8 : 12);
         break;
       }
-      case 'dodge': {
-        const u = clamp(this.t / this.dur, 0, 1), sp = 9 * Math.pow(1 - u, 1.5);
-        this.vel.set(this.dodgeDir.x * sp, 0, this.dodgeDir.z * sp);
-        if (this.t >= this.dur) { this.setAct('idle'); this.vel.set(0, 0, 0); }
-        break;
+      case 'deflect': this.guard = true; if (this.t >= REACT.deflect.dur) this.setAct('idle'); if (toOpp) face(toOpp, 10); break;
+      case 'die': case 'dieFwd': break;
+      default: {
+        const m = MOVES[this.act];
+        if (m) {
+          if (this.t < m.track && toOpp) face(toOpp, this.remote ? 0 : (inp.trackRate || 7));
+          // scripted lunge (in-place clips carry no root motion)
+          const [l0, l1, ld] = m.lunge; if (this.t > l0 && this.t < l1 && (dist > 1.15 || this.act === 'deathblow')) {
+            const u = (this.t - l0) / (l1 - l0), v = ld * Math.PI / 2 * Math.sin(Math.PI * u) / (l1 - l0);
+            const lim = toOpp && this.act !== 'deathblow' ? clamp((dist - 1.1) * 6, 0, 1) : 1;
+            this.vel.copy(this.fwd).multiplyScalar(v * lim);
+          }
+          this.hitCheck(m, opp, toOpp, dist);
+          if (this.t >= m.dur) this.setAct('idle');
+        } else if (this.act === 'dodgeL' || this.act === 'dodgeR' || this.act === 'roll') {
+          const u = clamp(this.t / 0.4, 0, 1), sp = (this.act === 'roll' ? 6.5 : 7.6) * (1 - u) * (1 - u) * 1.6;
+          this.vel.set(this.dodgeDir.x * sp, 0, this.dodgeDir.z * sp);
+          if (this.t >= REACT[this.act].dur) { this.setAct('idle'); this.vel.set(0, 0, 0); }
+        } else if (this.act === 'guardBreak') {
+          this.vel.multiplyScalar(0.85); if (opp && opp.act === 'deathblow') face(new V3(opp.pos.x - this.pos.x, 0, opp.pos.z - this.pos.z), 12);
+          if (this.t >= REACT.guardBreak.dur) { this.posture = 40; this.setAct('idle'); }
+        } else if (this.act === 'revive') { if (this.t >= REACT.revive.dur) { this.invuln = false; this.setAct('idle'); } }
+        else if (md && this.t >= md.dur && this.act !== 'sheathe') this.setAct('idle');
       }
-      case 'stagger': case 'parried': if (this.t >= this.dur) this.setAct('idle'); break;
-      case 'broken':
-        if (this.t >= this.dur) { this.posture = 35; this.setAct('idle'); }
-        this.vel.multiplyScalar(0.8);
-        if (opp && opp.act === 'deathblow') this.yaw += angDiff(this.yaw, Math.atan2(opp.pos.x - this.pos.x, opp.pos.z - this.pos.z)) * Math.min(1, 12 * dt);
-        break;
-      case 'dying': case 'victory': break;
-      default:
-        if (this.t < def.hit[1] + 0.05 && A !== 'deathblow' && dist > 1.05) { const k = Math.max(0, 1 - this.t / (def.hit[1] + .05)); this.vel.set(Math.sin(this.yaw) * def.lunge * k, 0, Math.cos(this.yaw) * def.lunge * k); }
-        if (!this.hitDone && this.t >= def.hit[0] && this.t <= def.hit[1] && toOpp) {
-          const fw = new V3(Math.sin(this.yaw), 0, Math.cos(this.yaw));
-          if ((dist < def.range && fw.dot(toOpp) > 0.35) || A === 'deathblow') { this.hitDone = true; this.onStrike && this.onStrike(this, A); }
-        }
-        if (this.t >= this.dur) this.setAct('idle');
     }
-    this.events();
-    const target = moveDir ? moveDir.clone().multiplyScalar(moveSpeed) : new V3();
-    const cv = new V3(this.vel.x, 0, this.vel.z), loco = this.locoV;
-    loco.lerp(target, 1 - Math.exp(-14 * dt));
-    this.pos.x += (loco.x + cv.x) * dt; this.pos.z += (loco.z + cv.z) * dt;
-    this.vel.multiplyScalar(A === 'dodge' ? 1 : Math.exp(-7 * dt));
-    this.speed = A === 'dodge' ? 6 : Math.hypot(loco.x, loco.z) + Math.hypot(cv.x, cv.z) * 0.3;
-    if (opp && !opp.dead && A !== 'deathblow') {
-      const dx = this.pos.x - opp.pos.x, dz = this.pos.z - opp.pos.z, d = Math.hypot(dx, dz);
-      if (d < 0.95 && d > 0.0001) { this.pos.x += dx / d * (0.95 - d); this.pos.z += dz / d * (0.95 - d); }
-    }
-    const rr = Math.hypot(this.pos.x, this.pos.z), lim = ARENA_R - 0.5;
-    if (rr > lim) { this.pos.x *= lim / rr; this.pos.z *= lim / rr; }
+    this.integrate(dt, moveDir, moveSpeed, opp);
   }
 
-  // ----- procedural full-body animation -----
-  targetPose() {
-    const A = this.act, F = new V3(Math.sin(this.yaw), 0, Math.cos(this.yaw));
-    const kf = (k, u) => {
-      let i = 0; while (i < k.length - 2 && u > k[i + 1][0]) i++;
-      const [t0, p0] = k[i], [t1, p1] = k[i + 1]; let s = clamp((u - t0) / (t1 - t0), 0, 1); s = s * s * (3 - 2 * s);
-      return p0.map((v, j) => v + (p1[j] - v) * s);
-    };
-    const u = clamp(this.t / this.dur, 0, 1);
-    if (KF[A]) { const p = kf(KF[A], u); if (A === 'stagger') p[8] *= this.rollSign; return p; }
-    if (A === 'block') return this.flick > 0 ? kf(KF.flick, 1 - this.flick / 0.32) : BLOCK;
-    if (A === 'dodge') {
-      const R = new V3(-Math.cos(this.yaw), 0, Math.sin(this.yaw)), df = this.dodgeDir.dot(F), dr = this.dodgeDir.dot(R), e = Math.sin(Math.PI * Math.min(1, u * 1.2));
-      return mk({ h: [.3, .1, .95], b: [.8, 0, .3], lean: .1 + .3 * df * e, roll: -dr * .32 * e, hf: .3 * df * e, hr: .3 * dr * e, hd: .08 + .26 * e });
+  integrate(dt, moveDir, moveSpeed, opp) {
+    const target = moveDir ? moveDir.clone().multiplyScalar(moveSpeed) : new V3();
+    if (this.act !== 'idle') target.set(0, 0, 0);
+    this.locoV.lerp(target, 1 - Math.exp(-(moveDir ? 10 : 14) * dt));
+    this.pos.x += (this.locoV.x + this.vel.x) * dt; this.pos.z += (this.locoV.z + this.vel.z) * dt;
+    const dodging = this.act === 'dodgeL' || this.act === 'dodgeR' || this.act === 'roll';
+    this.vel.multiplyScalar(dodging || MOVES[this.act] ? Math.exp(-3 * dt) : Math.exp(-8 * dt));
+    if (MOVES[this.act]) { const m = MOVES[this.act]; if (this.t > m.lunge[1]) this.vel.multiplyScalar(Math.exp(-10 * dt)); }
+    this.speed = Math.hypot(this.locoV.x, this.locoV.z);
+    if (opp && !opp.dead && this.act !== 'deathblow' && opp.act !== 'deathblow') {
+      const dx = this.pos.x - opp.pos.x, dz = this.pos.z - opp.pos.z, d = Math.hypot(dx, dz);
+      if (d < 0.85 && d > 1e-4) { this.pos.x += dx / d * (0.85 - d); this.pos.z += dz / d * (0.85 - d); }
     }
-    if (A === 'dying') return this.dieKind === 'fwd' ? BROKEN : FALLBACK;
-    if (A === 'broken') { const p = BROKEN.slice(); p[6] += Math.sin(this.time * 1.7) * .07; p[8] += Math.sin(this.time * 2.6) * .12; p[12] += Math.sin(this.time * 2.2) * .02; return p; }
-    if (A === 'victory') return VICTORY;
-    return this.ikW < 0.5 ? RUN : GUARD;
+    bounds(this.pos, 0.45);
+    this.sfxEvents();
   }
-  aim(bone, child, target) {
-    const bp = bone.getWorldPosition(new V3()), cp = child.getWorldPosition(new V3());
-    const q = new Q().setFromUnitVectors(cp.sub(bp).normalize(), target.clone().sub(bp).normalize());
-    const bw = bone.getWorldQuaternion(new Q()); const pw = bone.parent.getWorldQuaternion(new Q());
-    bone.quaternion.copy(pw.invert().multiply(q.multiply(bw))); bone.updateMatrixWorld(true);
-  }
-  rotW(bone, qw) {
-    const bw = bone.getWorldQuaternion(new Q()), pw = bone.parent.getWorldQuaternion(new Q());
-    bone.quaternion.copy(pw.invert().multiply(qw.clone().multiply(bw))); bone.updateMatrixWorld(true);
-  }
-  setWorldQ(bone, qw) { const pw = bone.parent.getWorldQuaternion(new Q()); bone.quaternion.copy(pw.invert().multiply(qw)); bone.updateMatrixWorld(true); }
-  ik2(a, f, h, l1, l2, T, pole) {
-    const S = a.getWorldPosition(new V3()), d = T.clone().sub(S); let dist = d.length(); d.divideScalar(Math.max(dist, 1e-4));
-    dist = clamp(dist, Math.abs(l1 - l2) + 0.02, l1 + l2 - 0.01); const Tc = S.clone().addScaledVector(d, dist);
-    const aa = (l1 * l1 - l2 * l2 + dist * dist) / (2 * dist), hh = Math.sqrt(Math.max(0, l1 * l1 - aa * aa));
-    const p = pole.clone().addScaledVector(d, -pole.dot(d)).normalize();
-    const E = S.clone().addScaledVector(d, aa).addScaledVector(p, hh);
-    this.aim(a, f, E); this.aim(f, h, Tc);
-  }
-  pose(dt) {
-    const A = this.act, attack = isAttack(A);
-    // blend weight for foot-IK stance vs. locomotion clip legs
-    const ikT = (A === 'dodge' || A === 'dying' || (this.speed > 1.7 && (A === 'idle' || A === 'block'))) ? 0 : 1;
-    this.ikW += (ikT - this.ikW) * (1 - Math.exp(-10 * dt));
-    const tp = this.targetPose(), k = 1 - Math.exp(-(attack ? 38 : A === 'parried' || A === 'stagger' ? 30 : 13) * dt);
-    for (let i = 0; i < 19; i++) this.cur[i] += (tp[i] - this.cur[i]) * k;
-    const c = this.cur.slice(), j = this.jolt;     // hit/block jolt: shove the body back
-    c[10] -= .3 * j; c[6] -= .28 * j; c[0] -= .22 * j; c[5] += .25 * j; c[12] += .06 * j;
-    // katana inertia: hand/blade targets go through a lightly under-damped spring (overshoot on swing end = follow-through)
-    if (!this.spInit) { for (let i = 0; i < 6; i++) { this.spX[i] = c[i]; this.spV[i] = 0; } this.spInit = true; }
-    for (let s = 0, h = Math.min(dt, 0.05) / 3; s < 3; s++) for (let i = 0; i < 6; i++) { this.spV[i] += (c[i] - this.spX[i]) * 1500 * h; this.spV[i] *= Math.exp(-46 * h); this.spX[i] += this.spV[i] * h; }
-    for (let i = 0; i < 6; i++) c[i] = this.spX[i];
-    const F = new V3(Math.sin(this.yaw), 0, Math.cos(this.yaw)), R = new V3(-Math.cos(this.yaw), 0, Math.sin(this.yaw));
-    const sf = this.scaleF || 1, toW = (f, r, u) => new V3().addScaledVector(F, f * sf).addScaledVector(R, r * sf).addScaledVector(UP, u * sf);
-    const dead = this.act === 'dying' && this.fall > 0.3;
-    if (dead) { this.katanaDrop(); return; }
-    // hips twist then legs (foot IK planted in world space)
-    this.rotW(this.b.hips, new Q().setFromAxisAngle(UP, c[9]));
-    const w = this.ikW;
-    if (w > 0.02) for (const side of ['r', 'l']) {
-      const L = this.leg[side], bones = [L.u, L.k, L.f], orig = bones.map(b => b.quaternion.clone());
-      const ft = side === 'r' ? [c[13], c[14], c[15]] : [c[16], c[17], c[18]];
-      const T = this.pos.clone().addScaledVector(F, ft[0] * sf).addScaledVector(R, ft[1] * sf); T.y = (this.ankleH + ft[2]) * sf;
-      this.ik2(L.u, L.k, L.f, L.l1 * sf, L.l2 * sf, T, F.clone().addScaledVector(R, side === 'r' ? .3 : -.3));
-      this.setWorldQ(L.f, new Q().setFromAxisAngle(UP, this.yaw).multiply(L.bind));
-      if (w < 0.99) { bones.forEach((b, i) => { const q = b.quaternion.clone(); b.quaternion.slerpQuaternions(orig[i], q, w); }); L.u.updateMatrixWorld(true); }
+
+  // blade sweep vs. opponent capsule, plus a little forgiveness ("magnetism") at the heart of the swing
+  hitCheck(m, opp, toOpp, dist) {
+    if (this.hitDone || !opp || opp.dead || !toOpp) return;
+    if (this.t < m.hit[0] || this.t > m.hit[1]) return;
+    let hit = false;
+    if (this.act === 'deathblow') hit = true;
+    else {
+      const base = this.bladeBase, tip = this.bladeTip;
+      if (base && tip) {
+        const r = 0.42, a = new V3(opp.pos.x, 0.25, opp.pos.z), b = new V3(opp.pos.x, 1.75, opp.pos.z);
+        for (let s = 0; s <= 1; s += 0.25) { const p = base.clone().lerp(tip, s); if (segPointDist(a, b, p) < r) { hit = true; break; } }
+      }
+      const mid = (m.hit[0] + m.hit[1]) / 2;
+      if (!hit && this.t >= mid && dist < m.range && this.fwd.dot(toOpp) > 0.55) hit = true;
     }
-    // torso: lean (pitch), twist (yaw), side bend (roll) spread over the spine
-    this.b.sp.forEach((s, i) => {
-      const sh = [0.3, 0.35, 0.35][i];
-      const q = new Q().setFromAxisAngle(UP, c[7] * sh).multiply(new Q().setFromAxisAngle(R.clone().negate(), c[6] * sh)).multiply(new Q().setFromAxisAngle(F, c[8] * sh));
-      this.rotW(s, q);
-    });
-    // head keeps looking at the opponent
-    if (this.opp && !this.opp.dead && this.act !== 'dying') {
-      const want = Math.atan2(this.opp.pos.x - this.pos.x, this.opp.pos.z - this.pos.z), cur = this.yaw + c[9] * 0.6 + c[7];
-      this.rotW(this.b.head, new Q().setFromAxisAngle(UP, clamp(angDiff(cur, want), -0.8, 0.8) * 0.8));
+    if (hit) { this.hitDone = true; this.onStrike && this.onStrike(this, this.act); }
+  }
+
+  // ================= animation =================
+  animate(dt) {
+    const L = LIB; if (!L) return;
+    const md = this.moveDef;
+    // ---- full-body layer ----
+    let topClip = null, ct = 0;
+    if (md && this.act !== 'idle') {
+      [topClip, ct] = sample(md, this.t);
+      if (this.act === 'guardBreak' && this.t > md.segs[0][3] && this.t < md.segs[0][3] + md.segs[1][3]) ct += Math.sin(this.time * 2.3) * 0.015;   // stagger sway
     }
-    // arms (two-bone IK) holding the katana
-    const Rp = this.pos.clone().add(toW(c[0], c[1], c[2])).add(toW(c[10], c[11], -c[12]));
-    const blade = toW(c[3], c[4], c[5]).normalize();
-    const Lp = Rp.clone().addScaledVector(blade, -0.19 * sf).addScaledVector(R, -0.02);
-    this.ik2(this.b.rs, this.b.rf, this.b.rh, this.len.r1 * sf, this.len.r2 * sf, Rp, R.clone().multiplyScalar(0.7).addScaledVector(UP, -0.8));
-    this.ik2(this.b.ls, this.b.lf, this.b.lh, this.len.l1 * sf, this.len.l2 * sf, Lp, R.clone().multiplyScalar(-0.7).addScaledVector(UP, -0.8));
-    const hint = Math.abs(blade.y) > 0.9 ? F : UP, m = new THREE.Matrix4().lookAt(new V3(), blade.clone().negate(), hint);
-    this.katana.quaternion.setFromRotationMatrix(m); this.katana.position.copy(Rp);
-    this.katana.updateMatrixWorld(true);
-    const swinging = attack && this.t >= ACT[A].hit[0] - 0.08 && this.t <= ACT[A].hit[1] + 0.16;
-    this.trail.power = A === 'heavy' ? 1.5 : 1;
-    if (swinging || this.trail.pts.length) {
-      if (swinging) this.trail.push(this.katana.localToWorld(new V3(0, 0, 0.8)), this.katana.localToWorld(new V3(0, 0, 0.45)));
-      this.trail.update(swinging);
+    const fade = MOVES[this.act] ? 0.07 : this.act === 'die' || this.act === 'dieFwd' ? 0.18 : 0.1;
+    if (topClip) {
+      const a = this.action(L.all[topClip]); a.time = Math.min(ct, a.getClip().duration - 1e-4);
+      let e = this.full.find(e => e.a === a); if (!e) { e = { a, w: 0 }; this.full.push(e); }
+      this.full.splice(this.full.indexOf(e), 1); this.full.push(e);
+    }
+    const n = this.full.length;
+    for (let i = 0; i < n; i++) { const e = this.full[i], top = topClip && i === n - 1; e.w = top ? Math.min(1, e.w + dt / fade) : Math.max(0, e.w - dt / (MOVES[this.act] ? 0.07 : 0.16)); }
+    this.full = this.full.filter(e => { if (e.w <= 0.001) { e.a.setEffectiveWeight(0); return false; } return true; });
+    let fullW = 0; for (const e of this.full) fullW += e.w;
+    const k = fullW > 1 ? 1 / fullW : 1; for (const e of this.full) e.a.setEffectiveWeight(e.w * k); fullW = Math.min(1, fullW);
+    const baseW = 1 - fullW;
+    // ---- locomotion (lower body) ----
+    const v = this.locoV, f = this.fwd, r = new V3(f.z, 0, -f.x);   // r = character left
+    const vf = v.dot(f), vl = v.dot(r), s = Math.hypot(vf, vl);
+    const jogK = clamp((s - 1.3) / 1.4, 0, 1), sprintK = clamp((s - 4.2) / 1.0, 0, 1) * clamp(vf / Math.max(s, 1e-3), 0, 1);
+    const moveK = clamp(s / 0.45, 0, 1);
+    const dirW = s > 1e-3 ? { F: Math.max(0, vf) / (Math.abs(vf) + Math.abs(vl)), B: Math.max(0, -vf) / (Math.abs(vf) + Math.abs(vl)), L: Math.max(0, vl) / (Math.abs(vf) + Math.abs(vl)), R: Math.max(0, -vl) / (Math.abs(vf) + Math.abs(vl)) } : { F: 0, B: 0, L: 0, R: 0 };
+    let natural = 0; for (const d of 'FBLR') natural += dirW[d] * (WALK[d][1] * (1 - jogK) + JOG[d][1] * jogK);
+    natural = natural * (1 - sprintK) + 5.6 * sprintK;
+    const cycle = 1.3 * (1 - jogK) + 0.93 * jogK;
+    this.phase = (this.phase + dt * (s > 0.05 ? clamp(s / Math.max(natural, 0.5), 0.6, 1.6) : 0) / (sprintK > 0.5 ? 0.67 : cycle)) % 1;
+    const setLo = (name, w) => { const a = this.action(L.lo[name]); a.time = (this.phase * a.getClip().duration) % a.getClip().duration; a.setEffectiveWeight(w * baseW); };
+    const idleW = 1 - moveK;
+    setLo('Sword_Regular_A', idleW * 0.55); this.action(L.lo.Sword_Regular_A).time = 0;
+    setLo('Sword_Idle', idleW * 0.45); this.action(L.lo.Sword_Idle).time = (this.time * 0.6) % 1.6;
+    for (const d of 'FBLR') { setLo(WALK[d][0], moveK * (1 - jogK) * dirW[d] * (1 - sprintK)); setLo(JOG[d][0], moveK * jogK * dirW[d] * (1 - sprintK)); }
+    setLo('Sprint_Loop', moveK * sprintK);
+    // ---- upper body: guard stance / block / running arms ----
+    const U = this.uw, want = { stance: 1, block: 0, run: 0 };
+    if (this.guard && !this.dead) { want.block = 1; want.stance = 0; } else if (sprintK > 0.3) { want.run = 1; want.stance = 0; }
+    for (const kk in U) U[kk] += (want[kk] - U[kk]) * Math.min(1, dt * 14);
+    const us = U.stance + U.block + U.run || 1;
+    const up = (name, w, t) => { const a = this.action(L.up[name]); a.time = t; a.setEffectiveWeight(w / us * baseW); };
+    up('Sword_Regular_A', U.stance, 0); up('Sword_Block', U.block, 0.42); up('Sprint_Loop', U.run, (this.phase * 0.67) % 0.67);
+    this.mixer.update(0);
+    this.procedural(dt, baseW);
+    this.model.updateMatrixWorld(true);
+    this.attachSword(dt);
+    // cloth tails
+    const sideV = new V3(), wind = new V3(-this.locoV.x * 6 - this.vel.x * 4 + 0.6, 0, -this.locoV.z * 6 - this.vel.z * 4 + 0.3);
+    this.colliders[0].c.copy(this.chest); this.colliders[1].c.copy(this.b.pelvis.getWorldPosition(new V3())).y += 0.05;
+    for (const ro of this.gear.ropes) {
+      const ap = ro.anchor.getWorldPosition(new V3()); sideV.set(1, 0, 0).applyQuaternion(ro.sideBone.getWorldQuaternion(new Q())).normalize();
+      ro.rope.update(dt, ap, sideV, wind);
     }
   }
-  katanaDrop() {
-    const F = new V3(Math.sin(this.yaw), 0, Math.cos(this.yaw));
-    this.katana.position.set(this.pos.x + F.x * 0.5 + F.z * 0.4, 0.03, this.pos.z + F.z * 0.5 - F.x * 0.4);
-    this.katana.quaternion.setFromAxisAngle(UP, this.yaw + 1.3);
-    this.trail.update(false);
+
+  // two-bone arm IK: drive the sword hand to a point with the blade aimed along dir (thrusts, deathblow)
+  armIK(target, dir, w) {
+    if (w <= 0.001) return;
+    const ua = this.b.uarm, la = this.b.farm, h = this.b.hand;
+    this.model.updateMatrixWorld(true);
+    const orig = [ua.quaternion.clone(), la.quaternion.clone(), h.quaternion.clone()];
+    const wp = o => o.getWorldPosition(new V3());
+    const S = wp(ua), l1 = S.distanceTo(wp(la)), l2 = wp(la).distanceTo(wp(h));
+    const d = target.clone().sub(S); let dist = d.length(); d.divideScalar(Math.max(dist, 1e-4));
+    dist = clamp(dist, Math.abs(l1 - l2) + 0.02, l1 + l2 - 0.005); const Tc = S.clone().addScaledVector(d, dist);
+    const a = (l1 * l1 - l2 * l2 + dist * dist) / (2 * dist), hh = Math.sqrt(Math.max(0, l1 * l1 - a * a));
+    const right = new V3(-Math.cos(this.yaw), 0, Math.sin(this.yaw));
+    const pole = right.clone().multiplyScalar(0.6).add(new V3(0, -1, 0)); pole.addScaledVector(d, -pole.dot(d)).normalize();
+    const E = S.clone().addScaledVector(d, a).addScaledVector(pole, hh);
+    const aim = (bone, child, to) => { const bp = wp(bone), cp = wp(child); const q = new Q().setFromUnitVectors(cp.sub(bp).normalize(), to.clone().sub(bp).normalize());
+      const bw = bone.getWorldQuaternion(new Q()), pw = bone.parent.getWorldQuaternion(new Q()); bone.quaternion.copy(pw.invert().multiply(q.multiply(bw))); bone.updateMatrixWorld(true); };
+    aim(ua, la, E); aim(la, h, Tc);
+    const hq = h.getWorldQuaternion(new Q()), z = new V3(0, 0, 1).applyQuaternion(hq);
+    const nq = new Q().setFromUnitVectors(z, dir.clone().normalize()).multiply(hq), pw = h.parent.getWorldQuaternion(new Q());
+    h.quaternion.copy(pw.invert().multiply(nq));
+    if (w < 0.999) [ua, la, h].forEach((b, i) => { const q = b.quaternion.clone(); b.quaternion.copy(orig[i]).slerp(q, w); });
+    this.model.updateMatrixWorld(true);
   }
-  dispose() { this.scene.remove(this.group, this.katana); this.trail.dispose(); }
+  thrustIK() {
+    const A = this.act; if (A !== 'thrust' && A !== 'deathblow') return;
+    const m = MOVES[A], t = this.t;
+    const w = A === 'deathblow' ? (t < 0.55 ? 0 : t < 0.72 ? smooth((t - 0.55) / 0.17) : t < 1.35 ? 1 : t < 1.7 ? 1 - smooth((t - 1.35) / 0.35) : 0)
+      : (t < m.hit[0] - 0.1 ? 0 : t < m.hit[0] ? smooth((t - m.hit[0] + 0.1) / 0.1) : t < m.hit[1] + 0.15 ? 1 : t < m.hit[1] + 0.4 ? 1 - smooth((t - m.hit[1] - 0.15) / 0.25) : 0);
+    if (w <= 0) return;
+    const sh = this.b.uarm.getWorldPosition(new V3()), o = this.opp;
+    const aimP = o ? o.chest.clone() : sh.clone().addScaledVector(this.fwd, 2);
+    if (A === 'deathblow' && o) aimP.y = o.chest.y - 0.05;
+    const dir = aimP.clone().sub(sh); dir.y = clamp(dir.y, -0.4, 0.15); dir.normalize();
+    let hand;
+    if (A === 'deathblow' && o) hand = aimP.clone().addScaledVector(dir, -0.5);
+    else hand = sh.clone().addScaledVector(dir, 0.62).add(new V3(0, -0.04, 0));
+    this.armIK(hand, dir, w);
+  }
+
+  procedural(dt, baseW) {
+    this.thrustIK();
+    const tw = (bone, axis, ang) => { if (Math.abs(ang) > 1e-4) bone.quaternion.multiply(new Q().setFromAxisAngle(axis, ang)); };
+    // breathing + idle sway (only under the guard pose)
+    const br = Math.sin(this.time * 2.1) * 0.02 * baseW;
+    tw(this.b.sp2, new V3(1, 0, 0), br); tw(this.b.sp3, new V3(1, 0, 0), br * 0.6);
+    // impact jolt: thrown back + twisted
+    const j = smooth(Math.min(1, this.jolt));
+    if (j > 0) { tw(this.b.sp1, new V3(1, 0, 0), -0.18 * j); tw(this.b.sp2, new V3(1, 0, 0), -0.22 * j); tw(this.b.sp2, new V3(0, 1, 0), 0.25 * j * this.joltDir); tw(this.b.head, new V3(1, 0, 0), -0.3 * j); }
+    // head tracks the opponent
+    if (this.opp && !this.dead && this.act !== 'revive') {
+      const want = Math.atan2(this.opp.pos.x - this.pos.x, this.opp.pos.z - this.pos.z), d = clamp(angDiff(this.yaw + this.visYaw, want), -0.9, 0.9);
+      const bw = MOVES[this.act] ? 0.35 : 0.7;
+      const hq = this.b.head.getWorldQuaternion(new Q()), axis = UP.clone().applyQuaternion(hq.invert());
+      this.b.head.quaternion.multiply(new Q().setFromAxisAngle(axis, d * bw));
+    }
+  }
+
+  attachSword(dt) {
+    const K = this.katana;
+    // draw / sheathe: swap the katana between saya and hand when the hand reaches the scabbard mouth
+    if (this.act === 'draw' || this.act === 'sheathe') {
+      const hd = this.b.hand.getWorldPosition(new V3()).distanceTo(this.saya.getWorldPosition(new V3()));
+      if (this.act === 'draw' && this.sheathed && this.t > 0.25 && (hd < 0.2 || this.t > 0.7)) { this.sheathed = false; sfx.draw(); }
+      if (this.act === 'sheathe' && !this.sheathed && this.t > 0.55 && (hd < 0.2 || this.t > 1.05)) { this.sheathed = true; sfx.sheathe(); }
+    }
+    if (this.sheathed) { this.saya.updateMatrixWorld(true); this.saya.matrixWorld.decompose(K.position, K.quaternion, new V3()); K.scale.setScalar(this.scaleF); }
+    else {
+      const h = this.b.hand, hp = h.getWorldPosition(new V3()), hq = h.getWorldQuaternion(new Q());
+      const ax = new V3(this.edgeSign, 0, 0).applyQuaternion(hq), az = new V3(0, 0, 1).applyQuaternion(hq), ay = new V3(0, 1, 0).applyQuaternion(hq);
+      K.quaternion.copy(hq).multiply(this.gripQ);
+      K.position.copy(hp).addScaledVector(ax, 0.085 * this.scaleF).addScaledVector(ay, -0.012 * this.scaleF).addScaledVector(az, 0.07 * this.scaleF);
+      K.scale.setScalar(this.scaleF);
+    }
+    K.updateMatrixWorld(true);
+    const base = new V3(0, 0, 0.12).applyMatrix4(K.matrixWorld), tip = new V3(0, -0.02, 0.76).applyMatrix4(K.matrixWorld);
+    this.bladeBase = base; this.bladeTip = tip;
+    // slash trail during the active swing (sub-sampled between frames for a smooth arc)
+    const m = MOVES[this.act], swinging = m && this.t >= m.hit[0] - 0.07 && this.t <= m.hit[1] + 0.05;
+    if (swinging) {
+      if (this.tipPrev) for (let s = 1; s <= 3; s++) { const u = s / 3; const b = this.basePrev.clone().lerp(base, u), pv = this.tipPrev.clone().sub(this.basePrev), cv = tip.clone().sub(base); const len = pv.length() * (1 - u) + cv.length() * u; const dir = pv.normalize().lerp(cv.normalize(), u).normalize(); this.trail.push(b, b.clone().addScaledVector(dir, len)); }
+      else this.trail.push(base, tip);
+      this.trail.power = m.heavy || m.kind === 'thrust' ? 1.4 : 1; this.trail.red = m.perilous;
+    }
+    this.trail.update(dt, swinging);
+    this.tipPrev = tip.clone(); this.basePrev = base.clone();
+  }
+
+  restyle(color, scale = 1) {
+    for (const m of this.gear.tint) m.color.set(color);
+    this.group.scale.setScalar(scale); this.scaleF = scale;
+  }
+  dispose() { this.scene.remove(this.group, this.katana); this.trail.dispose(); for (const r of this.gear.ropes) r.rope.dispose(this.scene); }
 }
+
+function segPointDist(a, b, p) { const ab = b.clone().sub(a), t = clamp(p.clone().sub(a).dot(ab) / ab.lengthSq(), 0, 1); return a.clone().addScaledVector(ab, t).distanceTo(p); }

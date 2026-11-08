@@ -17,6 +17,7 @@ function start(port, opts = {}) {
       app.use('/vendor/addons', express.static(path.join(opts.threeDir, 'examples/jsm')));
     }
   }
+  if (opts.extend) opts.extend(app);
   app.get('/health', (q, r) => r.send('ok'));
   app.get('/info', (q, r) => { r.set('Access-Control-Allow-Origin', '*'); r.json({ ips: lanIps(), port: srv.address().port }); });
   const srv = http.createServer(app);
