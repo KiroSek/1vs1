@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Katana Duel</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="style.css">
+<script type="importmap">{"imports":{"three":"/vendor/three/three.module.js","three/addons/":"/vendor/addons/"}}</script>
+</head><body>
+<canvas id="c"></canvas>
+<div id="vignette"></div>
+
+<div id="hud" class="hidden">
+  <div class="bars top" id="oppBars"><div class="nm"><span id="oppName">ENEMY</span><span class="lives" id="oppLives"><i></i><i></i></span></div>
+    <div class="posture"><i id="oppPost"></i></div><div class="hp"><b id="oppHpTrail"></b><i id="oppHp"></i></div></div>
+  <div class="bars bottom"><div class="nm"><span id="meName">YOU</span><span class="lives" id="meLives"><i></i><i></i></span></div>
+    <div class="posture"><i id="mePost"></i></div><div class="hp"><b id="meHpTrail"></b><i id="meHp"></i></div></div>
+  <div id="lock"></div><div id="fin"><b>忍殺</b><span>F</span></div><div id="flash"></div>
+  <div id="banner"></div>
+  <div id="hint"></div>
+  <div id="count"></div>
+</div>
+
+<div id="menu" class="screen">
+  <div class="title"><span class="seal">剣</span><h1>KATANA<br>DUEL</h1><p>Posture · Parry · Deathblow</p></div>
+  <div class="list" id="mainList">
+    <button data-go="gauntlet">Gauntlet<small>run · bosses · upgrades</small></button>
+    <button data-go="ai">Duel the Blade<small>vs AI</small></button>
+    <button data-go="online">Online Duel<small>room code · LAN · web</small></button>
+    <button data-go="training">Training Dojo</button>
+    <button data-go="settings">Settings</button>
+    <button data-go="quit">Quit</button>
+  </div>
+  <div class="foot">F11 fullscreen</div><div class="rec" id="rec"></div>
+</div>
+
+<div id="intro" class="screen hidden"><div class="introbox"><div id="inStage"></div><h1 id="inName"></h1><p id="inLine"></p><small>click to skip</small></div></div>
+<div id="perks" class="screen hidden"><div class="panel"><h2>Choose an upgrade</h2><div id="perkList"></div><div id="perkHave" class="msg"></div></div></div>
+<div id="fps"></div>
+
+<div id="online" class="screen hidden"><div class="panel">
+  <h2>Online Duel</h2>
+  <div class="row"><button id="btnHost" class="big">Create Room</button></div>
+  <div class="row split"><input id="joinCode" maxlength="4" placeholder="CODE" autocomplete="off"><button id="btnJoin" class="big">Join Room</button></div>
+  <label>Server address <small>(empty = this PC; LAN: host's IP:port; internet: your relay server)</small></label>
+  <input id="serverUrl" placeholder="http://192.168.1.10:3000">
+  <div id="onMsg" class="msg"></div>
+  <div id="lobby" class="hidden"><div class="code" id="roomCode"></div><div id="lanInfo" class="msg"></div><div class="msg">Waiting for opponent…</div></div>
+  <button class="back" data-go="menu">Back</button>
+</div></div>
+
+<div id="settings" class="screen hidden"><div class="panel">
+  <h2>Settings</h2>
+  <label>Graphics quality</label>
+  <select id="sQuality"><option value="auto">Auto (recommended)</option><option value="low">Low (laptops)</option><option value="med">Medium</option><option value="high">High</option></select>
+  <label>AI difficulty</label>
+  <select id="sDiff"><option value="0">Novice</option><option value="1">Ronin</option><option value="2">Master</option></select>
+  <label>Mouse sensitivity <span id="vSens"></span></label><input type="range" id="sSens" min="0.3" max="3" step="0.1">
+  <label>Volume <span id="vVol"></span></label><input type="range" id="sVol" min="0" max="1" step="0.05">
+  <label class="chk"><input type="checkbox" id="sInvert"> Invert camera Y</label>
+  <label class="chk"><input type="checkbox" id="sFps"> Show FPS / render scale</label>
+  <label>Controls</label>
+  <div class="keys"><b>WASD</b> move <b>Shift</b> sprint <b>Mouse</b> camera <b>Q</b> lock-on <b>LMB</b> quick attack <b>E</b> heavy attack
+  <b>RMB / C</b> block (tap right before a hit = Perfect Parry) <b>Space</b> dodge <b>F</b> deathblow <b>Esc</b> pause</div>
+  <button class="back" data-go="menu">Back</button>
+</div></div>
+
+<div id="pause" class="screen hidden"><div class="panel narrow"><h2>Paused</h2>
+  <button class="big" id="bResume">Resume</button><button class="big" id="bQuitMatch">Leave Duel</button></div></div>
+
+<div id="result" class="screen hidden"><div class="panel narrow"><div id="resBig"></div><div id="resSub"></div>
+  <button class="big" id="bRematch">Rematch</button><button class="big" id="bResMenu">Main Menu</button></div></div>
+
+<div id="loading"><div>Loading…</div></div>
+<script src="/socket.io/socket.io.js"></script>
+<script type="module" src="js/main.js"></script>
+</body></html>
+

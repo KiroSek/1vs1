@@ -53,5 +53,5 @@ module.exports = { start, lanIps };
 
 if (require.main === module) {
   const port = +process.env.PORT || 3000;
-  start(port, { strict: true }).then(p => console.log('Katana Duel relay server on port ' + p));
+  start(port, { strict: true, staticDir: path.join(__dirname, 'app') }).then(p => console.log('Katana Duel relay server on port ' + p));
 }
