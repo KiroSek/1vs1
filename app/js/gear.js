@@ -52,16 +52,71 @@ function textures() {
   return TEX;
 }
 
-// ---------------- katana ----------------
+// ---------------- weapons (cosmetic only: identical length, reach, damage and timing) ----------------
+export const WEAPONS = {
+  standard: { name: 'Kusabimaru', desc: 'Plain steel, black iron fittings.', price: 0, blade: 'steel', fit: 0x232026, fitMetal: 0.85, wrap: '#16141a', same: '#e9e2d0', saya: 0x0c0b0e, trail: 0xdfe8ff, tsuba: 'round' },
+  kuro: { name: 'Kuro-gane', desc: 'Blackened blade, oxblood wrap.', price: 400, blade: 'black', fit: 0x0d0d10, fitMetal: 0.7, wrap: '#4a0e10', same: '#1c1c20', saya: 0x050506, trail: 0xc0c8d8, tsuba: 'square' },
+  crimson: { name: 'Crimson Moon', desc: 'Blood-red steel with a glowing temper line.', price: 900, blade: 'red', glow: 0xff2a14, fit: 0x120b0b, fitMetal: 0.7, wrap: '#7a0c10', same: '#1a1214', saya: 0x4a0505, trail: 0xff5040, tsuba: 'flower' },
+  gilded: { name: 'Gilded Lotus', desc: 'Gold fittings and a gold-leaf scabbard.', price: 1200, blade: 'steel', fit: 0xd0a248, fitMetal: 1, wrap: '#f0e2c0', same: '#2a1e10', saya: 0x8a6420, trail: 0xffd27a, tsuba: 'flower' },
+  frost: { name: 'Frostbite', desc: 'Ice-pale blade that glows cold.', price: 1800, blade: 'ice', glow: 0x6ad0ff, fit: 0xc0c6cc, fitMetal: 1, wrap: '#1c3a5a', same: '#dfe8f0', saya: 0xd8e2ea, trail: 0x8ae0ff, tsuba: 'round' },
+  mortal: { name: 'Mortal Edge', desc: 'A cursed blade bleeding red light.', price: 3000, blade: 'mortal', glow: 0xff1010, fit: 0x0b0607, fitMetal: 0.6, wrap: '#1a0606', same: '#2a0a0a', saya: 0x120404, trail: 0xff2020, tsuba: 'square' },
+};
+const BLADES = {   // gradient spine->edge, hamon colour, shinogi line
+  steel: [['#5e646c', '#9aa2ac', '#b8bfc8', '#d9dee4'], 'rgba(245,248,252,.9)'],
+  black: [['#141518', '#26282d', '#34373d', '#4a4e55'], 'rgba(150,156,166,.75)'],
+  red: [['#2a0606', '#5a0c0c', '#7a1414', '#a02020'], 'rgba(255,120,100,.9)'],
+  ice: [['#7f9cb8', '#b8d4ea', '#d6ecfa', '#f2fbff'], 'rgba(255,255,255,.95)'],
+  mortal: [['#0b0606', '#1e0a0a', '#2c0c0c', '#400e0e'], 'rgba(255,40,30,.95)'],
+};
+const texCache = {};
+function bladeTex(kind) {
+  if (texCache['b' + kind]) return texCache['b' + kind];
+  const [g4, ham] = BLADES[kind] || BLADES.steel;
+  return texCache['b' + kind] = canvasTex(128, 512, (x, w, h) => {
+    const g = x.createLinearGradient(0, 0, w, 0); g.addColorStop(0, g4[0]); g.addColorStop(0.45, g4[1]); g.addColorStop(0.62, g4[2]); g.addColorStop(1, g4[3]);
+    x.fillStyle = g; x.fillRect(0, 0, w, h);
+    x.beginPath(); x.moveTo(w, 0);
+    for (let y = 0; y <= h; y += 4) x.lineTo(w * (0.7 + 0.06 * Math.sin(y * 0.09) + 0.03 * Math.sin(y * 0.31 + 1)), y);
+    x.lineTo(w, h); x.closePath(); x.fillStyle = ham; x.fill();
+    for (let i = 0; i < 400; i++) { x.fillStyle = `rgba(255,255,255,${rnd(.05, .2)})`; x.fillRect(w * rnd(.62, .8), rnd(0, h), 1, 1); }
+    if (kind === 'mortal') for (let i = 0; i < 26; i++) { x.strokeStyle = `rgba(255,30,20,${rnd(.3, .7)})`; x.lineWidth = rnd(1, 2); x.beginPath(); let px = rnd(0, w * 0.6), py = rnd(0, h); x.moveTo(px, py); for (let k = 0; k < 6; k++) { px += rnd(-8, 12); py += rnd(4, 16); x.lineTo(px, py); } x.stroke(); }
+    x.fillStyle = 'rgba(40,44,50,.5)'; x.fillRect(w * 0.44, 0, 1.5, h);
+  });
+}
+function edgeMask() {
+  return texCache.edge || (texCache.edge = canvasTex(64, 256, (x, w, h) => { const g = x.createLinearGradient(0, 0, w, 0); g.addColorStop(0, '#000'); g.addColorStop(0.62, '#000'); g.addColorStop(0.78, '#fff'); g.addColorStop(1, '#fff'); x.fillStyle = g; x.fillRect(0, 0, w, h); }, false));
+}
+function tsukaTex(wrap, same) {
+  const k = 't' + wrap + same; if (texCache[k]) return texCache[k];
+  return texCache[k] = canvasTex(64, 256, (x, w, h) => {
+    x.fillStyle = same; x.fillRect(0, 0, w, h);
+    for (let i = 0; i < 300; i++) { x.fillStyle = `rgba(128,128,128,${rnd(.15, .35)})`; x.beginPath(); x.arc(rnd(0, w), rnd(0, h), rnd(0.6, 1.6), 0, 6.3); x.fill(); }
+    x.fillStyle = wrap; const n = 8, p = h / n;
+    for (let i = 0; i < n; i++) { const y = i * p;
+      x.beginPath(); x.moveTo(0, y); x.lineTo(w / 2, y + p * .42); x.lineTo(0, y + p * .84); x.closePath(); x.fill();
+      x.beginPath(); x.moveTo(w, y + p * .16); x.lineTo(w / 2, y + p * .58); x.lineTo(w, y + p); x.closePath(); x.fill();
+      x.beginPath(); x.moveTo(0, y); x.lineTo(w, y); x.lineTo(w / 2, y + p * .42); x.closePath(); x.fill(); }
+  });
+}
+function tsubaShape(kind) {
+  const sh = new THREE.Shape(), R = 0.042;
+  if (kind === 'square') { const s = 0.038, r = 0.01; sh.moveTo(-s + r, -s); sh.lineTo(s - r, -s); sh.quadraticCurveTo(s, -s, s, -s + r); sh.lineTo(s, s - r); sh.quadraticCurveTo(s, s, s - r, s); sh.lineTo(-s + r, s); sh.quadraticCurveTo(-s, s, -s, s - r); sh.lineTo(-s, -s + r); sh.quadraticCurveTo(-s, -s, -s + r, -s); }
+  else if (kind === 'flower') { for (let i = 0; i <= 64; i++) { const a = i / 64 * Math.PI * 2, r = R * (0.86 + 0.14 * Math.abs(Math.cos(a * 2))); i ? sh.lineTo(Math.cos(a) * r, Math.sin(a) * r) : sh.moveTo(Math.cos(a) * r, Math.sin(a) * r); } }
+  else sh.absarc(0, 0, R, 0, Math.PI * 2, false);
+  const h1 = new THREE.Path(); h1.absellipse(0, 0, 0.007, 0.017, 0, Math.PI * 2, true); sh.holes.push(h1);
+  for (const sx of [-1, 1]) { const h = new THREE.Path(); h.absarc(sx * 0.024, -0.004, 0.006, 0, Math.PI * 2, true); sh.holes.push(h); }
+  return sh;
+}
+
 // local frame: blade along +Z (tsuba at z=0), edge toward +Y, flats face +-X. Grip from z=-0.27 to z=-0.01.
-export function makeKatana() {
-  const T = textures(), g = new THREE.Group();
+export function makeKatana(key = 'standard') {
+  const W0 = WEAPONS[key] || WEAPONS.standard, g = new THREE.Group();
   const L = 0.74, N = 40, W = 0.031, TH = 0.0075, SORI = 0.022;
   const pos = [], uv = [], idx = [];
   for (let i = 0; i <= N; i++) {
     const s = i / N, z = 0.012 + s * L;
     const taper = 1 - 0.28 * s, tip = s > 0.93 ? Math.max(0.0, 1 - (s - 0.93) / 0.07) : 1;
-    const w = W * taper, th = TH * taper * (0.4 + 0.6 * tip), curve = -SORI * s * s;     // curve bends the tip toward the spine (-Y)
+    const w = W * taper, th = TH * taper * (0.4 + 0.6 * tip), curve = -SORI * s * s;
     const edgeY = curve + w * 0.5 * (s > 0.93 ? 0.35 + 0.65 * tip : 1), spineY = curve - w * 0.5 * (s > 0.93 ? tip : 1), sideY = curve + w * 0.05;
     pos.push(0, spineY, z, th, sideY, z, 0, edgeY, z, -th, sideY, z);
     uv.push(0, s, 0.45, s, 1, s, 0.45, s);
@@ -70,42 +125,72 @@ export function makeKatana() {
   const tipI = pos.length / 3; pos.push(0, -SORI * 1.02 + W * 0.2, 0.012 + L + 0.008); uv.push(1, 1);
   const lb = N * 4; for (let k = 0; k < 4; k++) idx.push(lb + k, tipI, lb + (k + 1) % 4);
   const bg = new THREE.BufferGeometry(); bg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); bg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); bg.setIndex(idx); bg.computeVertexNormals();
-  const bladeMat = new THREE.MeshStandardMaterial({ map: T.blade, color: 0xffffff, metalness: 0.92, roughness: 0.22, envMapIntensity: 3.2, emissive: 0x1a2028, side: THREE.DoubleSide });
+  const glow = W0.glow !== undefined;
+  const bladeMat = new THREE.MeshStandardMaterial({ map: bladeTex(W0.blade), color: 0xffffff, metalness: W0.blade === 'ice' ? 0.7 : 0.92, roughness: 0.22, envMapIntensity: 3.2,
+    emissive: glow ? W0.glow : 0x1a2028, emissiveMap: glow ? edgeMask() : null, emissiveIntensity: glow ? 2.2 : 1, side: THREE.DoubleSide });
   const blade = new THREE.Mesh(bg, bladeMat); g.add(blade);
-  // habaki (gold collar)
+  const fit = new THREE.MeshStandardMaterial({ color: W0.fit, metalness: W0.fitMetal, roughness: 0.32 });
   const gold = new THREE.MeshStandardMaterial({ color: 0xc8a050, metalness: 1, roughness: 0.28 });
   const hab = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.036, 0.03), gold); hab.position.set(0, 0, 0.022); g.add(hab);
-  // tsuba: rounded square iron guard with two cut-outs
-  const sh = new THREE.Shape(); const R = 0.042; sh.absarc(0, 0, R, 0, Math.PI * 2, false);
-  const h1 = new THREE.Path(); h1.absellipse(0, 0, 0.007, 0.017, 0, Math.PI * 2, true); sh.holes.push(h1);
-  for (const sx of [-1, 1]) { const h = new THREE.Path(); h.absarc(sx * 0.024, -0.004, 0.007, 0, Math.PI * 2, true); sh.holes.push(h); }
-  const tg = new THREE.ExtrudeGeometry(sh, { depth: 0.006, bevelEnabled: true, bevelSize: 0.0015, bevelThickness: 0.0015, bevelSegments: 2, curveSegments: 24 }); tg.translate(0, 0, -0.003);
-  const tsuba = new THREE.Mesh(tg, new THREE.MeshStandardMaterial({ color: 0x232026, metalness: 0.85, roughness: 0.42 })); tsuba.rotation.z = Math.PI / 2; tsuba.scale.set(1, 1.18, 1); g.add(tsuba);
-  // tsuka (handle): oval section with ito wrap
+  const tg = new THREE.ExtrudeGeometry(tsubaShape(W0.tsuba), { depth: 0.006, bevelEnabled: true, bevelSize: 0.0015, bevelThickness: 0.0015, bevelSegments: 2, curveSegments: 24 }); tg.translate(0, 0, -0.003);
+  const tsuba = new THREE.Mesh(tg, fit); tsuba.rotation.z = Math.PI / 2; tsuba.scale.set(1, 1.18, 1); g.add(tsuba);
   const tsg = new THREE.CylinderGeometry(0.0145, 0.016, 0.255, 14, 1, true); tsg.rotateX(Math.PI / 2); tsg.scale(0.8, 1, 1); tsg.translate(0, 0, -0.135);
-  const tsMat = new THREE.MeshStandardMaterial({ map: T.tsuka, roughness: 0.85 }); tsMat.map.repeat.set(1, 1);
-  g.add(new THREE.Mesh(tsg, tsMat));
-  const fuchi = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.017, 0.012, 14).rotateX(Math.PI / 2).scale(0.82, 1, 1), new THREE.MeshStandardMaterial({ color: 0x1b1a1e, metalness: 0.8, roughness: 0.35 })); fuchi.position.z = -0.01; g.add(fuchi);
-  const kashira = new THREE.Mesh(new THREE.SphereGeometry(0.016, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2).rotateX(-Math.PI / 2).scale(0.82, 1, 0.7), new THREE.MeshStandardMaterial({ color: 0x1b1a1e, metalness: 0.8, roughness: 0.35 })); kashira.position.z = -0.264; g.add(kashira);
+  g.add(new THREE.Mesh(tsg, new THREE.MeshStandardMaterial({ map: tsukaTex(W0.wrap, W0.same), roughness: 0.85 })));
+  const fuchi = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.017, 0.012, 14).rotateX(Math.PI / 2).scale(0.82, 1, 1), fit); fuchi.position.z = -0.01; g.add(fuchi);
+  const kashira = new THREE.Mesh(new THREE.SphereGeometry(0.016, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2).rotateX(-Math.PI / 2).scale(0.82, 1, 0.7), fit); kashira.position.z = -0.264; g.add(kashira);
   for (const sx of [-1, 1]) { const m = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.008, 0.024), gold); m.position.set(sx * 0.012, 0, -0.12); g.add(m); }
   g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = false; } });
-  g.userData = { blade, bladeMat, len: L };
+  g.userData = { blade, bladeMat, len: L, trail: W0.trail };
   return g;
 }
 // saya (scabbard), same local frame: mouth at z=0, extends along +Z
-export function makeSaya(color = 0x0c0b0e) {
-  const g = new THREE.Group();
-  const pts = []; for (let i = 0; i <= 12; i++) { const s = i / 12; pts.push(new V3(0, -0.022 * s * s, s * 0.8)); }
-  const curve = new THREE.CatmullRomCurve3(pts);
-  const tube = new THREE.TubeGeometry(curve, 24, 0.017, 10, false); tube.scale(0.75, 1.2, 1);
-  const lac = new THREE.MeshPhysicalMaterial({ color, roughness: 0.22, metalness: 0.1, clearcoat: 1, clearcoatRoughness: 0.12 });
-  g.add(new THREE.Mesh(tube, lac));
-  const horn = new THREE.MeshStandardMaterial({ color: 0x2a2420, roughness: 0.5 });
-  const kojiri = new THREE.Mesh(new THREE.SphereGeometry(0.019, 10, 6).scale(0.75, 1.2, 1.1), horn); kojiri.position.copy(pts[12]); g.add(kojiri);
-  const koi = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.02, 12).rotateX(Math.PI / 2).scale(0.75, 1.2, 1), horn); koi.position.z = 0.01; g.add(koi);
-  const cord = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.005, 6, 16), new THREE.MeshStandardMaterial({ color: 0x5a2a7a, roughness: 0.9 })); cord.position.set(0, 0.02, 0.12); cord.rotation.y = Math.PI / 2; g.add(cord);
+export function makeSaya(key = 'standard', len = 0.8) {
+  const W0 = WEAPONS[key] || WEAPONS.standard, g = new THREE.Group();
+  const pts = []; for (let i = 0; i <= 12; i++) { const s = i / 12; pts.push(new V3(0, -0.022 * s * s * len / 0.8, s * len)); }
+  const tube = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 24, 0.017, 10, false); tube.scale(0.75, 1.2, 1);
+  const gilt = key === 'gilded';
+  g.add(new THREE.Mesh(tube, new THREE.MeshPhysicalMaterial({ color: W0.saya, roughness: gilt ? 0.3 : 0.22, metalness: gilt ? 0.8 : 0.1, clearcoat: 1, clearcoatRoughness: 0.12 })));
+  const fit = new THREE.MeshStandardMaterial({ color: W0.fit, metalness: W0.fitMetal, roughness: 0.35 });
+  const kojiri = new THREE.Mesh(new THREE.SphereGeometry(0.019, 10, 6).scale(0.75, 1.2, 1.1), fit); kojiri.position.copy(pts[12]); g.add(kojiri);
+  const koi = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.02, 12).rotateX(Math.PI / 2).scale(0.75, 1.2, 1), fit); koi.position.z = 0.01; g.add(koi);
+  const cord = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.005, 6, 16), new THREE.MeshStandardMaterial({ color: 0x5a2a7a, roughness: 0.9 })); cord.position.set(0, 0.02, 0.12 * len / 0.8); cord.rotation.y = Math.PI / 2; g.add(cord);
   g.traverse(o => { if (o.isMesh) o.castShadow = true; });
   return g;
+}
+
+// ---------------- armour textures (UVs come from a planar projection of the bind pose) ----------------
+function lamellar(base, lace, edge, rows = 7, cols = 8) {
+  const k = 'l' + base + lace + edge + rows; if (texCache[k]) return texCache[k];
+  return texCache[k] = canvasTex(256, 256, (x, w, h) => {
+    x.fillStyle = base; x.fillRect(0, 0, w, h);
+    const rh = h / rows;
+    for (let r = 0; r < rows; r++) { const y = r * rh, gr = x.createLinearGradient(0, y, 0, y + rh); gr.addColorStop(0, 'rgba(255,255,255,.18)'); gr.addColorStop(0.75, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,.55)'); x.fillStyle = gr; x.fillRect(0, y, w, rh);
+      x.fillStyle = edge; x.fillRect(0, y + rh - 3, w, 2);
+      x.strokeStyle = lace; x.lineWidth = 3.2; for (let c = 0; c < cols; c++) { const cx = (c + 0.5) * w / cols; x.beginPath(); x.moveTo(cx - 5, y + 2); x.lineTo(cx + 5, y + rh - 4); x.moveTo(cx + 5, y + 2); x.lineTo(cx - 5, y + rh - 4); x.stroke(); } }
+  });
+}
+function goldTrim(base, gold) {   // black lacquer panels framed and latticed in gold
+  const k = 'g' + base + gold; if (texCache[k]) return texCache[k];
+  return texCache[k] = canvasTex(256, 256, (x, w, h) => {
+    x.fillStyle = base; x.fillRect(0, 0, w, h);
+    x.strokeStyle = gold; x.lineWidth = 5; x.strokeRect(6, 6, w - 12, h - 12); x.lineWidth = 2;
+    for (let i = 1; i < 4; i++) { x.beginPath(); x.moveTo(i * w / 4, 12); x.lineTo(i * w / 4, h - 12); x.stroke(); x.beginPath(); x.moveTo(12, i * h / 4); x.lineTo(w - 12, i * h / 4); x.stroke(); }
+    x.beginPath(); x.arc(w / 2, h / 2, 26, 0, 6.3); x.stroke();
+    for (let i = 0; i < 400; i++) { x.fillStyle = `rgba(255,255,255,${rnd(.01, .05)})`; x.fillRect(rnd(0, w), rnd(0, h), rnd(2, 10), 1); }
+  });
+}
+function oniChest() {
+  return texCache.oc || (texCache.oc = canvasTex(256, 256, (x, w, h) => {
+    x.drawImage(lamellar('#2c2420', '#8a1a14', '#b08848', 6).image, 0, 0);
+    x.fillStyle = 'rgba(20,14,12,.55)'; x.fillRect(0, 0, w, h);
+    x.strokeStyle = '#c09040'; x.lineWidth = 6; x.beginPath(); x.arc(w / 2, h * 0.45, 62, 0, 6.3); x.stroke();
+    x.fillStyle = '#a01818'; x.beginPath(); x.arc(w / 2, h * 0.45, 40, 0, 6.3); x.fill();
+    x.fillStyle = '#2a0a08'; x.font = 'bold 50px serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('鬼', w / 2, h * 0.45 + 3);
+  }));
+}
+function leather(base) {
+  const k = 'le' + base; if (texCache[k]) return texCache[k];
+  return texCache[k] = canvasTex(128, 128, (x, w, h) => { x.fillStyle = base; x.fillRect(0, 0, w, h); for (let i = 0; i < 500; i++) { x.fillStyle = `rgba(0,0,0,${rnd(.03, .12)})`; x.fillRect(rnd(0, w), rnd(0, h), rnd(1, 4), rnd(1, 4)); } x.fillStyle = 'rgba(0,0,0,.45)'; for (let y = 12; y < h; y += 32) x.fillRect(0, y, w, 7); x.fillStyle = 'rgba(200,160,90,.6)'; for (let y = 14; y < h; y += 32) x.fillRect(w * 0.45, y, 12, 3); });
 }
 
 // ---------------- skinned shells ----------------
@@ -147,7 +232,8 @@ function makeShell(mesh, info, opts) {
     P.setXYZ(i, P.getX(i) + nx * o, P.getY(i) + ny * o, P.getZ(i) + nz * o);
   }
   const N0 = g.attributes.normal;
-  ng.setAttribute('position', P); ng.setAttribute('normal', N); if (g.attributes.uv) ng.setAttribute('uv', g.attributes.uv);
+  ng.setAttribute('position', P); ng.setAttribute('normal', N);
+  if (opts.uv) { const uv = new Float32Array(info.n * 2); for (let i = 0; i < info.n; i++) { const r = opts.uv(info.bpos[i * 3], info.bpos[i * 3 + 1], info.bpos[i * 3 + 2]); uv[i * 2] = r[0]; uv[i * 2 + 1] = r[1]; } ng.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); }
   ng.setAttribute('skinIndex', g.attributes.skinIndex); ng.setAttribute('skinWeight', g.attributes.skinWeight);
   ng.setIndex(keep); ng.computeVertexNormals();
   const sm = new THREE.SkinnedMesh(ng, opts.material); sm.bind(mesh.skeleton, mesh.bindMatrix); sm.castShadow = true; sm.receiveShadow = true; sm.frustumCulled = false;
@@ -204,17 +290,25 @@ function attachAt(bone, obj, pos, quat = new Q(), scl = 1) {
   obj.traverse(o => { if (o.isMesh) { o.castShadow = true; } });
   return obj;
 }
+// tapered tube along a curve (horns)
+function taperTube(points, r0, r1, mat) {
+  const curve = new THREE.CatmullRomCurve3(points), g = new THREE.TubeGeometry(curve, 20, 1, 8, false), P = g.attributes.position, c = new V3(), n = 21;
+  for (let i = 0; i < P.count; i++) { const seg = Math.floor(i / 9), u = Math.min(1, seg / (n - 1)); curve.getPointAt(u, c); const r = r0 + (r1 - r0) * u; P.setXYZ(i, c.x + (P.getX(i) - c.x) * r, c.y + (P.getY(i) - c.y) * r, c.z + (P.getZ(i) - c.z) * r); }
+  g.computeVertexNormals(); return new THREE.Mesh(g, mat);
+}
 
+// Skins. All share the same skeleton, hit-box and animations; they only change the look.
 export const OUTFITS = {
-  // shinobi in the spirit of the reference: ash-grey kimono, tan hakama, tattered scarf, topknot
-  player: { kimono: 0x3d3f45, hakama: 0x3e352d, under: 0x1a1a1d, hands: 0x2a2320, feet: 0xb7b2a6, skin: 0xb48a6e, hair: 0x141210, scarf: 0x8a6a4a, sash: 0x24201c, style: 'shinobi' },
-  // Ashina samurai: lacquered red armour, dark hakama, kabuto with gold crest, iron menpo
-  enemy: { kimono: 0x2a1c1c, hakama: 0x1c1a20, under: 0x151416, hands: 0x1d1716, feet: 0x2a2624, skin: 0xa07a62, hair: 0x101010, armor: 0x8f1c1c, lace: 0x2c2a6e, style: 'samurai' },
+  shinobi: { name: 'Shinobi', desc: 'Ash-grey kimono, tattered scarf.', price: 0, kimono: 0x3d3f45, hakama: 0x3e352d, under: 0x1a1a1d, hands: 0x2a2320, feet: 0xb7b2a6, skin: 0xb48a6e, hair: 0x141210, scarf: 0x8a6a4a, sash: 0x24201c, style: 'shinobi' },
+  ashina: { name: 'Ashina Samurai', desc: 'Red lacquer armour, crescent kabuto.', price: 0, kimono: 0x2a1c1c, hakama: 0x1c1a20, under: 0x151416, hands: 0x1d1716, feet: 0x2a2624, skin: 0xa07a62, hair: 0x101010, armor: 0x8f1c1c, lace: 0x2c2a6e, sash: 0x241a1a, style: 'samurai' },
+  ronin: { name: 'Wandering Ronin', desc: 'Pale kimono, indigo hakama, straw kasa.', price: 600, kimono: 0xcfc6b2, hakama: 0x24304a, under: 0x1c1c22, hands: 0x3a2c22, feet: 0xd8d2c6, skin: 0xb48a6e, hair: 0x15120f, scarf: 0x8a1a1a, sash: 0x1a1a2a, style: 'ronin' },
+  oni: { name: 'Crimson Oni', desc: 'Horned kabuto, red-laced lamellar, bone-white menpo.', price: 1500, kimono: 0x2e2e33, hakama: 0x55565c, under: 0x18181b, hands: 0x2c221c, feet: 0x5a4636, skin: 0xa07a62, hair: 0x0e0d0d, armor: 0x3a2c24, lace: 0xa81818, sash: 0xb01c1c, style: 'oni' },
+  kage: { name: 'Shadow Gold', desc: 'Black lacquer and gold, jingasa, red-eyed mask.', price: 3000, kimono: 0x0e0e12, hakama: 0x101014, under: 0x0c0c0e, hands: 0x101012, feet: 0xb08a3a, skin: 0x8a6a56, hair: 0x0a0a0a, armor: 0x0c0b0e, lace: 0xc9a14a, sash: 0xd9c9a0, style: 'kage' },
 };
 
 // Dress a cloned mannequin. Returns handles used by Fighter (katana, saya, ropes, materials for tinting).
-export function dress(model, scene, outfit) {
-  const T = textures();
+export function dress(model, scene, outfitKey = 'shinobi', weaponKey = 'standard') {
+  const outfit = OUTFITS[outfitKey] || OUTFITS.shinobi, S = outfit.style;
   const bodies = []; model.traverse(o => { if (o.isSkinnedMesh) bodies.push(o); });
   const main = bodies.find(b => b.material.name === 'M_Main') || bodies[0];
   const joints = bodies.find(b => b !== main);
@@ -223,101 +317,150 @@ export function dress(model, scene, outfit) {
   const info = analyzeBody(main), H = info.maxY - info.minY;
   const hy = y => (y - info.minY) / H;                         // 0 feet .. 1 head top
   const wp = n => bone(n).getWorldPosition(new V3());
-  const head = wp('Head'), neck = wp('neck_01');
+  const head = wp('Head'), neck = wp('neck_01'), pel = wp('pelvis'), sp1 = wp('spine_01');
   const mats = [];
-  const cloth = (color, extra = {}) => { const m = new THREE.MeshStandardMaterial({ color, roughness: 0.92, metalness: 0, ...extra }); delete m.bumpMap; mats.push(m); return m; };
+  const cloth = (color, extra = {}) => { const m = new THREE.MeshStandardMaterial({ color, roughness: 0.92, metalness: 0, ...extra }); mats.push(m); return m; };
+  const lacq = (color, map, extra = {}) => { const m = new THREE.MeshPhysicalMaterial({ color, map: map || null, roughness: 0.35, metalness: 0.25, clearcoat: 0.8, clearcoatRoughness: 0.25, ...extra }); mats.push(m); return m; };
+  const metal = (color, r = 0.3) => { const m = new THREE.MeshStandardMaterial({ color, metalness: 1, roughness: r }); mats.push(m); return m; };
+  const shell = o => makeShell(main, info, o);
+  const planar = k => (x, y) => [x * k + 0.5, y * k];
+  const armUV = (x, y, z) => [Math.atan2(z, y) / Math.PI + 0.5, Math.abs(x) * 3];
+  const legUV = (x, y, z) => [Math.atan2(x - Math.sign(x) * 0.1, z) / Math.PI + 0.5, y * 3];
 
-  // base body: vertex colours by region (dark undersuit, gloves, tabi, face skin)
+  // base body: vertex colours by region (dark undersuit, gloves, tabi/sandals, face skin)
   const cols = new Float32Array(info.n * 3), c = new THREE.Color();
   for (let i = 0; i < info.n; i++) {
     const r = info.reg[i]; c.setHex(r === 'hand' ? outfit.hands : r === 'foot' ? outfit.feet : r === 'head' || r === 'neck' ? outfit.skin : outfit.under);
     c.convertSRGBToLinear(); cols.set([c.r, c.g, c.b], i * 3);
   }
   main.geometry = main.geometry.clone(); main.geometry.setAttribute('color', new THREE.BufferAttribute(cols, 3));
-  main.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8 });
+  main.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, metalness: S === 'kage' ? 0.3 : 0 });
   main.castShadow = true; main.receiveShadow = true; main.frustumCulled = false;
   if (joints) { joints.material = new THREE.MeshStandardMaterial({ color: outfit.under, roughness: 0.85 }); joints.castShadow = true; joints.frustumCulled = false; }
 
-  const out = { mats, ropes: [], tint: [] };
-  // kimono (torso + upper arms), with wide sleeves flaring toward the wrist
+  const out = { mats, ropes: [], tint: [], extra: [] };
+  const armoured = S === 'samurai' || S === 'oni' || S === 'kage', tucked = S === 'oni' || S === 'kage';
+  // kimono (torso + upper arms) and sleeves
   const kim = cloth(outfit.kimono);
-  makeShell(main, info, { regions: new Set(['torso', 'uarm', 'neck', 'pelvis']), loose: true,
-    filter: (i, f, x, y) => f.reg[i] !== 'neck' || y < neck.y + 0.03,
-    offset: (i, f, x, y) => f.reg[i] === 'pelvis' ? 0.012 : f.reg[i] === 'uarm' ? 0.012 : 0.008, material: kim });
-  makeShell(main, info, { regions: new Set(['farm']), loose: true,
-    offset: (i, f, x, y, z) => { const d = Math.abs(x) - 0.36; return 0.014 + 0.05 * Math.min(1, Math.max(0, d / 0.22)) ** 2; }, material: kim });
-  // hakama: pelvis down to the ankles, flaring
+  shell({ regions: new Set(['torso', 'uarm', 'neck', 'pelvis']), loose: true, filter: (i, f, x, y) => f.reg[i] !== 'neck' || y < neck.y + 0.03,
+    offset: (i, f) => f.reg[i] === 'pelvis' ? 0.012 : f.reg[i] === 'uarm' ? 0.012 : 0.008, material: kim });
+  if (!(S === 'oni' || S === 'kage')) shell({ regions: new Set(['farm']), loose: true, offset: (i, f, x) => { const d = Math.abs(x) - 0.36; return 0.014 + 0.05 * Math.min(1, Math.max(0, d / 0.22)) ** 2; }, material: kim });
+  // hakama: flared to the ankle, or bloused and tucked into shin guards
   const hak = cloth(outfit.hakama);
-  makeShell(main, info, { regions: new Set(['pelvis', 'thigh', 'calf']), loose: true,
-    offset: (i, f, x, y) => { const h = hy(y); const s = Math.min(1, Math.max(0, (0.55 - h) / 0.5)); return 0.018 + 0.085 * s * s; }, flatten: 0.3, material: hak });
-  // obi sash
-  const pel = wp('pelvis'), sp1 = wp('spine_01');
+  shell({ regions: new Set(['pelvis', 'thigh', 'calf']), loose: true, flatten: 0.3, material: hak,
+    offset: (i, f, x, y) => { const h = hy(y); if (tucked) { const puff = Math.max(0, Math.min(1, (h - 0.2) / 0.12)) * Math.max(0, Math.min(1, (0.56 - h) / 0.1)); return 0.014 + 0.06 * puff; } const s = Math.min(1, Math.max(0, (0.55 - h) / 0.5)); return 0.018 + 0.085 * s * s; } });
+  // obi
   const obi = new THREE.Mesh(new THREE.CylinderGeometry(0.165, 0.17, 0.09, 24, 1, true), cloth(outfit.sash || 0x222222, { side: THREE.DoubleSide }));
   obi.scale.set(1, 1, 0.78); attachAt(bone('pelvis'), obi, new V3(pel.x, (pel.y + sp1.y) / 2 + 0.06, pel.z + 0.005));
 
-  // katana + saya on the left hip
-  out.katana = makeKatana(); scene.add(out.katana);
-  out.saya = makeSaya(outfit.style === 'samurai' ? 0x170707 : 0x0c0b0e);
-  const sq = new Q().setFromEuler(new THREE.Euler(-0.35, -0.25, 0, 'YXZ'));   // tip points down-back
-  const sayaDir = new V3(0, 0, 1).applyQuaternion(sq);
-  const back = new Q().setFromUnitVectors(new V3(0, 0, 1), new V3(-sayaDir.x, sayaDir.y, -sayaDir.z).normalize());
+  // katana + saya(s) on the left hip
+  out.katana = makeKatana(weaponKey); scene.add(out.katana); out.trail = out.katana.userData.trail;
+  out.saya = makeSaya(weaponKey);
+  const sq = new Q().setFromEuler(new THREE.Euler(-0.35, -0.25, 0, 'YXZ')), sd = new V3(0, 0, 1).applyQuaternion(sq);
+  const back = new Q().setFromUnitVectors(new V3(0, 0, 1), new V3(-sd.x, sd.y, -sd.z).normalize());
   attachAt(bone('pelvis'), out.saya, new V3(pel.x + 0.19, pel.y + 0.12, pel.z + 0.17), back);
+  if (S === 'kage') { const w = makeSaya(weaponKey, 0.55); const wk = makeKatana(weaponKey); wk.scale.set(1, 1, 0.68); wk.position.z = -0.002; w.add(wk); attachAt(bone('pelvis'), w, new V3(pel.x + 0.21, pel.y + 0.16, pel.z + 0.1), back.clone().multiply(new Q().setFromAxisAngle(new V3(1, 0, 0), 0.25))); }
 
-  if (outfit.style === 'shinobi') {
-    // hair cap + topknot + ponytail rope, cloth mask on the lower face, scarf tails
-    const hairM = new THREE.MeshStandardMaterial({ color: outfit.hair, roughness: 0.55 }); mats.push(hairM);
-    makeShell(main, info, { regions: new Set(['head']), filter: (i, f, x, y, z) => y > head.y + 0.085 || (z < head.z - 0.01 && y > head.y - 0.01), offset: () => 0.012, material: hairM });
-    const mask = cloth(0x1d1c1f); makeShell(main, info, { regions: new Set(['head', 'neck']), filter: (i, f, x, y, z) => y < head.y + 0.065 && z > head.z - 0.025, offset: () => 0.008, material: mask });
-    const knot = new THREE.Mesh(new THREE.SphereGeometry(0.035, 12, 8).scale(1, 0.8, 1.3), hairM);
-    const top = head.clone().add(new V3(0, 0.2, -0.06)); attachAt(bone('Head'), knot, top);
-    const band = new THREE.Mesh(new THREE.TorusGeometry(0.098, 0.009, 6, 24), cloth(0x5a1414)); band.rotation.x = Math.PI / 2 - 0.2; band.scale.set(1, 1.12, 1);
-    attachAt(bone('Head'), band, head.clone().add(new V3(0, 0.12, 0.0)), new Q().setFromEuler(new THREE.Euler(Math.PI / 2 - 0.25, 0, 0)));
-    const ropeM = new THREE.MeshStandardMaterial({ color: outfit.hair, roughness: 0.7, side: THREE.DoubleSide }); mats.push(ropeM);
-    const tail = new Rope(scene, 6, 0.06, 0.05, ropeM, { grav: 5, drag: 0.06, taper: 0.8 });
-    const anchor = new THREE.Object3D(); attachAt(bone('Head'), anchor, top.clone().add(new V3(0, 0, -0.04)));
-    out.ropes.push({ rope: tail, anchor, sideBone: bone('Head') });
-    const scarfM = cloth(outfit.scarf, { side: THREE.DoubleSide }); out.tint.push(scarfM);
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.095, 0.03, 8, 20), scarfM); ring.scale.set(1, 1.15, 0.7);
-    attachAt(bone('neck_01'), ring, neck.clone().add(new V3(0, 0.0, 0.01)), new Q().setFromEuler(new THREE.Euler(Math.PI / 2 - 0.1, 0, 0)));
-    for (const sx of [-1, 1]) {
-      const r = new Rope(scene, 9, 0.085, 0.085, scarfM, { grav: 4.5, drag: 0.07, taper: 0.55 }), a = new THREE.Object3D();
-      attachAt(bone('neck_01'), a, neck.clone().add(new V3(sx * 0.04, -0.03, -0.09))); out.ropes.push({ rope: r, anchor: a, sideBone: bone('spine_03') });
-    }
-  } else {
-    // lacquered armour: cuirass shell, shoulder plates, skirt plates, kabuto with crest, iron menpo
-    const lac = new THREE.MeshPhysicalMaterial({ color: outfit.armor, roughness: 0.35, metalness: 0.2, clearcoat: 0.8, clearcoatRoughness: 0.25 }); mats.push(lac); out.tint.push(lac);
-    makeShell(main, info, { regions: new Set(['torso']), filter: (i, f, x, y) => y < neck.y - 0.06, offset: () => 0.05, material: lac });
-    const iron = new THREE.MeshStandardMaterial({ color: 0x1c1b1f, metalness: 0.85, roughness: 0.38 }); mats.push(iron);
-    const goldM = new THREE.MeshStandardMaterial({ color: 0xd2a84a, metalness: 1, roughness: 0.25 }); mats.push(goldM);
-    // sode (shoulder guards): stack of curved plates hanging from each upper arm
-    for (const s of ['l', 'r']) {
-      const ua = wp('upperarm_' + s), la = wp('lowerarm_' + s), dir = la.clone().sub(ua).normalize(), sx = s === 'l' ? 1 : -1;
-      const sode = new THREE.Group();
-      for (let k = 0; k < 4; k++) { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.055, 16, 1, true, -0.9, 1.8), lac); p.position.y = -k * 0.05; p.rotation.z = 0; sode.add(p); }
-      const q = new Q().setFromUnitVectors(new V3(0, -1, 0), new V3(dir.x * 0.35, -1, dir.z * 0.35).normalize()).multiply(new Q().setFromAxisAngle(new V3(0, 1, 0), sx * Math.PI / 2));
-      attachAt(bone('upperarm_' + s), sode, ua.clone().add(new V3(sx * 0.05, 0.03, 0)), q);
-    }
-    // kusazuri: skirt plates around the hips (front & sides follow the thighs, back follows the pelvis)
-    for (const [b, ax, az] of [['thigh_l', 0.12, 0.1], ['thigh_r', -0.12, 0.1], ['thigh_l', 0.17, -0.04], ['thigh_r', -0.17, -0.04], ['pelvis', 0, -0.15]]) {
-      const pl = new THREE.Group(); for (let k = 0; k < 4; k++) { const m = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.05, 0.016), lac); m.position.y = -k * 0.048; m.position.z = k * 0.004; pl.add(m); }
-      const pos = new V3(pel.x + ax, pel.y - 0.04, pel.z + az), yaw = Math.atan2(ax, az);
-      attachAt(bone(b), pl, pos, new Q().setFromEuler(new THREE.Euler(-0.12, yaw, 0, 'YXZ')));
-    }
-    // kabuto (helmet bowl + neck guard + gold crescent)
+  // ---- reusable armour parts ----
+  const cuirass = (mat, off = 0.05) => shell({ regions: new Set(['torso']), filter: (i, f, x, y) => y < neck.y - 0.06, offset: () => off, material: mat, uv: planar(2.2) });
+  const kote = mat => shell({ regions: new Set(['farm']), loose: true, offset: () => 0.018, material: mat, uv: armUV });
+  const suneate = mat => shell({ regions: new Set(['calf']), filter: (i, f, x, y) => hy(y) < 0.22 && hy(y) > 0.05, offset: () => 0.03, material: mat, uv: legUV });
+  const sode = (mat, rows, w, drop) => { for (const s of ['l', 'r']) {
+    const ua = wp('upperarm_' + s), la = wp('lowerarm_' + s), dir = la.clone().sub(ua).normalize(), sx = s === 'l' ? 1 : -1, sg = new THREE.Group();
+    for (let k = 0; k < rows; k++) { const p = new THREE.Mesh(new THREE.CylinderGeometry(w, w * 1.04, drop, 16, 1, true, -1.0, 2.0), mat); p.position.y = -k * drop * 0.9; p.material.side = THREE.DoubleSide; sg.add(p); }
+    const q = new Q().setFromUnitVectors(new V3(0, -1, 0), new V3(dir.x * 0.35, -1, dir.z * 0.35).normalize()).multiply(new Q().setFromAxisAngle(new V3(0, 1, 0), sx * Math.PI / 2));
+    attachAt(bone('upperarm_' + s), sg, ua.clone().add(new V3(sx * 0.05, 0.04, 0)), q); } };
+  const kusazuri = (mat, rows, wide) => { for (const [b, ax, az] of [['thigh_l', 0.12, 0.1], ['thigh_r', -0.12, 0.1], ['thigh_l', 0.18, -0.04], ['thigh_r', -0.18, -0.04], ['pelvis', 0.08, -0.15], ['pelvis', -0.08, -0.15]]) {
+    const pl = new THREE.Group(); for (let k = 0; k < rows; k++) { const m = new THREE.Mesh(new THREE.BoxGeometry(wide, 0.05, 0.016), mat); m.position.y = -k * 0.048; m.position.z = k * 0.005; pl.add(m); }
+    attachAt(bone(b), pl, new V3(pel.x + ax, pel.y - 0.03, pel.z + az), new Q().setFromEuler(new THREE.Euler(-0.14, Math.atan2(ax, az), 0, 'YXZ'))); } };
+  const hairCap = mat => shell({ regions: new Set(['head']), filter: (i, f, x, y, z) => y > head.y + 0.06 || (z < head.z - 0.01 && y > head.y - 0.02), offset: () => 0.011, material: mat });
+  const menpo = (mat, full) => shell({ regions: new Set(['head', 'neck']), filter: (i, f, x, y, z) => z > head.z - (full ? 0.02 : 0) && y < head.y + (full ? 0.11 : 0.06), offset: () => 0.012, material: mat });
+  const ropeTails = (mat, list, n = 7, seg = 0.08, w = 0.05, parent = 'pelvis') => { for (const p of list) { const r = new Rope(scene, n, seg, w, mat, { grav: 5, drag: 0.08, taper: 0.4 }), a = new THREE.Object3D(); attachAt(bone(parent), a, p); out.ropes.push({ rope: r, anchor: a, sideBone: bone(parent) }); } };
+  const kabuto = (bowlMat, trimMat, shikoroMat, crest) => {
     const kab = new THREE.Group();
-    const blk = new THREE.MeshPhysicalMaterial({ color: 0x0b0a0c, roughness: 0.32, metalness: 0.1, clearcoat: 1, clearcoatRoughness: 0.2, envMapIntensity: 0.6 }); mats.push(blk);
-    const bowl = new THREE.Mesh(new THREE.SphereGeometry(0.15, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), blk); bowl.scale.set(1, 1.05, 1.1); kab.add(bowl);
-    makeShell(main, info, { regions: new Set(['head']), filter: (i, f, x, y, z) => y > head.y + 0.06 || (z < head.z - 0.01 && y > head.y - 0.02), offset: () => 0.01, material: blk });
-    for (let k = 0; k < 12; k++) { const rib = new THREE.Mesh(new THREE.TorusGeometry(0.136, 0.004, 4, 16, Math.PI / 2), goldM); rib.rotation.set(0, k / 12 * Math.PI * 2, Math.PI / 2); rib.scale.set(1.1, 1.15, 1.21); kab.add(rib); }
-    for (const sx of [-1, 1]) { const w = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.06, 0.012), lac); w.position.set(sx * 0.15, -0.03, 0.07); w.rotation.set(0, sx * 0.9, sx * -0.2); kab.add(w); }
-    for (let k = 0; k < 3; k++) { const s = new THREE.Mesh(new THREE.CylinderGeometry(0.135 + k * 0.022, 0.15 + k * 0.022, 0.035, 20, 1, true, Math.PI * 0.3, Math.PI * 1.4), lac); s.position.set(0, -0.03 - k * 0.032, -0.01); s.rotation.y = Math.PI; kab.add(s); }
-    const crest = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.009, 6, 28, Math.PI * 0.92), goldM); crest.position.set(0, 0.2, 0.125); crest.rotation.z = Math.PI + Math.PI * 0.04; crest.scale.set(1, 0.8, 1); kab.add(crest);
-    const visor = new THREE.Mesh(new THREE.CylinderGeometry(0.145, 0.16, 0.02, 20, 1, false, -0.9, 1.8), blk); visor.position.set(0, -0.005, 0.0); kab.add(visor);
+    const bowl = new THREE.Mesh(new THREE.SphereGeometry(0.15, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), bowlMat); bowl.scale.set(1, 1.05, 1.1); kab.add(bowl);
+    for (let k = 0; k < 12; k++) { const rib = new THREE.Mesh(new THREE.TorusGeometry(0.136, 0.004, 4, 16, Math.PI / 2), trimMat); rib.rotation.set(0, k / 12 * Math.PI * 2, Math.PI / 2); rib.scale.set(1.1, 1.15, 1.21); kab.add(rib); }
+    for (const sx of [-1, 1]) { const w = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.07, 0.012), shikoroMat); w.position.set(sx * 0.155, -0.03, 0.075); w.rotation.set(0, sx * 0.9, sx * -0.2); kab.add(w); const e = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.008, 0.016), trimMat); e.position.set(sx * 0.157, 0.005, 0.077); e.rotation.copy(w.rotation); kab.add(e); }
+    for (let k = 0; k < 4; k++) { const s = new THREE.Mesh(new THREE.CylinderGeometry(0.14 + k * 0.022, 0.155 + k * 0.022, 0.035, 20, 1, true, Math.PI * 0.3, Math.PI * 1.4), shikoroMat); s.material.side = THREE.DoubleSide; s.position.set(0, -0.03 - k * 0.032, -0.01); s.rotation.y = Math.PI; kab.add(s); }
+    const visor = new THREE.Mesh(new THREE.CylinderGeometry(0.145, 0.165, 0.02, 20, 1, false, -0.9, 1.8), bowlMat); kab.add(visor);
+    if (crest === 'crescent') { const cr = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.009, 6, 28, Math.PI * 0.92), trimMat); cr.position.set(0, 0.2, 0.125); cr.rotation.z = Math.PI + Math.PI * 0.04; cr.scale.set(1, 0.8, 1); kab.add(cr); }
+    if (crest === 'oni') {
+      const horn = cloth(0x1c1614, { roughness: 0.45 });
+      for (const sx of [-1, 1]) kab.add(taperTube([new V3(sx * 0.1, 0.03, 0.07), new V3(sx * 0.2, 0.14, 0.05), new V3(sx * 0.24, 0.32, 0.0), new V3(sx * 0.18, 0.48, -0.06)], 0.03, 0.006, horn));
+      const dg = new THREE.Group(); const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.02, 20).rotateX(Math.PI / 2), trimMat); dg.add(disc);
+      for (let k = 0; k < 7; k++) { const a = -1.2 + k * 0.4, f = new THREE.Mesh(new THREE.ConeGeometry(0.018, 0.1, 6), trimMat); f.position.set(Math.sin(a) * 0.06, Math.cos(a) * 0.06 + 0.02, 0); f.rotation.z = -a; dg.add(f); }
+      dg.position.set(0, 0.06, 0.155); kab.add(dg);
+    }
     attachAt(bone('Head'), kab, head.clone().add(new V3(0, 0.085, -0.01)));
-    // menpo (lower face mask)
-    makeShell(main, info, { regions: new Set(['head']), filter: (i, f, x, y, z) => y < head.y + 0.06 && z > head.z, offset: () => 0.012, material: iron });
-    const sash = cloth(outfit.lace, { side: THREE.DoubleSide }); out.tint.push(sash);
-    for (const sx of [-1, 1]) { const r = new Rope(scene, 7, 0.08, 0.06, sash, { grav: 5, drag: 0.08, taper: 0.4 }), a = new THREE.Object3D(); attachAt(bone('pelvis'), a, new V3(pel.x + sx * 0.12, pel.y + 0.1, pel.z - 0.13)); out.ropes.push({ rope: r, anchor: a, sideBone: bone('pelvis') }); }
+    return kab;
+  };
+
+  if (S === 'shinobi' || S === 'ronin') {
+    const hairM = new THREE.MeshStandardMaterial({ color: outfit.hair, roughness: 0.55 }); mats.push(hairM);
+    shell({ regions: new Set(['head']), filter: (i, f, x, y, z) => y > head.y + 0.085 || (z < head.z - 0.01 && y > head.y - 0.01), offset: () => 0.012, material: hairM });
+    const top = head.clone().add(new V3(0, 0.2, -0.06));
+    const knot = new THREE.Mesh(new THREE.SphereGeometry(0.035, 12, 8).scale(1, 0.8, 1.3), hairM); attachAt(bone('Head'), knot, top);
+    const ropeM = new THREE.MeshStandardMaterial({ color: outfit.hair, roughness: 0.7, side: THREE.DoubleSide }); mats.push(ropeM);
+    const tail = new Rope(scene, 6, 0.06, 0.05, ropeM, { grav: 5, drag: 0.06, taper: 0.8 }), anchor = new THREE.Object3D();
+    attachAt(bone('Head'), anchor, top.clone().add(new V3(0, 0, -0.04))); out.ropes.push({ rope: tail, anchor, sideBone: bone('Head') });
+    const scarfM = cloth(outfit.scarf, { side: THREE.DoubleSide }); out.tint.push(scarfM);
+    if (S === 'shinobi') {
+      const mask = cloth(0x1d1c1f); shell({ regions: new Set(['head', 'neck']), filter: (i, f, x, y, z) => y < head.y + 0.065 && z > head.z - 0.025, offset: () => 0.008, material: mask });
+      const band = new THREE.Mesh(new THREE.TorusGeometry(0.098, 0.009, 6, 24), cloth(0x5a1414)); band.scale.set(1, 1.12, 1);
+      attachAt(bone('Head'), band, head.clone().add(new V3(0, 0.12, 0.0)), new Q().setFromEuler(new THREE.Euler(Math.PI / 2 - 0.25, 0, 0)));
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.095, 0.03, 8, 20), scarfM); ring.scale.set(1, 1.15, 0.7);
+      attachAt(bone('neck_01'), ring, neck.clone().add(new V3(0, 0.0, 0.01)), new Q().setFromEuler(new THREE.Euler(Math.PI / 2 - 0.1, 0, 0)));
+      for (const sx of [-1, 1]) { const r = new Rope(scene, 9, 0.085, 0.085, scarfM, { grav: 4.5, drag: 0.07, taper: 0.55 }), a = new THREE.Object3D(); attachAt(bone('neck_01'), a, neck.clone().add(new V3(sx * 0.04, -0.03, -0.09))); out.ropes.push({ rope: r, anchor: a, sideBone: bone('spine_03') }); }
+    } else {
+      // straw kasa
+      const straw = canvasTex(256, 256, (x, w, h) => { x.fillStyle = '#c9a868'; x.fillRect(0, 0, w, h); for (let i = 0; i < 260; i++) { x.strokeStyle = `rgba(90,60,20,${rnd(.15, .4)})`; x.beginPath(); const a = rnd(0, 6.3); x.moveTo(w / 2, h / 2); x.lineTo(w / 2 + Math.cos(a) * w, h / 2 + Math.sin(a) * h); x.stroke(); } });
+      const kasa = new THREE.Mesh(new THREE.ConeGeometry(0.36, 0.17, 32, 1, true), new THREE.MeshStandardMaterial({ map: straw, roughness: 1, side: THREE.DoubleSide })); mats.push(kasa.material);
+      attachAt(bone('Head'), kasa, head.clone().add(new V3(0, 0.2, 0.0)));
+      ropeTails(scarfM, [neck.clone().add(new V3(0.05, -0.02, -0.08))], 8, 0.08, 0.07, 'neck_01');
+    }
+  } else if (S === 'samurai') {
+    const lac = lacq(outfit.armor, lamellar('#ffffff', '#3a3a7a', '#d0b070', 7)); out.tint.push(lac);
+    cuirass(lac); sode(lac, 4, 0.13, 0.055); kusazuri(lac, 4, 0.17);
+    const blk = lacq(0x0b0a0c, null, { envMapIntensity: 0.6 }), gold = metal(0xd2a84a, 0.25);
+    hairCap(blk); kabuto(blk, gold, lac, 'crescent'); menpo(metal(0x1c1b1f, 0.38), false);
+    ropeTails(cloth(outfit.lace, { side: THREE.DoubleSide }), [new V3(pel.x + 0.12, pel.y + 0.1, pel.z - 0.13), new V3(pel.x - 0.12, pel.y + 0.1, pel.z - 0.13)]);
+  } else if (S === 'oni') {
+    // red-laced dark lamellar, horned kabuto with gold dragon, bone-white menpo, red rope belt with tassels
+    const plates = lacq(0xffffff, lamellar('#3a2c24', '#b01818', '#c09040', 6)); out.tint.push(plates);
+    const chest = lacq(0xffffff, oniChest());
+    cuirass(chest, 0.055); sode(plates, 6, 0.15, 0.05); kusazuri(plates, 5, 0.19);
+    kote(lacq(0xffffff, lamellar('#1c1a1a', '#8a1a14', '#a88848', 5, 4)));
+    suneate(cloth(0xffffff, { map: leather('#4a3424'), roughness: 0.75 }));
+    const blk = lacq(0x121012, null, { envMapIntensity: 0.6 }), gold = metal(0xd8a63a, 0.22);
+    hairCap(blk); kabuto(blk, gold, plates, 'oni');
+    menpo(new THREE.MeshStandardMaterial({ color: 0xd8d0c0, roughness: 0.45, metalness: 0.2 }), true);
+    const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.008, 0.01), cloth(0x8a1010)); attachAt(bone('Head'), mouth, head.clone().add(new V3(0, 0.035, 0.112)));
+    const beard = cloth(0x141210, { side: THREE.DoubleSide });
+    ropeTails(beard, [head.clone().add(new V3(-0.025, 0.02, 0.1)), head.clone().add(new V3(0.025, 0.02, 0.1))], 4, 0.035, 0.03, 'Head');
+    ropeTails(beard, [head.clone().add(new V3(0, 0.08, -0.11))], 6, 0.07, 0.09, 'Head');                    // long hair from under the kabuto
+    const red = cloth(outfit.sash, { side: THREE.DoubleSide });
+    const belt = new THREE.Mesh(new THREE.TorusGeometry(0.19, 0.03, 8, 28), red); belt.scale.set(1, 0.78, 1);
+    attachAt(bone('pelvis'), belt, new V3(pel.x, (pel.y + sp1.y) / 2 + 0.07, pel.z), new Q().setFromEuler(new THREE.Euler(Math.PI / 2, 0, 0)));
+    const knot = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), red); attachAt(bone('pelvis'), knot, new V3(pel.x - 0.06, (pel.y + sp1.y) / 2 + 0.06, pel.z + 0.15));
+    ropeTails(red, [new V3(pel.x - 0.07, pel.y + 0.08, pel.z + 0.16), new V3(pel.x - 0.02, pel.y + 0.08, pel.z + 0.17), new V3(pel.x + 0.17, pel.y + 0.1, pel.z + 0.08)], 8, 0.075, 0.035);
+  } else if (S === 'kage') {
+    // black lacquer and gold: lattice panels, jingasa with horns, black mask with glowing red eyes, rope belt, daisho
+    const blkGold = lacq(0xffffff, goldTrim('#0c0b0e', '#c9a14a'), { metalness: 0.4 }); out.tint.push(blkGold);
+    const plates = lacq(0xffffff, lamellar('#0e0d10', '#c9a14a', '#d8b860', 6));
+    cuirass(blkGold, 0.055); sode(plates, 6, 0.15, 0.05); kusazuri(blkGold, 4, 0.2);
+    kote(plates); suneate(blkGold);
+    const blk = lacq(0x0b0a0c, null, { envMapIntensity: 0.7 }), gold = metal(0xcfa042, 0.2);
+    hairCap(blk); menpo(lacq(0x0e0d10, null), true);
+    for (const sx of [-1, 1]) { const eye = new THREE.Mesh(new THREE.SphereGeometry(0.011, 8, 6), new THREE.MeshBasicMaterial({ color: 0xff2010 })); eye.scale.set(1.6, 0.7, 1); attachAt(bone('Head'), eye, head.clone().add(new V3(sx * 0.034, 0.088, 0.112))); }
+    const hat = new THREE.Group();
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(0.36, 0.14, 40, 1, true), blk); cone.material.side = THREE.DoubleSide; hat.add(cone);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.008, 6, 40), gold); rim.rotation.x = Math.PI / 2; rim.position.y = -0.07; hat.add(rim);
+    const knob = new THREE.Mesh(new THREE.SphereGeometry(0.025, 10, 8), gold); knob.position.y = 0.075; hat.add(knob);
+    for (const sx of [-1, 1]) hat.add(taperTube([new V3(sx * 0.07, 0.0, 0.13), new V3(sx * 0.11, 0.1, 0.16), new V3(sx * 0.13, 0.2, 0.13)], 0.018, 0.003, gold));
+    attachAt(bone('Head'), hat, head.clone().add(new V3(0, 0.2, 0)));
+    const rope = cloth(outfit.sash, { roughness: 0.95, side: THREE.DoubleSide });
+    for (const [dy, r] of [[0.06, 0.19], [0.1, 0.185]]) { const b = new THREE.Mesh(new THREE.TorusGeometry(r, 0.016, 8, 28), rope); b.scale.set(1, 0.78, 1); attachAt(bone('pelvis'), b, new V3(pel.x, (pel.y + sp1.y) / 2 + dy, pel.z), new Q().setFromEuler(new THREE.Euler(Math.PI / 2, 0, 0))); }
+    ropeTails(rope, [new V3(pel.x - 0.05, pel.y + 0.1, pel.z + 0.16), new V3(pel.x + 0.05, pel.y + 0.1, pel.z + 0.16)], 6, 0.07, 0.03);
   }
   model.traverse(o => { if (o.isMesh) o.frustumCulled = false; });
   return out;

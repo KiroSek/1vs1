@@ -15,6 +15,7 @@
   <div id="lock"></div><div id="fin"><b>忍殺</b><span>F</span></div><div id="flash"></div>
   <div id="banner"></div>
   <div id="title"></div>
+  <div id="coinHud"></div>
   <div id="hint"></div>
   <div id="count"></div>
 </div>
@@ -24,17 +25,24 @@
   <div class="list" id="mainList">
     <button data-go="gauntlet">Gauntlet<small>run · bosses · upgrades</small></button>
     <button data-go="ai">Duel the Blade<small>vs AI</small></button>
+    <button data-go="shop">Armory<small>skins · blades · coins</small></button>
     <button data-go="online">Online Duel<small>room code · LAN · web</small></button>
     <button data-go="training">Training Dojo</button>
     <button data-go="settings">Settings</button>
     <button data-go="quit">Quit</button>
   </div>
   <div class="foot">F11 fullscreen</div><div class="rec" id="rec"></div>
+  <div class="coins" id="coinMenu"></div>
+  <div class="mapsel"><small>ARENA</small><button id="mapPrev">◂</button><span id="mapName"></span><button id="mapNext">▸</button></div>
 </div>
 
 <div id="intro" class="screen hidden"><div class="introbox"><div id="inStage"></div><h1 id="inName"></h1><p id="inLine"></p><small>click to skip</small></div></div>
+<div id="gdiff" class="screen hidden"><div class="panel"><h2>Gauntlet · Difficulty</h2><div id="gdList"></div><div class="msg">Bosses grow stronger with every stage, forever. Coins are banked the moment you earn them.</div><button class="back" data-go="menu">Back</button></div></div>
+<div id="shop" class="screen hidden"><div class="panel wide"><h2>Armory <span class="coins in" id="coinShop"></span></h2>
+  <div class="tabs"><button class="tab on" data-tab="skins">Skins</button><button class="tab" data-tab="weapons">Blades</button></div>
+  <div id="shopList"></div><div class="msg" id="shopNote"></div><button class="back" data-go="menu">Back</button></div></div>
 <div id="perks" class="screen hidden"><div class="panel"><h2>Choose an upgrade</h2><div id="perkList"></div><div id="perkHave" class="msg"></div></div></div>
-<div id="fps"></div>
+<div id="fps"></div><div id="toast"></div>
 
 <div id="online" class="screen hidden"><div class="panel">
   <h2>Online Duel</h2>

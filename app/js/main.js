@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { buildArena } from './arena.js';
+import { buildArena, MAPS } from './arena.js';
+import { OUTFITS, WEAPONS } from './gear.js';
 import { FX } from './fx.js';
 import { Fighter, prepareClips } from './fighter.js';
 import { MOVES } from './moves.js';
@@ -13,7 +14,7 @@ const { sfx } = audio;
 
 const $ = id => document.getElementById(id);
 const V3 = THREE.Vector3;
-const defaults = { quality: 'auto', diff: 1, sens: 1, vol: 0.7, invert: false, serverUrl: '', fps: false };
+const defaults = { quality: 'auto', diff: 1, sens: 1, vol: 0.7, invert: false, serverUrl: '', fps: false, map: 'dojo' };
 let S = { ...defaults };
 try { Object.assign(S, JSON.parse(localStorage.getItem('kd-settings') || '{}')); } catch (e) { }
 const save = () => { try { localStorage.setItem('kd-settings', JSON.stringify(S)); } catch (e) { } };
@@ -29,6 +30,8 @@ const camera = new THREE.PerspectiveCamera(52, 1, 0.08, 400);
 const camFill = new THREE.DirectionalLight(0xffd8b0, 0.55); camFill.position.set(0.6, 0.4, 1); camera.add(camFill); camFill.target.position.set(0, 0, -5); camera.add(camFill.target); scene.add(camera);
 const arena = buildArena(scene, renderer);
 const fx = new FX(scene);
+const MAP_KEYS = Object.keys(MAPS);
+function useMap(name) { if (name === 'random') name = MAP_KEYS[Math.random() * MAP_KEYS.length | 0]; arena.setMap(name); fx.amb.visible = arena.amb === 'embers'; arena.setQuality(G.q || 'high'); }
 const rig = new CameraRig(camera);
 const post = new Post(renderer, scene, camera);
 function gpuTier() {   // discrete NVIDIA/AMD (e.g. Lenovo LOQ RTX) -> high, Apple Silicon -> medium, others -> low
@@ -46,7 +49,7 @@ addEventListener('resize', resize);
 
 // ---------- game state ----------
 const G = { mode: 'menu', me: null, opp: null, ai: null, net: new Net(), over: true, lock: true, hs: 0, t: 0, started: false, rematch: [false, false], phase: 'menu', phaseT: 0, slow: 1, slowT: 0, q: 'high', pr: 1, prMax: 1 };
-window.__dbg = { renderer, scene, camera, post, rig, fx, AI, MOVES }; window.__G = G; window.__step = dt => step(dt); window.__cam = () => camera;
+window.__dbg = { renderer, scene, camera, post, rig, fx, AI, MOVES, setLook: (...a) => setLook(...a), REC: () => REC, useMap: n => useMap(n) }; window.__G = G; window.__step = dt => step(dt); window.__cam = () => camera;
 const inp = { move: new V3(), walk: false, guard: false, light: 0, heavy: 0, dodge: 0, finisher: 0, lock: true, aim: new V3(0, 0, 1), sprint: false };
 const keys = {}; window.__inp = inp;
 
@@ -107,6 +110,23 @@ function fighterEvents(f) {
   f.events.length = 0;
 }
 
+// ---------- wallet, skins, weapons ----------
+const coinFmt = n => '◎ ' + Math.round(n).toLocaleString();
+function showCoins() { $('coinMenu').textContent = coinFmt(REC.coins); $('coinShop').textContent = coinFmt(REC.coins); const h = $('coinHud'); h.textContent = G.mode === 'gauntlet' && G.run ? coinFmt(G.run.coins) + '  (run)' : ''; }
+function addCoins(n) { n = Math.round(n); if (n <= 0) return 0; REC.coins += n; if (G.run && G.mode === 'gauntlet') G.run.coins += n; saveRec(); showCoins(); toast('+' + n + ' ◎'); sfx.coin(); return n; }
+function toast(t) { const e = $('toast'); e.textContent = t; e.classList.remove('show'); void e.offsetWidth; e.classList.add('show'); }
+const FCOPY = ['pos', 'yaw', 'maxHp', 'hp', 'lives', 'posture', 'remote', 'onStrike', 'tempo', 'dmgMul', 'fMul', 'parryWin', 'iExtra', 'postRegen', 'dead', 'invuln'];
+// swap a fighter's look (skin / weapon) by rebuilding it; gameplay state is carried over
+function setLook(isMe, style, weapon) {
+  const old = isMe ? G.me : G.opp; if (old && old.style === style && old.weapon === weapon) return old;
+  const f = new Fighter(scene, G.base, style, isMe ? 'You' : 'Enemy', weapon);
+  if (old) { for (const k of FCOPY) { if (k === 'pos') f.pos.copy(old.pos); else f[k] = old[k]; } f.restyle(null, old.scaleF); old.dispose(); }
+  if (isMe) G.me = f; else G.opp = f;
+  if (G.ai && !isMe) G.ai.f = f; if (G.auto && isMe) G.auto.f = f;
+  return f;
+}
+const ENEMY_LOOK = [['ashina', 'standard'], ['oni', 'kuro'], ['kage', 'mortal']];
+
 // ---------- match flow ----------
 const START_D = 3.6;
 function placeStart(slot) {
@@ -115,7 +135,11 @@ function placeStart(slot) {
 }
 function startMatch(mode) {
   G.mode = mode; G.over = false; G.started = true; G.rematch = [false, false];
-  const slot = mode === 'online' ? G.net.slot : 0, { me, opp } = G;
+  const slot = mode === 'online' ? G.net.slot : 0;
+  setLook(true, REC.skin, REC.weapon);
+  if (mode === 'ai') setLook(false, ...ENEMY_LOOK[+S.diff]); else if (mode === 'training') setLook(false, 'ashina', 'standard'); else if (mode === 'gauntlet') setLook(false, G.boss.look[0], G.boss.look[1]);
+  if (mode !== 'gauntlet' && S.map) useMap(S.map);
+  const { me, opp } = G;
   me.remote = false; opp.remote = mode === 'online';
   const gaunt = mode === 'gauntlet';
   if (!gaunt) { applyStats([]); applyBoss(null); }
@@ -173,7 +197,12 @@ function endMatch(win) {
   const w = win ? G.me : G.opp;
   banner(win ? '勝利' : '死', win ? '#ffd870' : '#ff2a2a', true); win ? sfx.victory() : sfx.death();
   setTimeout(() => { if (!w.dead && !w.remote) w.setAct('sheathe'); rig.startCine({ type: 'victory', f: w, ang: w.yaw + 0.8 }); }, 900);
-  if (G.mode === 'gauntlet') { if (win) { G.run.stage++; REC.wins++; REC.best = Math.max(REC.best, G.run.stage); } } else if (win) REC.wins++;
+  // rewards are banked immediately, so leaving at any moment keeps them
+  let earned = 0;
+  if (G.mode === 'gauntlet') {
+    if (win) { const D = GDIFF[G.run.diff], n = G.run.stage, flawless = G.me.lives >= 2 + G.extraLife; earned = addCoins((45 + 20 * n) * D.coin * (flawless ? 1.3 : 1)); G.run.stage++; REC.wins++; REC.bestBy[G.run.diff] = Math.max(REC.bestBy[G.run.diff] || 0, G.run.stage); REC.best = Math.max(REC.best, G.run.stage); }
+  } else if (G.mode === 'ai') { earned = addCoins(win ? [30, 60, 110][+S.diff] : 10); if (win) REC.wins++; }
+  else if (G.mode === 'online') { earned = addCoins(win ? 80 : 25); if (win) REC.wins++; }
   saveRec();
   setTimeout(() => {
     if (G.mode === 'menu') return;
@@ -181,71 +210,92 @@ function endMatch(win) {
     if (G.mode === 'gauntlet' && win) { showPerks(); return; }
     const g = G.mode === 'gauntlet';
     $('resBig').textContent = g ? 'RUN ENDED' : win ? 'VICTORY' : 'DEATH'; $('resBig').className = win ? 'win' : 'lose';
-    $('resSub').textContent = g ? 'Bosses defeated: ' + G.run.stage + ' · Best: ' + REC.best : win ? 'Your blade prevails.' : 'Your journey ends here.';
+    $('resSub').innerHTML = (g ? 'Bosses defeated: ' + G.run.stage + ' · Best (' + GDIFF[G.run.diff].name + '): ' + (REC.bestBy[G.run.diff] || 0) + '<br>Coins this run: ' + coinFmt(G.run.coins) : (win ? 'Your blade prevails.' : 'Your journey ends here.') + (earned ? '<br>+' + earned + ' ◎' : '')) + '<br>Wallet: ' + coinFmt(REC.coins);
     $('result').classList.remove('hidden'); $('bRematch').textContent = g ? 'New Run' : 'Rematch';
   }, 3600);
 }
 
-// ---------- gauntlet ----------
+// ---------- gauntlet: endless run of bosses, three difficulties ----------
+// coin: reward multiplier · perk: strength of upgrades · hp/dmg/tempo/ai: growth per stage (forever) · lvl: AI tier bonus
+// boost: flat behaviour boost from stage 1 · mob: map mobility (strafing, side-steps, back-steps, flanking)
+const GDIFF = {
+  easy: { name: 'Easy', coin: 0.6, perk: 1.5, hp: 0.07, dmg: 0.045, tempo: 0.012, ai: 0.02, lvl: 0, mob: 0.15, boost: {}, desc: 'Fewer coins · upgrades 150% strength · gentle growth' },
+  normal: { name: 'Normal', coin: 1.0, perk: 0.8, hp: 0.13, dmg: 0.08, tempo: 0.022, ai: 0.035, lvl: 1, mob: 0.55, boost: { react: 0.12, deflect: 0.1, aggr: 0.06, punish: 0.15 }, desc: 'More coins · upgrades 80% · bosses tough and mobile' },
+  hard: { name: 'Hard', coin: 1.7, perk: 0.5, hp: 0.18, dmg: 0.11, tempo: 0.032, ai: 0.05, lvl: 2, mob: 0.9, boost: { react: 0.22, deflect: 0.18, aggr: 0.12, punish: 0.3 }, desc: 'Most coins · upgrades 50% · relentless, agile masters' },
+};
 const BOSSES = [
-  { name: 'Reed Ronin', line: 'A wandering swordsman. Slow, patient, honest.', tint: 0x55704f, hp: 85, dmg: 0.9, tempo: 0.92, level: 0, ai: { moves: { slash: 6, heavy: 2 } } },
-  { name: 'Kuro the Quickdraw', line: 'Closes ten paces in a heartbeat. Deflect the dash.', tint: 0x2d2d36, hp: 95, dmg: 1, tempo: 1.15, level: 1, ai: { aggr: 0.66, moves: { slash: 4, dash: 4, uppercut: 1.5, thrust: 0.6 } } },
-  { name: 'Tessen the Brute', line: 'Every swing can end you. Read the wind-up.', tint: 0x7d5a2c, hp: 140, dmg: 1.45, tempo: 0.88, scale: 1.12, level: 1, ai: { react: 0.35, moves: { slash: 2, heavy: 4, heavyB: 2.5, leap: 2.5, kick: 2 } } },
-  { name: 'Akane, Mirror Blade', line: 'She deflects everything. Break her rhythm.', tint: 0x7a2c6c, hp: 100, dmg: 1.1, tempo: 1.08, level: 2, ai: { react: 0.95, deflect: 0.85, aggr: 0.42, moves: { slash: 5, thrust: 2.5, uppercut: 1.5 } } },
-  { name: 'Isshin, Sword Saint', line: 'The strongest blade in the land.', tint: 0xb59b2c, hp: 150, dmg: 1.25, tempo: 1.15, scale: 1.06, level: 2, ai: {} },
+  { name: 'Reed Ronin', line: 'A wandering swordsman. Slow, patient, honest.', look: ['ronin', 'standard'], hp: 90, dmg: 0.95, tempo: 0.95, level: 0, ai: { moves: { slash: 6, heavy: 2, dash: 0.5 } } },
+  { name: 'Kuro the Quickdraw', line: 'Closes ten paces in a heartbeat. Deflect the dash.', look: ['shinobi', 'kuro'], hp: 100, dmg: 1.05, tempo: 1.15, level: 1, ai: { aggr: 0.66, mobility: 0.6, moves: { slash: 4, dash: 4, uppercut: 1.5, thrust: 0.8 } } },
+  { name: 'Tessen the Brute', line: 'Every swing can end you. Read the wind-up.', look: ['oni', 'crimson'], hp: 150, dmg: 1.5, tempo: 0.9, scale: 1.12, level: 1, ai: { react: 0.4, moves: { slash: 2, heavy: 4, heavyB: 2.5, leap: 2.5, kick: 2 } } },
+  { name: 'Akane, Mirror Blade', line: 'She deflects everything. Break her rhythm.', look: ['ashina', 'frost'], tint: 0x6a2a7a, hp: 110, dmg: 1.1, tempo: 1.1, level: 2, ai: { react: 0.95, deflect: 0.85, aggr: 0.45, mobility: 0.5, moves: { slash: 5, thrust: 2.5, uppercut: 1.5 } } },
+  { name: 'Isshin, Sword Saint', line: 'The strongest blade in the land.', look: ['kage', 'mortal'], hp: 160, dmg: 1.3, tempo: 1.15, scale: 1.06, level: 2, ai: { mobility: 0.6 } },
 ];
 const PERKS = [
-  { id: 'vit', name: 'Iron Body', desc: '+25 max health', max: 3 }, { id: 'wrist', name: 'Mirror Wrist', desc: 'Deflect window +0.05 s', max: 2 },
-  { id: 'mind', name: 'Calm Mind', desc: 'Posture recovers 40% faster', max: 3 }, { id: 'edge', name: 'Keen Edge', desc: '+20% damage', max: 3 },
-  { id: 'exe', name: 'Executioner', desc: 'Deathblow deals +25% more', max: 2 }, { id: 'step', name: 'Wind Step', desc: 'Dodge invincibility +0.08 s', max: 2 },
-  { id: 'life', name: 'Second Wind', desc: '+1 extra life in every fight', max: 1 },
+  { id: 'vit', name: 'Iron Body', d: m => `+${Math.round(25 * m)} max health`, max: 3 }, { id: 'wrist', name: 'Mirror Wrist', d: m => `Deflect window +${(0.05 * m).toFixed(3)} s`, max: 2 },
+  { id: 'mind', name: 'Calm Mind', d: m => `Posture recovers ${Math.round(40 * m)}% faster`, max: 3 }, { id: 'edge', name: 'Keen Edge', d: m => `+${Math.round(20 * m)}% damage`, max: 3 },
+  { id: 'exe', name: 'Executioner', d: m => `Deathblow deals +${Math.round(25 * m)}% more`, max: 2 }, { id: 'step', name: 'Wind Step', d: m => `Dodge invincibility +${(0.08 * m).toFixed(2)} s`, max: 2 },
+  { id: 'life', name: 'Second Wind', d: () => '+1 extra life in every fight', max: 1 },
 ];
-const REC_KEY = 'kd-rec'; const REC = { best: 0, runs: 0, wins: 0, parries: 0, deathblows: 0 };
+const REC_KEY = 'kd-rec'; const REC = { best: 0, runs: 0, wins: 0, parries: 0, deathblows: 0, coins: 0, bestBy: {}, skins: ['shinobi', 'ashina'], weapons: ['standard'], skin: 'shinobi', weapon: 'standard' };
 try { Object.assign(REC, JSON.parse(localStorage.getItem(REC_KEY) || '{}')); } catch (e) { }
+if (!OUTFITS[REC.skin]) REC.skin = 'shinobi'; if (!WEAPONS[REC.weapon]) REC.weapon = 'standard';
 function showRec() { $('rec').textContent = REC.runs || REC.wins ? `Best run: ${REC.best} bosses · duels won ${REC.wins} · deflects ${REC.parries} · deathblows ${REC.deathblows}` : ''; }
 function saveRec() { try { localStorage.setItem(REC_KEY, JSON.stringify(REC)); } catch (e) { } showRec(); }
-function bossFor(n) {
-  const b = BOSSES[n % BOSSES.length], c = Math.floor(n / BOSSES.length);
-  return { ...b, name: c ? b.name + ' ' + '★'.repeat(Math.min(c, 5)) : b.name, hp: Math.round(b.hp * (1 + c * 0.2)), dmg: b.dmg * (1 + c * 0.12), tempo: b.tempo * (1 + c * 0.04), level: Math.min(2, b.level + c), ai: { ...b.ai } };
+const cap = (v, m) => Math.min(m, v);
+function bossFor(n, diff) {
+  const b = BOSSES[n % BOSSES.length], loop = Math.floor(n / BOSSES.length), D = GDIFF[diff];
+  const base = diff === 'hard' ? 1.25 : diff === 'normal' ? 1.1 : 1;
+  const ai = { ...b.ai }, P = { react: 0.5, deflect: 0.4, aggr: 0.5, punish: 0.5, err: 0.05 };
+  for (const k of ['react', 'deflect', 'aggr', 'punish']) ai[k] = cap((ai[k] ?? P[k]) + (D.boost[k] || 0) + D.ai * n * (k === 'aggr' ? 0.6 : 1), k === 'deflect' ? 0.92 : 0.97);
+  ai.err = Math.max(0.012, (ai.err ?? (b.level === 2 ? 0.03 : 0.05)) * Math.max(0.35, 1 - D.ai * n * 1.5));
+  ai.mobility = cap(Math.max(ai.mobility || 0, D.mob) + n * 0.05, 1);
+  ai.track = 4 + b.level * 1.5 + D.lvl + n * 0.25;
+  return { ...b, name: loop ? b.name + ' ' + '★'.repeat(Math.min(loop, 5)) + (loop > 5 ? ' ' + loop : '') : b.name,
+    hp: Math.round(b.hp * base * (1 + D.hp * n)), dmg: b.dmg * base * (1 + D.dmg * n), tempo: cap(b.tempo * (1 + D.tempo * n), 1.6), level: Math.min(2, b.level + D.lvl), ai };
 }
-function applyStats(perks) {
+function applyStats(perks, mul = 1) {
   const n = id => perks.filter(p => p === id).length, m = G.me;
-  m.maxHp = 100 + 25 * n('vit'); m.parryWin = 0.2 + 0.05 * n('wrist'); m.postRegen = 1 + 0.4 * n('mind'); m.dmgMul = 1 + 0.2 * n('edge'); m.fMul = 1 + 0.25 * n('exe'); m.iExtra = 0.08 * n('step'); G.extraLife = n('life');
+  m.maxHp = Math.round(100 + 25 * mul * n('vit')); m.parryWin = 0.2 + 0.05 * mul * n('wrist'); m.postRegen = 1 + 0.4 * mul * n('mind'); m.dmgMul = 1 + 0.2 * mul * n('edge'); m.fMul = 1 + 0.25 * mul * n('exe'); m.iExtra = 0.08 * mul * n('step'); G.extraLife = n('life');
 }
-function applyBoss(b) { const o = G.opp; o.maxHp = b ? b.hp : 100; o.dmgMul = b ? b.dmg : 1; o.tempo = b ? b.tempo : 1; o.fMul = 1; o.restyle(b ? b.tint : 0x8f1c1c, b ? b.scale || 1 : 1); }
-function startRun() { G.run = { stage: 0, perks: [] }; REC.runs++; saveRec(); introStage(); }
+function applyBoss(b) { const o = G.opp; o.maxHp = b ? b.hp : 100; o.dmgMul = b ? b.dmg : 1; o.tempo = b ? b.tempo : 1; o.fMul = 1; o.restyle(b && b.tint ? b.tint : null, b ? b.scale || 1 : 1); }
+function startRun(diff) { G.run = { stage: 0, perks: [], diff, coins: 0 }; REC.runs++; saveRec(); introStage(); }
 function introStage() {
-  const b = G.boss = bossFor(G.run.stage); G.mode = 'menu'; G.over = true; applyBoss(b); applyStats(G.run.perks);
+  G.mode = 'menu'; G.over = true; const b = G.boss = bossFor(G.run.stage, G.run.diff);
+  setLook(true, REC.skin, REC.weapon); setLook(false, b.look[0], b.look[1]); applyBoss(b); applyStats(G.run.perks, GDIFF[G.run.diff].perk);
+  useMap(G.run.stage % 2 === 0 && S.map !== 'random' ? S.map : MAP_KEYS[G.run.stage % MAP_KEYS.length]);
   menuPose();
-  $('inStage').textContent = 'STAGE ' + (G.run.stage + 1) + (G.run.stage >= BOSSES.length ? ' · ENDLESS' : '');
-  $('inName').textContent = b.name; $('inLine').textContent = b.line + '   (HP ' + b.hp + ')';
-  showScreen('intro'); clearTimeout(G.introT); G.introT = setTimeout(beginStage, 3200); sfx.ui();
+  $('inStage').textContent = GDIFF[G.run.diff].name.toUpperCase() + ' · STAGE ' + (G.run.stage + 1) + (G.run.stage >= BOSSES.length ? ' · ENDLESS' : '') + ' · ' + MAPS[arena.name];
+  $('inName').textContent = b.name; $('inLine').textContent = b.line + '   (HP ' + b.hp + ' · speed ' + Math.round(b.tempo * 100) + '%)';
+  showScreen('intro'); clearTimeout(G.introT); G.introT = setTimeout(beginStage, 3400); sfx.ui();
 }
 function beginStage() { clearTimeout(G.introT); if (!$('intro').classList.contains('hidden')) startMatch('gauntlet'); }
 function showPerks() {
-  const have = G.run.perks, elig = PERKS.filter(p => have.filter(x => x === p.id).length < p.max).sort(() => Math.random() - .5).slice(0, 3);
+  const mul = GDIFF[G.run.diff].perk, have = G.run.perks, elig = PERKS.filter(p => have.filter(x => x === p.id).length < p.max).sort(() => Math.random() - .5).slice(0, 3);
   const list = $('perkList'); list.innerHTML = '';
-  for (const p of elig) { const b = document.createElement('button'); b.className = 'perk'; b.innerHTML = `<b>${p.name}</b><span>${p.desc}</span>`; b.onclick = () => { have.push(p.id); sfx.ui(); introStage(); }; list.appendChild(b); }
-  $('perkHave').textContent = 'Defeated: ' + G.run.stage + ' · Upgrades: ' + (have.length ? have.map(id => PERKS.find(p => p.id === id).name).join(', ') : 'none');
+  for (const p of elig) { const b = document.createElement('button'); b.className = 'perk'; b.innerHTML = `<b>${p.name}</b><span>${p.d(mul)}</span>`; b.onclick = () => { have.push(p.id); sfx.ui(); introStage(); }; list.appendChild(b); }
+  if (!elig.length) { const b = document.createElement('button'); b.className = 'perk'; b.innerHTML = '<b>Onward</b><span>All upgrades taken</span>'; b.onclick = () => introStage(); list.appendChild(b); }
+  $('perkHave').innerHTML = 'Defeated: ' + G.run.stage + ' · Run coins: ' + coinFmt(G.run.coins) + '<br>Upgrades: ' + (have.length ? have.map(id => PERKS.find(p => p.id === id).name).join(', ') : 'none');
+  const q = document.createElement('button'); q.className = 'back'; q.textContent = 'Leave run (coins are kept)'; q.onclick = () => toMenu(); list.appendChild(q);
   showScreen('perks');
 }
 function menuPose() {
   G.me.remote = G.opp.remote = false; G.me.spawn(-1.5, 0.3, Math.PI / 2 - 0.3); G.opp.spawn(1.5, -0.3, -Math.PI / 2 - 0.3); G.me.onStrike = G.opp.onStrike = null;
 }
 function toMenu() {
-  clearTimeout(G.introT); saveRec(); G.run = null; if (G.me) { applyStats([]); applyBoss(null); }
-  G.mode = 'menu'; G.phase = 'menu'; G.over = true; G.net.close(); G.ai = null; rig.endCine(); $('title').classList.remove('show');
+  clearTimeout(G.introT); saveRec(); G.run = null;
+  G.mode = 'menu'; G.phase = 'menu'; G.over = true; G.net.close(); G.ai = null; G.auto = null; rig.endCine(); $('title').classList.remove('show');
+  if (G.me) { setLook(true, REC.skin, REC.weapon); setLook(false, 'ashina', 'standard'); applyStats([]); applyBoss(null); }
+  useMap(S.map);
   if (document.pointerLockElement) document.exitPointerLock();
-  menuPose(); showScreen('menu');
-}
-function tryLock() { try { const p = canvas.requestPointerLock(); if (p && p.catch) p.catch(() => { }); } catch (e) { } }
+  menuPose(); showScreen('menu'); showCoins();
+}function tryLock() { try { const p = canvas.requestPointerLock(); if (p && p.catch) p.catch(() => { }); } catch (e) { } }
 
 // ---------- online ----------
 const net = G.net;
 function bindNet() {
   net.on('start', () => { $('onMsg').textContent = ''; startMatch('online'); });
   net.on('round', () => { if (G.mode === 'online' && !G.over && G.downed === G.opp) doRevive(G.opp); });
-  net.on('state', s => { if (G.mode === 'online' && G.opp) G.opp.setRemote(s); });
+  net.on('state', s => { if (G.mode !== 'online' || !G.opp) return; if (s.lk && s.lk !== G.opp.style + '|' + G.opp.weapon) { const [st, wp] = s.lk.split('|'); if (OUTFITS[st] && WEAPONS[wp]) { setLook(false, st, wp); G.opp.remote = true; G.opp.onStrike = null; } } G.opp.setRemote(s); });
   net.on('strike', d => {
     if (G.mode !== 'online' || G.over) return;
     const r = G.me.resolveStrike(d.kind, { x: d.x, z: d.z }); showResult(r, G.opp, G.me); net.send('outcome', r);
@@ -284,7 +334,8 @@ document.addEventListener('click', e => {
   const t = go.dataset.go;
   if (t === 'menu') { net.close(); $('lobby').classList.add('hidden'); toMenu(); }
   else if (t === 'ai') startMatch('ai');
-  else if (t === 'gauntlet') startRun();
+  else if (t === 'gauntlet') { renderGDiff(); showScreen('gdiff'); }
+  else if (t === 'shop') { renderShop(); showScreen('shop'); }
   else if (t === 'training') startMatch('training');
   else if (t === 'online') { $('lobby').classList.add('hidden'); $('onMsg').textContent = ''; $('serverUrl').value = S.serverUrl; showScreen('online'); }
   else if (t === 'settings') showScreen('settings');
@@ -301,7 +352,7 @@ $('bQuitMatch').onclick = () => { $('pause').classList.add('hidden'); toMenu(); 
 $('intro').onclick = beginStage;
 $('bResMenu').onclick = () => { $('result').classList.add('hidden'); toMenu(); };
 $('bRematch').onclick = () => {
-  if (G.mode === 'gauntlet') { $('result').classList.add('hidden'); startRun(); }
+  if (G.mode === 'gauntlet') { $('result').classList.add('hidden'); startRun(G.run ? G.run.diff : 'normal'); }
   else if (G.mode === 'online') { G.rematch[0] = true; net.send('rematch', 1); $('bRematch').textContent = 'Waiting…'; if (G.rematch[1]) { $('result').classList.add('hidden'); startMatch('online'); } }
   else { $('result').classList.add('hidden'); startMatch(G.mode); }
 };
@@ -309,6 +360,40 @@ document.addEventListener('pointerlockchange', () => {
   if (!document.pointerLockElement && G.mode !== 'menu' && !G.over && $('result').classList.contains('hidden') && G.started && G.mode !== 'online') $('pause').classList.remove('hidden');
 });
 
+// ---------- gauntlet difficulty, armory, arena picker ----------
+function renderGDiff() {
+  const box = $('gdList'); box.innerHTML = '';
+  for (const [k, d] of Object.entries(GDIFF)) {
+    const b = document.createElement('button'); b.className = 'perk diff-' + k;
+    b.innerHTML = `<b>${d.name}</b><span>${d.desc}</span><small>Coins ×${d.coin} · best: ${REC.bestBy[k] || 0} bosses</small>`;
+    b.onclick = () => { sfx.ui(); startRun(k); }; box.appendChild(b);
+  }
+}
+let shopTab = 'skins';
+function renderShop() {
+  showCoins();
+  for (const t of document.querySelectorAll('.tab')) t.classList.toggle('on', t.dataset.tab === shopTab);
+  const list = $('shopList'); list.innerHTML = '';
+  const isSkin = shopTab === 'skins', DB = isSkin ? OUTFITS : WEAPONS, owned = isSkin ? REC.skins : REC.weapons, eq = isSkin ? REC.skin : REC.weapon;
+  for (const [k, it] of Object.entries(DB)) {
+    const have = owned.includes(k), on = eq === k, b = document.createElement('div'); b.className = 'item' + (on ? ' on' : '');
+    const sw = isSkin ? '' : `<i class="sw" style="background:#${it.trail.toString(16).padStart(6, '0')}"></i>`;
+    b.innerHTML = `<div><b>${sw}${it.name}</b><span>${it.desc}</span></div>`;
+    const btn = document.createElement('button'); btn.className = 'big buy';
+    btn.textContent = on ? 'Equipped' : have ? 'Equip' : it.price + ' ◎'; btn.disabled = on || (!have && REC.coins < it.price);
+    btn.onclick = () => {
+      if (!have) { if (REC.coins < it.price) return; REC.coins -= it.price; owned.push(k); sfx.coin(); }
+      if (isSkin) REC.skin = k; else REC.weapon = k; saveRec(); setLook(true, REC.skin, REC.weapon); menuPose(); sfx.ui(); renderShop();
+    };
+    b.appendChild(btn); list.appendChild(b);
+  }
+  $('shopNote').textContent = isSkin ? 'Skins only change the look.' : 'All blades share the same length, damage and timing; only the look and the slash trail differ.';
+}
+for (const t of document.querySelectorAll('.tab')) t.onclick = () => { shopTab = t.dataset.tab; sfx.ui(); renderShop(); };
+function renderMapSel() { $('mapName').textContent = S.map === 'random' ? 'Random' : MAPS[S.map] || MAPS.dojo; }
+const MAP_CYCLE = [...MAP_KEYS, 'random'];
+const stepMap = d => { S.map = MAP_CYCLE[(MAP_CYCLE.indexOf(S.map) + d + MAP_CYCLE.length) % MAP_CYCLE.length]; save(); renderMapSel(); if (G.mode === 'menu') useMap(S.map === 'random' ? MAP_KEYS[Math.random() * MAP_KEYS.length | 0] : S.map); sfx.ui(); };
+$('mapPrev').onclick = () => stepMap(-1); $('mapNext').onclick = () => stepMap(1);
 // ---------- input ----------
 addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT') return;
@@ -389,7 +474,7 @@ function step(rawDt) {
       if (live) { for (const k of ['light', 'heavy', 'dodge', 'finisher']) inp[k] = Math.max(0, inp[k] - dt); } else inp.light = inp.heavy = inp.dodge = inp.finisher = 0;
       if (G.mode === 'online') {
         opp.update(dt, null, me);
-        netT += rawDt; if (netT > 0.04) { netT = 0; net.send('state', me.snapshot()); }
+        netT += rawDt; if (netT > 0.04) { netT = 0; { const sn = me.snapshot(); sn.lk = me.style + '|' + me.weapon; net.send('state', sn); } }
       } else {
         const ai = G.ai, ii = ai.inp;
         if (live) ai.think(dt, me); else { ii.move.set(0, 0, 0); ii.guard = false; ii.light = ii.heavy = ii.dodge = ii.finisher = 0; }
@@ -414,9 +499,9 @@ window.__snap = async (name, dt = 0.0001) => { step(dt); const url = canvas.toDa
 // ---------- boot ----------
 const loader = new GLTFLoader();
 Promise.all([loader.loadAsync('/assets/kd_ual1.glb'), loader.loadAsync('/assets/kd_ual2.glb')]).then(([a, b]) => { try {
-  prepareClips(a, b);
-  G.me = new Fighter(scene, a, 'player', 'You'); G.opp = new Fighter(scene, a, 'enemy', 'Enemy');
-  menuPose(); applyQuality(); showScreen('menu');
+  prepareClips(a, b); G.base = a;
+  G.me = new Fighter(scene, a, REC.skin, 'You', REC.weapon); G.opp = new Fighter(scene, a, 'ashina', 'Enemy');
+  applyQuality(); useMap(S.map); menuPose(); showScreen('menu'); showCoins(); renderMapSel();
   $('loading').style.opacity = 0; setTimeout(() => $('loading').remove(), 700);
   last = performance.now(); requestAnimationFrame(frame);
 } catch (e) { $('loading').textContent = 'Error: ' + e.stack; console.error(e); } }).catch(err => { $('loading').textContent = 'Failed to load: ' + err.message; console.error(err); });

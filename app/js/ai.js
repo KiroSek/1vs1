@@ -10,9 +10,9 @@ const pickW = w => { let s = 0; for (const k in w) s += w[k]; let r = Math.rando
 // err: deflect timing error (s) · guard: share of answers that are held guards (rest = sidestep) · aggr: how often it opens offence
 // combo: max chain length · punish: chance to exploit an opening · track: wind-up tracking rate · think: decision interval
 export const PROFILES = [
-  { react: 0.4, deflect: 0.18, err: 0.09, guard: 0.6, aggr: 0.38, combo: 2, punish: 0.3, track: 3.5, think: [0.7, 1.4], moves: { slash: 6, heavy: 2, dash: 0.5 } },
-  { react: 0.68, deflect: 0.5, err: 0.05, guard: 0.35, aggr: 0.5, combo: 3, punish: 0.6, track: 5.5, think: [0.45, 1.0], moves: { slash: 6, heavy: 2, dash: 1.5, thrust: 1, kick: 0.8, uppercut: 1 } },
-  { react: 0.88, deflect: 0.72, err: 0.028, guard: 0.2, aggr: 0.62, combo: 3, punish: 0.85, track: 7.5, think: [0.3, 0.75], moves: { slash: 6, heavy: 2, dash: 2, thrust: 1.6, kick: 1, uppercut: 1.2, heavyB: 1.2, leap: 1 } },
+  { mobility: 0.12, react: 0.4, deflect: 0.18, err: 0.09, guard: 0.6, aggr: 0.38, combo: 2, punish: 0.3, track: 3.5, think: [0.7, 1.4], moves: { slash: 6, heavy: 2, dash: 0.5 } },
+  { mobility: 0.35, react: 0.68, deflect: 0.5, err: 0.05, guard: 0.35, aggr: 0.5, combo: 3, punish: 0.6, track: 5.5, think: [0.45, 1.0], moves: { slash: 6, heavy: 2, dash: 1.5, thrust: 1, kick: 0.8, uppercut: 1 } },
+  { mobility: 0.55, react: 0.88, deflect: 0.72, err: 0.028, guard: 0.2, aggr: 0.62, combo: 3, punish: 0.85, track: 7.5, think: [0.3, 0.75], moves: { slash: 6, heavy: 2, dash: 2, thrust: 1.6, kick: 1, uppercut: 1.2, heavyB: 1.2, leap: 1 } },
 ];
 
 export class AI {
@@ -60,8 +60,13 @@ export class AI {
     i.guard = this.guardFor > 0 && f.act === 'idle';
     if (i.guard) { i.move.copy(side).multiplyScalar(this.strafe * 0.4); i.walk = true; return i; }
 
-    // ---- offence ----
+    // ---- mobility: back-step out of its own finished combo, random re-positioning ----
     const free = f.act === 'idle';
+    if (free && this.prevAct && MOVES[this.prevAct] && dist < 3.2 && Math.random() < P.mobility * 0.55) { this.prevAct = f.act; i.dodge = 0.2; i.move.copy(d).negate().addScaledVector(side, this.strafe * 0.6).normalize(); return i; }
+    this.prevAct = f.act;
+    if (free && Math.random() < P.mobility * dt * 0.9) this.strafe = -this.strafe;
+    if (free && !this.plan && dist < 5 && Math.random() < P.mobility * dt * 0.35) { i.dodge = 0.2; i.move.copy(side).multiplyScalar(this.strafe).addScaledVector(d, Math.random() < 0.5 ? 0.4 : -0.4).normalize(); return i; }
+    // ---- offence ----
     // punish openings: opponent recoiling, stumbling or stuck in a whiffed swing
     const open = opp.act === 'deflected' || opp.act === 'hitHeavy' || (om && opp.t > om.hit[1] + 0.05 && !opp.hitDone);
     if (free && open && dist < 3.2 && Math.random() < P.punish * dt * 8) { this.press(f.counterT > 0 ? 'slash' : 'slash'); this.chain = 1 + (Math.random() * P.combo | 0); }
@@ -70,7 +75,7 @@ export class AI {
     if (this.plan) {   // approach until in range, then commit
       const m = MOVES[this.plan.move];
       const reach = this.plan.move === 'dash' ? 6 : m.range * 0.85;
-      if (dist > reach) { i.move.copy(d); i.sprint = dist > 5 && this.plan.move !== 'dash'; if (this.timer < -3) this.plan = null; }
+      if (dist > reach) { i.move.copy(d).addScaledVector(side, this.strafe * P.mobility * 0.5).normalize(); i.sprint = (dist > 5 || (dist > 3.6 && P.mobility > 0.4)) && this.plan.move !== 'dash'; if (this.timer < -3) this.plan = null; }
       else if (free) { this.press(this.plan.kind); this.plan = null; this.timer = rnd(...P.think); }
       return i;
     }
@@ -82,12 +87,12 @@ export class AI {
       else if (Math.random() < P.aggr) {
         const w = { ...P.moves }; if (theyTurtle) w.kick = (w.kick || 0) * 4 + 0.5; if (dist > 4.5) { w.dash = (w.dash || 0) * 3; }
         const k = pickW(w); this.plan = { kind: k, move: k === 'slash' ? 'slash1' : k }; this.chain = k === 'slash' ? (Math.random() * P.combo | 0) : 0;
-      } else { this.strafe = Math.random() < 0.5 ? 1 : -1; this.prefDist = rnd(2.4, 3.6); if (Math.random() < 0.25) this.guardFor = rnd(0.5, 1.2); }
+      } else { this.strafe = Math.random() < 0.5 ? 1 : -1; this.prefDist = rnd(2.4, 3.6 + P.mobility); this.jog = Math.random() < P.mobility; if (Math.random() < 0.25 * (1 - P.mobility * 0.5)) this.guardFor = rnd(0.5, 1.2); }
     }
     // spacing: circle at the preferred distance, back off to recover posture
     const want = this.retreat > 0 ? 5 : this.prefDist;
     i.move.copy(side).multiplyScalar(this.strafe).addScaledVector(d, dist > want + 0.4 ? 0.8 : dist < want - 0.4 ? -0.8 : 0);
-    i.walk = dist < 4 && this.retreat <= 0;
+    i.walk = dist < 4 && this.retreat <= 0 && !this.jog;
     return i;
   }
   press(kind) {

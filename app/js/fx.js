@@ -182,7 +182,7 @@ export class SlashTrail {
   clear() { this.pts.length = 0; }
   update(dt, on) {
     if (!on) { this.fadeOut = Math.max(0, this.fadeOut - dt * 7); if (this.fadeOut <= 0) this.pts.length = 0; else if (this.pts.length > 2) { this.pts.pop(); } }
-    this.mat.uniforms.power.value = this.power; this.mat.uniforms.fade.value = on ? 1 : this.fadeOut; this.mat.uniforms.tint.value.setHex(this.red ? 0xff6050 : 0xdfe8ff);
+    this.mat.uniforms.power.value = this.power; this.mat.uniforms.fade.value = on ? 1 : this.fadeOut; this.mat.uniforms.tint.value.setHex(this.red ? 0xff6050 : (this.baseTint ?? 0xdfe8ff));
     const P = this.mesh.geometry.attributes.position, U = this.mesh.geometry.attributes.uv, m = this.pts.length;
     for (let i = 0; i < this.n; i++) {
       const p = this.pts[Math.min(i, m - 1)];

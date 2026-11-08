@@ -29,12 +29,12 @@ const WALK = { F: ['Walk_Fwd_Loop', 1.25], B: ['Walk_Bwd_Loop', 1.2], L: ['Walk_
 const JOG = { F: ['Jog_Fwd_Loop', 3.4], B: ['Jog_Bwd_Loop', 2.6], L: ['Jog_Left_Loop', 2.4], R: ['Jog_Right_Loop', 2.4] };
 
 export class Fighter {
-  constructor(scene, base, style, name) {
-    this.scene = scene; this.name = name; this.style = style;
+  constructor(scene, base, style, name, weapon = 'standard') {
+    this.scene = scene; this.name = name; this.style = style; this.weapon = weapon; this.base = base;
     this.group = new THREE.Group(); this.body = new THREE.Group(); scene.add(this.group); this.group.add(this.body);
     this.model = clone(base.scene); this.body.add(this.model);
     this.model.updateMatrixWorld(true);
-    this.gear = dress(this.model, scene, OUTFITS[style]);
+    this.gear = dress(this.model, scene, style, weapon);
     this.katana = this.gear.katana; this.saya = this.gear.saya;
     const B = n => this.model.getObjectByName(n);
     this.b = { pelvis: B('pelvis'), sp1: B('spine_01'), sp2: B('spine_02'), sp3: B('spine_03'), neck: B('neck_01'), head: B('Head'), hand: B('hand_r'), farm: B('lowerarm_r'), uarm: B('upperarm_r'), handL: B('hand_l') };
@@ -48,7 +48,7 @@ export class Fighter {
     this.full = [];                 // full-body layer entries {a, w}
     this.lw = {}; this.uw = { stance: 1, block: 0, run: 0 };
     this.phase = 0; this.locoV = new V3(); this.visYaw = 0; this.visYawT = 0;
-    this.trail = new SlashTrail(scene);
+    this.trail = new SlashTrail(scene); this.trail.baseTint = this.gear.trail;
     this.tipPrev = null; this.basePrev = null;
     this.colliders = [{ c: new V3(), r: 0.2 }, { c: new V3(), r: 0.22 }];
     for (const r of this.gear.ropes) r.rope.colliders = this.colliders;
@@ -450,7 +450,7 @@ export class Fighter {
   }
 
   restyle(color, scale = 1) {
-    for (const m of this.gear.tint) m.color.set(color);
+    for (const m of this.gear.tint) { if (!m.userData.c0) m.userData.c0 = m.color.clone(); if (color == null) m.color.copy(m.userData.c0); else m.color.set(color); }
     this.group.scale.setScalar(scale); this.scaleF = scale;
   }
   dispose() { this.scene.remove(this.group, this.katana); this.trail.dispose(); for (const r of this.gear.ropes) r.rope.dispose(this.scene); }

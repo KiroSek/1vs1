@@ -58,6 +58,7 @@ export const sfx = {
   revive() { [392, 587, 784, 1175].forEach((f, i) => tone(f, 2.2 - i * 0.3, 0.1, 'sine', null, 0.8, i * 0.12, 0.08)); noise(1.5, 'bandpass', 800, 3000, 0.12, 0.6, 0.8); },
   death() { tone(110, 2.5, 0.35, 'sine', 55, 0.8); tone(165, 2, 0.15, 'triangle', 82, 0.8); },
   victory() { [293.7, 392, 440, 587.3].forEach((f, i) => tone(f, 2.5, 0.12, 'triangle', null, 0.8, i * 0.18, 0.01)); },
+  coin() { [1568, 2093].forEach((f, i) => tone(f, 0.25, 0.08, 'triangle', null, 0.4, i * 0.06)); },
   ui() { tone(620, 0.09, 0.07, 'triangle', null, 0.2); },
   begin() { tone(98, 2.2, 0.55, 'sine', null, 0.8); tone(196, 1.6, 0.2, 'sine', null, 0.8); noise(0.25, 'lowpass', 400, 60, 0.9, 1, 0.6); },
 };

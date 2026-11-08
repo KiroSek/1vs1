@@ -90,3 +90,23 @@ input[type=range]{width:100%;accent-color:var(--red)}
 .perk{display:block;text-align:left;padding:14px 18px;border:1px solid #5b4a2a;background:linear-gradient(90deg,#2a1214,#150809);transition:.15s}
 .perk b{display:block;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);font-size:17px}.perk span{color:#cfc6b0;font-size:14px}
 .perk:hover{border-color:var(--red);background:linear-gradient(90deg,#7a1015,#2a0709)}
+/* economy / armory / arena picker */
+.coins{position:absolute;top:22px;right:30px;font-size:22px;letter-spacing:.12em;color:#f2c860;text-shadow:0 0 12px rgba(242,180,60,.5),0 2px 4px #000}
+.coins.in{position:static;float:right;font-size:18px}
+#coinHud{position:absolute;top:30px;right:38px;font-size:18px;color:#f2c860;text-shadow:0 2px 4px #000;letter-spacing:.1em}
+#toast{position:fixed;top:64px;right:38px;z-index:60;font-size:22px;color:#ffd870;opacity:0;text-shadow:0 0 14px rgba(255,200,80,.7),0 2px 4px #000;pointer-events:none}
+#toast.show{animation:toast 1.6s ease-out}
+@keyframes toast{0%{opacity:0;transform:translateY(10px)}15%{opacity:1;transform:none}75%{opacity:1}100%{opacity:0;transform:translateY(-10px)}}
+.mapsel{position:absolute;bottom:22px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:12px;background:rgba(0,0,0,.45);padding:8px 16px;border:1px solid #3a3326}
+.mapsel small{letter-spacing:.3em;color:#8a8372;font-size:11px}.mapsel span{min-width:150px;text-align:center;letter-spacing:.2em;color:#f2ead8}
+.mapsel button{font-size:20px;padding:0 6px;color:var(--gold)}.mapsel button:hover{color:#fff}
+.panel.wide{width:min(720px,94vw)}
+.tabs{display:flex;gap:8px;margin-bottom:12px}.tab{padding:8px 18px;border:1px solid #3a3326;letter-spacing:.2em;text-transform:uppercase;font-size:13px}.tab.on{border-color:var(--red);background:rgba(196,22,28,.25);color:#fff}
+#shopList{display:grid;gap:8px;max-height:58vh;overflow:auto}
+.item{display:flex;align-items:center;gap:14px;padding:10px 14px;border:1px solid #3a3326;background:linear-gradient(90deg,#16121a,#0d0b0e)}
+.item.on{border-color:var(--gold);box-shadow:0 0 12px rgba(201,164,92,.25) inset}
+.item>div{flex:1}.item b{display:block;letter-spacing:.15em;text-transform:uppercase;color:var(--gold)}.item span{color:#b7ae98;font-size:13px}
+.item .buy{width:150px;margin:0;font-size:14px;padding:9px}.item .buy:disabled{opacity:.45;cursor:default}
+.sw{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px;box-shadow:0 0 8px currentColor;vertical-align:middle}
+.perk small{display:block;color:#8a8372;font-size:12px;margin-top:4px;letter-spacing:.1em}
+.diff-easy b{color:#9fd07a}.diff-normal b{color:#f2c860}.diff-hard b{color:#ff5a4a}
