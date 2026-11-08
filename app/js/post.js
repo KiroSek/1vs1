@@ -42,13 +42,15 @@ export class Post {
     this.composer = new EffectComposer(renderer);
     this.render = new RenderPass(scene, camera); this.composer.addPass(this.render);
     this.bokeh = new BokehPass(scene, camera, { focus: 3.5, aperture: 0.004, maxblur: 0.008 }); this.bokeh.enabled = false; this.composer.addPass(this.bokeh);
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), 0.55, 0.5, 0.82); this.composer.addPass(this.bloom);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), 0.55, 0.5, 1.0); this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
     this.grade = new ShaderPass(Grade); this.composer.addPass(this.grade);
     this.U = this.grade.uniforms; this.q = 'high'; this.dof = 0;
     this.fx = { aberr: 0, radial: 0, flash: 0, mono: 0 };
   }
-  setQuality(q) { this.q = q; this.bloom.strength = q === 'low' ? 0.45 : 0.6; this.U.grain.value = q === 'low' ? 0 : 0.03; }
+  setQuality(q) { this.q = q; this.applyBloom(); this.U.grain.value = q === 'low' ? 0 : 0.03; }
+  setBloom(b) { this.bloomCfg = b || { strength: 0.55, threshold: 1.0 }; this.applyBloom(); }
+  applyBloom() { const b = this.bloomCfg || { strength: 0.55, threshold: 1.0 }; this.bloom.strength = b.strength * (this.q === 'low' ? 0.8 : 1); this.bloom.threshold = b.threshold; }
   setSize(w, h, pr) { this.composer.setPixelRatio(pr); this.composer.setSize(w, h); const k = this.q === 'high' ? 0.5 : 0.35; this.bloom.resolution.set(w * pr * k, h * pr * k); }
   impact(o) { for (const k in o) this.fx[k] = Math.max(this.fx[k] || 0, o[k]); if (o.center) this.U.center.value.copy(o.center); if (o.flashCol) this.U.flashCol.value.setHex(o.flashCol); }
   frame(dt, state) {

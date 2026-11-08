@@ -27,11 +27,11 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(52, 1, 0.08, 400);
 // soft fill that rides with the camera: keeps both fighters readable in the dark hall (no shadows)
-const camFill = new THREE.DirectionalLight(0xffd8b0, 0.55); camFill.position.set(0.6, 0.4, 1); camera.add(camFill); camFill.target.position.set(0, 0, -5); camera.add(camFill.target); scene.add(camera);
+const camFill = new THREE.DirectionalLight(0xffd8b0, 0.55);   // per-map intensity: cfg.camFill camFill.position.set(0.6, 0.4, 1); camera.add(camFill); camFill.target.position.set(0, 0, -5); camera.add(camFill.target); scene.add(camera);
 const arena = buildArena(scene, renderer);
 const fx = new FX(scene);
 const MAP_KEYS = Object.keys(MAPS);
-function useMap(name) { if (name === 'random') name = MAP_KEYS[Math.random() * MAP_KEYS.length | 0]; arena.setMap(name); fx.amb.visible = arena.amb === 'embers'; arena.setQuality(G.q || 'high'); }
+function useMap(name) { if (name === 'random') name = MAP_KEYS[Math.random() * MAP_KEYS.length | 0]; arena.setMap(name); fx.amb.visible = arena.amb === 'embers'; arena.setQuality(G.q || 'high'); const c = arena.cfg; camFill.intensity = c.camFill ?? 0.55; post.setBloom(c.bloom); }
 const rig = new CameraRig(camera);
 const post = new Post(renderer, scene, camera);
 function gpuTier() {   // discrete NVIDIA/AMD (e.g. Lenovo LOQ RTX) -> high, Apple Silicon -> medium, others -> low
@@ -62,6 +62,14 @@ function screenFlash(color, op, ms) { const f = $('flash'); f.style.background =
 const toScreen = p => { const v = p.clone().project(camera); return new THREE.Vector2(v.x * 0.5 + 0.5, v.y * 0.5 + 0.5); };
 
 // ---------- combat feedback ----------
+const HITSTOP = { light: 0.09, heavy: 0.14 };   // clean-hit freeze (s)
+// point on the victim's body closest to the attacker's blade (for blood/spark placement)
+function bladeContact(att, vic) {
+  if (!att.bladeBase || !att.bladeTip) return null;
+  const a = new V3(vic.pos.x, 0.4, vic.pos.z), b = new V3(vic.pos.x, 1.7 * vic.scaleF, vic.pos.z); let best = null, bd = 9;
+  for (let s = 0.3; s <= 1.001; s += 0.1) { const p = att.bladeBase.clone().lerp(att.bladeTip, s), ab = b.clone().sub(a), t = Math.max(0, Math.min(1, p.clone().sub(a).dot(ab) / ab.lengthSq())), q = a.clone().addScaledVector(ab, t), d = q.distanceTo(p); if (d < bd) { bd = d; best = q.lerp(p, 0.6); } }
+  return bd < 0.8 ? best : null;
+}
 function contactPoint(att, vic) {   // where the blades meet: closest point on the defender's blade to the attacker's tip
   if (vic.bladeBase && att.bladeTip) { const a = vic.bladeBase, b = vic.bladeTip, ab = b.clone().sub(a), t = Math.max(0, Math.min(1, att.bladeTip.clone().sub(a).dot(ab) / ab.lengthSq())); const p = a.clone().addScaledVector(ab, t); if (p.y > 0.4 && p.distanceTo(vic.hitPoint) < 1.3) return p; }
   const p = vic.hitPoint.clone().lerp(att.hitPoint, 0.35); p.y = 1.35; return p;
@@ -81,11 +89,14 @@ function showResult(r, att, vic) {
     case 'clash': { const p = contactPoint(att, vic); fx.clash(p, new V3(0, 1, 0)); sfx.clash(); G.hs = 0.14; rig.shake(0.4); rig.punch(4); post.impact({ aberr: 0.015, radial: 0.015, center: toScreen(p) }); banner('鍔迫り', '#ffd9a0'); break; }
     case 'block': { const p = contactPoint(att, vic); fx.block(p, r.heavy, dir.clone().negate().add(new V3(0, .5, 0)).normalize()); sfx.block(r.heavy); G.hs = r.heavy ? 0.07 : 0.045; rig.shake(r.heavy ? 0.28 : 0.14); rig.punch(r.heavy ? 2.5 : 1); break; }
     case 'hit': {
-      const p = vic.hitPoint.clone(); p.y = 1.2 + Math.random() * 0.3; fx.hit(p, dir.clone().add(new V3(0, 0.3, 0)).normalize(), r.heavy); sfx.hit(r.heavy);
-      G.hs = r.heavy ? 0.11 : 0.07; rig.shake(r.heavy ? 0.4 : 0.22); rig.punch(r.heavy ? 3 : 1.5); if (vic === G.me) { screenFlash('#a00000', 0.22, 350); rig.kick(camDir, 1.5); post.impact({ aberr: 0.02 }); }
+      let p = bladeContact(att, vic); if (!p) { p = vic.hitPoint.clone(); p.y = 1.2 + Math.random() * 0.3; }
+      fx.hit(p, dir.clone().add(new V3(0, 0.3, 0)).normalize(), r.heavy); fx.spark(p, r.heavy ? 26 : 14, 6, 0xffc080, 0.25, dir, 0.7); sfx.hit(r.heavy);
+      vic.flashT = 0.08; G.hs = r.heavy ? HITSTOP.heavy : HITSTOP.light; rig.shake(r.heavy ? 0.4 : 0.22); rig.punch(r.heavy ? 3 : 1.5); if (vic === G.me) { screenFlash('#a00000', 0.22, 350); rig.kick(camDir, 1.5); post.impact({ aberr: 0.02 }); }
       break;
     }
     case 'dodge': break;
+    case 'immune': { const p = bladeContact(att, vic) || vic.hitPoint.clone(); fx.spark(p, 8, 3, 0x9a8a7a, 0.2); sfx.immune(); if (att === G.me) toast('— 忍殺 F —'); break; }
+    case 'jumped': { const p = vic.pos.clone().setY(0.25); fx.dust(vic.pos, 18); fx.spark(p, 30, 6, 0xffd090, 0.35); sfx.mikiri(); G.hs = 0.14; rig.shake(0.3); rig.punch(3); if (vic === G.me) banner('跳', '#fff4dc', true); break; }
     case 'mikiri': { const p = att.hitPoint.clone().lerp(vic.hitPoint, 0.5); fx.mikiri(p); sfx.mikiri(); G.hs = 0.22; rig.shake(0.5); rig.punch(5); banner('見切り', '#fff4dc', true); post.impact({ radial: 0.03, flash: 0.2, center: toScreen(p) }); break; }
     case 'finisher': {
       if (att === G.me) REC.deathblows++;
@@ -150,7 +161,7 @@ function startMatch(mode) {
   if (mode === 'training') G.ai.mode = 'dummy-idle';
   G.lock = true; inp.lock = true;
   $('oppName').textContent = gaunt ? G.boss.name.toUpperCase() : mode === 'online' ? 'OPPONENT' : mode === 'training' ? 'TRAINING DUMMY' : ['ASHIKAGA RONIN', 'KURO THE BLADE', 'ISSHIN, SWORD SAINT'][+S.diff];
-  $('hint').innerHTML = mode === 'training' ? '1 passive · 2 guarding · 3 attacking · R reset<br>LMB attack · E heavy · RMB/C guard (press just before a hit = Deflect) · Space dodge · F deathblow · Q lock-on' : 'LMB attack · E heavy · RMB or C guard — press just before the hit to DEFLECT<br>Space dodge (into a 危 thrust = Mikiri) · F deathblow on broken posture · Q lock-on';
+  $('hint').innerHTML = mode === 'training' ? '1 passive · 2 guarding · 3 attacking · 4 full AI · R reset<br>LMB attack · E heavy · RMB/C guard (press just before a hit = Deflect) · Space dodge · V/MMB jump · Shift sprint · Ctrl/Alt walk · F deathblow · Q lock-on' : 'LMB attack · E heavy · RMB or C guard — press just before the hit to DEFLECT<br>Space dodge (into a 危 thrust = Mikiri) · V / MMB jump (over a 危 sweep) · Shift sprint · Ctrl/Alt walk · F deathblow · Q lock-on';
   showHud(); sfx.ui();
   if (mode === 'training') { G.phase = 'fight'; G.phaseT = 0; rig.snapBehind(me); me.invuln = opp.invuln = false; }
   else {
@@ -225,10 +236,10 @@ const GDIFF = {
 };
 const BOSSES = [
   { name: 'Reed Ronin', line: 'A wandering swordsman. Slow, patient, honest.', look: ['ronin', 'standard'], hp: 90, dmg: 0.95, tempo: 0.95, level: 0, ai: { moves: { slash: 6, heavy: 2, dash: 0.5 } } },
-  { name: 'Kuro the Quickdraw', line: 'Closes ten paces in a heartbeat. Deflect the dash.', look: ['shinobi', 'kuro'], hp: 100, dmg: 1.05, tempo: 1.15, level: 1, ai: { aggr: 0.66, mobility: 0.6, moves: { slash: 4, dash: 4, uppercut: 1.5, thrust: 0.8 } } },
-  { name: 'Tessen the Brute', line: 'Every swing can end you. Read the wind-up.', look: ['oni', 'crimson'], hp: 150, dmg: 1.5, tempo: 0.9, scale: 1.12, level: 1, ai: { react: 0.4, moves: { slash: 2, heavy: 4, heavyB: 2.5, leap: 2.5, kick: 2 } } },
+  { name: 'Kuro the Quickdraw', line: 'Closes ten paces in a heartbeat. Deflect the dash.', look: ['shinobi', 'kuro'], hp: 100, dmg: 1.05, tempo: 1.15, level: 1, ai: { aggr: 0.66, mobility: 0.6, moves: { slash: 4, dash: 4, uppercut: 1.5, thrust: 0.8, sweep: 1 } } },
+  { name: 'Tessen the Brute', line: 'Every swing can end you. Read the wind-up.', look: ['oni', 'crimson'], hp: 150, dmg: 1.5, tempo: 0.9, scale: 1.12, level: 1, ai: { react: 0.4, moves: { slash: 2, heavy: 4, heavyB: 2.5, leap: 2.5, kick: 2, sweep: 2 } } },
   { name: 'Akane, Mirror Blade', line: 'She deflects everything. Break her rhythm.', look: ['ashina', 'frost'], tint: 0x6a2a7a, hp: 110, dmg: 1.1, tempo: 1.1, level: 2, ai: { react: 0.95, deflect: 0.85, aggr: 0.45, mobility: 0.5, moves: { slash: 5, thrust: 2.5, uppercut: 1.5 } } },
-  { name: 'Isshin, Sword Saint', line: 'The strongest blade in the land.', look: ['kage', 'mortal'], hp: 160, dmg: 1.3, tempo: 1.15, scale: 1.06, level: 2, ai: { mobility: 0.6 } },
+  { name: 'Isshin, Sword Saint', line: 'The strongest blade in the land.', look: ['kage', 'mortal'], hp: 160, dmg: 1.3, tempo: 1.15, scale: 1.06, level: 2, ai: { mobility: 0.6, moves: { sweep: 1.6 } } },
 ];
 const PERKS = [
   { id: 'vit', name: 'Iron Body', d: m => `+${Math.round(25 * m)} max health`, max: 3 }, { id: 'wrist', name: 'Mirror Wrist', d: m => `Deflect window +${(0.05 * m).toFixed(3)} s`, max: 2 },
@@ -399,7 +410,9 @@ addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT') return;
   if (e.repeat) return; keys[e.code] = true;
   if (G.mode === 'menu' || G.over) return;
-  if (e.code === 'KeyC') inp.guard = true; else if (e.code === 'KeyE') inp.heavy = 0.3; else if (e.code === 'Space') { inp.dodge = 0.25; G.spaceT = 0; e.preventDefault(); }
+  if (e.code === 'KeyC') inp.guard = true; else if (e.code === 'KeyE') inp.heavy = 0.3; else if (e.code === 'Space') { inp.dodge = 0.25; e.preventDefault(); }
+  else if (e.code === 'KeyV') inp.jump = 0.25;
+  else if (e.code === 'AltLeft' || e.code === 'AltRight') e.preventDefault();
   else if (e.code === 'KeyF') inp.finisher = 0.4; else if (e.code === 'KeyQ') { G.lock = !G.lock; inp.lock = G.lock; if (!G.lock) rig.userT = 0; }
   else if (G.mode === 'training') {
     if (e.code === 'Digit1') G.ai.mode = 'dummy-idle'; else if (e.code === 'Digit2') G.ai.mode = 'dummy-block'; else if (e.code === 'Digit3') G.ai.mode = 'dummy-attack'; else if (e.code === 'Digit4') G.ai.mode = 'duel';
@@ -411,7 +424,7 @@ canvas.addEventListener('mousedown', e => {
   audio.resume();
   if (G.mode === 'menu' || G.over) return;
   if (!document.pointerLockElement) { tryLock(); return; }
-  if (e.button === 0) inp.light = 0.3; else if (e.button === 2) inp.guard = true;
+  if (e.button === 0) inp.light = 0.3; else if (e.button === 2) inp.guard = true; else if (e.button === 1) { inp.jump = 0.25; e.preventDefault(); }
 });
 addEventListener('mouseup', e => { if (e.button === 2) inp.guard = false; });
 addEventListener('contextmenu', e => e.preventDefault());
@@ -467,11 +480,11 @@ function step(rawDt) {
       inp.move.set(0, 0, 0);
       const live = G.phase === 'fight' && !G.over;
       if (live) { if (keys.KeyW) inp.move.add(F); if (keys.KeyS) inp.move.sub(F); if (keys.KeyD) inp.move.add(R); if (keys.KeyA) inp.move.sub(R); }
-      inp.walk = !!(keys.ShiftLeft || keys.ShiftRight); inp.aim.copy(F);
-      if (keys.Space) G.spaceT = (G.spaceT || 0) + rawDt; inp.sprint = !!keys.Space && G.spaceT > 0.3;
-      if (G.auto && live) { G.auto.think(dt, opp); me.update(dt, G.auto.inp, opp); for (const k of ['light', 'heavy', 'dodge', 'finisher']) G.auto.inp[k] = Math.max(0, G.auto.inp[k] - dt); }
+      inp.walk = !!(keys.ControlLeft || keys.ControlRight || keys.AltLeft || keys.AltRight); inp.aim.copy(F);
+      inp.sprint = !!(keys.ShiftLeft || keys.ShiftRight) && !inp.walk;
+      if (G.auto && live) { G.auto.think(dt, opp); me.update(dt, G.auto.inp, opp); for (const k of ['light', 'heavy', 'dodge', 'finisher', 'jump']) G.auto.inp[k] = Math.max(0, (G.auto.inp[k] || 0) - dt); }
       else me.update(dt, live ? inp : noInput, opp);
-      if (live) { for (const k of ['light', 'heavy', 'dodge', 'finisher']) inp[k] = Math.max(0, inp[k] - dt); } else inp.light = inp.heavy = inp.dodge = inp.finisher = 0;
+      if (live) { for (const k of ['light', 'heavy', 'dodge', 'finisher', 'jump']) inp[k] = Math.max(0, (inp[k] || 0) - dt); } else inp.light = inp.heavy = inp.dodge = inp.finisher = inp.jump = 0;
       if (G.mode === 'online') {
         opp.update(dt, null, me);
         netT += rawDt; if (netT > 0.04) { netT = 0; { const sn = me.snapshot(); sn.lk = me.style + '|' + me.weapon; net.send('state', sn); } }
@@ -479,7 +492,7 @@ function step(rawDt) {
         const ai = G.ai, ii = ai.inp;
         if (live) ai.think(dt, me); else { ii.move.set(0, 0, 0); ii.guard = false; ii.light = ii.heavy = ii.dodge = ii.finisher = 0; }
         opp.update(dt, ii, me);
-        for (const k of ['light', 'heavy', 'dodge', 'finisher']) ii[k] = Math.max(0, ii[k] - dt);
+        for (const k of ['light', 'heavy', 'dodge', 'finisher', 'jump']) ii[k] = Math.max(0, (ii[k] || 0) - dt);
       }
       fighterEvents(me); fighterEvents(opp);
       if (G.phase === 'intro' && G.phaseT > 2.5) beginFight();

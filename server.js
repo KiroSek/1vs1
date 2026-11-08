@@ -11,6 +11,8 @@ function lanIps() {
 function start(port, opts = {}) {
   const app = express();
   if (opts.staticDir) {
+    // list of optional sound samples (app/assets/sfx/*), used by the client's sample layer
+    app.get('/sfx-list', (q, r) => { try { r.json(require('fs').readdirSync(path.join(opts.staticDir, 'assets', 'sfx')).filter(f => /\.(ogg|wav|mp3|m4a|flac)$/i.test(f))); } catch (e) { r.json([]); } });
     app.use(express.static(opts.staticDir));
     if (opts.threeDir) {
       app.use('/vendor/three', express.static(path.join(opts.threeDir, 'build')));

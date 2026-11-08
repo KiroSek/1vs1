@@ -3,6 +3,8 @@ import { MOVES } from './moves.js';
 
 const V3 = THREE.Vector3;
 const rnd = (a, b) => a + Math.random() * (b - a);
+const SWEEP_JUMP_SKILL = [0.15, 0.55, 0.85];
+const SWEEP_JUMP_LEAD = 0.2;                     // s before the sweep's active frames the AI jumps (jump is airborne 0.14 s after take-off)   // per AI level: chance to answer a sweep with a jump (else it eats it)
 const gauss = () => (Math.random() + Math.random() + Math.random() - 1.5) / 1.5;
 const pickW = w => { let s = 0; for (const k in w) s += w[k]; let r = Math.random() * s; for (const k in w) { r -= w[k]; if (r <= 0) return k; } return Object.keys(w)[0]; };
 
@@ -11,8 +13,8 @@ const pickW = w => { let s = 0; for (const k in w) s += w[k]; let r = Math.rando
 // combo: max chain length · punish: chance to exploit an opening · track: wind-up tracking rate · think: decision interval
 export const PROFILES = [
   { mobility: 0.12, react: 0.4, deflect: 0.18, err: 0.09, guard: 0.6, aggr: 0.38, combo: 2, punish: 0.3, track: 3.5, think: [0.7, 1.4], moves: { slash: 6, heavy: 2, dash: 0.5 } },
-  { mobility: 0.35, react: 0.68, deflect: 0.5, err: 0.05, guard: 0.35, aggr: 0.5, combo: 3, punish: 0.6, track: 5.5, think: [0.45, 1.0], moves: { slash: 6, heavy: 2, dash: 1.5, thrust: 1, kick: 0.8, uppercut: 1 } },
-  { mobility: 0.55, react: 0.88, deflect: 0.72, err: 0.028, guard: 0.2, aggr: 0.62, combo: 3, punish: 0.85, track: 7.5, think: [0.3, 0.75], moves: { slash: 6, heavy: 2, dash: 2, thrust: 1.6, kick: 1, uppercut: 1.2, heavyB: 1.2, leap: 1 } },
+  { mobility: 0.35, react: 0.68, deflect: 0.5, err: 0.05, guard: 0.35, aggr: 0.5, combo: 3, punish: 0.6, track: 5.5, think: [0.45, 1.0], moves: { slash: 6, heavy: 2, dash: 1.5, thrust: 1, kick: 0.8, uppercut: 1, sweep: 0.7 } },
+  { mobility: 0.55, react: 0.88, deflect: 0.72, err: 0.028, guard: 0.2, aggr: 0.62, combo: 3, punish: 0.85, track: 7.5, think: [0.3, 0.75], moves: { slash: 6, heavy: 2, dash: 2, thrust: 1.6, kick: 1, uppercut: 1.2, heavyB: 1.2, leap: 1, sweep: 1.2 } },
 ];
 
 export class AI {
@@ -25,7 +27,7 @@ export class AI {
   }
   think(dt, opp) {
     const f = this.f, i = this.inp, P = this.P;
-    i.move.set(0, 0, 0); i.walk = false; i.sprint = false; i.trackRate = P.track;
+    i.move.set(0, 0, 0); i.walk = false; i.sprint = false; i.trackRate = P.track; i.light = i.light || 0;
     if (f.dead || !opp) { i.guard = false; return i; }
     const d = new V3(opp.pos.x - f.pos.x, 0, opp.pos.z - f.pos.z), dist = d.length(); d.divideScalar(Math.max(dist, 1e-3));
     const side = new V3(-d.z, 0, d.x);
@@ -37,7 +39,9 @@ export class AI {
     this.oppGuardTime = opp.guard ? this.oppGuardTime + dt : Math.max(0, this.oppGuardTime - dt * 2);
 
     // ---- finish a broken opponent ----
-    if (opp.broken) { i.guard = false; if (dist < 3.0) i.finisher = 0.25; else { i.move.copy(d); i.sprint = dist > 4; } return i; }
+    // a broken / finished opponent is immune to normal cuts: only go for the deathblow, otherwise wait
+    if (opp.act === 'guardBreak' || opp.act === 'dbVictim') { i.guard = false; i.light = 0; i.heavy = 0; this.chain = 0; this.plan = null;
+      if (opp.broken && dist < 3.0) i.finisher = 0.25; else if (opp.broken) { i.move.copy(d); i.sprint = dist > 4; } else if (dist < 2) i.move.copy(d).negate(); return i; }
 
     // ---- defence: answer the opponent's swing once per attack ----
     const om = MOVES[opp.act];
@@ -46,7 +50,8 @@ export class AI {
       if (Math.random() < P.react) {
         const eta = (om.hit[0] - opp.t) / (opp.tempo || 1);
         const r = Math.random();
-        if (om.perilous && om.kind === 'thrust' && this.level >= 1 && Math.random() < P.deflect * 0.8) { this.dodgeAt = eta - 0.08 + gauss() * P.err; this.dodgeDir = d.clone(); }       // Mikiri: step into it
+        if (om.kind === 'sweep') { if (Math.random() < SWEEP_JUMP_SKILL[this.level]) this.jumpAt = eta - SWEEP_JUMP_LEAD + gauss() * P.err * 1.5; }
+        else if (om.perilous && om.kind === 'thrust' && this.level >= 1 && Math.random() < P.deflect * 0.8) { this.dodgeAt = eta - 0.08 + gauss() * P.err; this.dodgeDir = d.clone(); }       // Mikiri: step into it
         else if (om.perilous) { this.dodgeAt = eta - 0.1 + gauss() * P.err; this.dodgeDir = side.clone().multiplyScalar(this.strafe); }
         else if (r < P.deflect) this.deflectAt = eta - 0.07 + gauss() * P.err;
         else if (r < P.deflect + (1 - P.deflect) * P.guard) this.guardFor = eta + (om.hit[1] - om.hit[0]) + 0.25;
@@ -54,6 +59,7 @@ export class AI {
       }
     }
     if (this.deflectAt !== -1) { this.deflectAt -= dt; if (this.deflectAt <= 0) { this.deflectAt = -1; this.guardFor = 0.28; this.freshGuard = true; } }
+    if (this.jumpAt !== undefined && this.jumpAt !== -1) { this.jumpAt -= dt; if (this.jumpAt <= 0) { this.jumpAt = -1; i.jump = 0.2; i.guard = false; return i; } }
     if (this.dodgeAt !== undefined && this.dodgeAt !== -1) { this.dodgeAt -= dt; if (this.dodgeAt <= 0) { this.dodgeAt = -1; i.dodge = 0.2; i.move.copy(this.dodgeDir); i.guard = false; return i; } }
     // a deflect is a fresh press: release for one frame so the guard edge registers
     if (this.freshGuard) { this.freshGuard = false; i.guard = false; return i; }
@@ -71,7 +77,7 @@ export class AI {
     const open = opp.act === 'deflected' || opp.act === 'hitHeavy' || (om && opp.t > om.hit[1] + 0.05 && !opp.hitDone);
     if (free && open && dist < 3.2 && Math.random() < P.punish * dt * 8) { this.press(f.counterT > 0 ? 'slash' : 'slash'); this.chain = 1 + (Math.random() * P.combo | 0); }
     // keep a combo going
-    if (MOVES[f.act] && MOVES[f.act].next && this.chain > 0 && f.t > MOVES[f.act].hit[0]) { if (Math.random() < 0.9) i.light = 0.2; this.chain--; }
+    if (MOVES[f.act] && MOVES[f.act].next && this.chain > 0 && f.t > MOVES[f.act].hit[0] && opp.act !== 'guardBreak') { if (Math.random() < 0.9) i.light = 0.2; this.chain--; }
     if (this.plan) {   // approach until in range, then commit
       const m = MOVES[this.plan.move];
       const reach = this.plan.move === 'dash' ? 6 : m.range * 0.85;

@@ -38,6 +38,9 @@ export const MOVES = {
   // ---- kick: breaks a turtling guard (no damage worth noting, big posture) ----
   kick: { segs: [['Kick', 0.1, 0.4, 0.3], ['Kick', 0.4, 0.55, 0.12], ['Kick', 0.55, 1.1, 0.45]],
     hit: [0.3, 0.42], cancel: 0.7, track: 0.28, lunge: [0.1, 0.4, 0.7], dmg: 3, post: 34, hitPost: 22, deflPost: 10, range: 1.9, kind: 'kick', perilous: true },
+  // ---- perilous sweep (危): low ground cut. Guard, deflect and dodge don't stop it - jump over it ----
+  sweep: { segs: [['Sword_Heavy_B', 0, 0.38, 0.66], ['Sword_Heavy_B', 0.38, 0.5, 0.14], ['Sword_Heavy_B_Rec', 0, 0.77, 0.6]],
+    hit: [0.62, 0.78], cancel: 1.05, track: 0.6, lunge: [0.3, 0.75, 1.6], dmg: 15, post: 24, hitPost: 14, deflPost: 30, range: 2.7, kind: 'sweep', perilous: true, dir: 'side', heavy: true },
   // ---- deathblow (cinematic lunge stab and pull-out) ----
   deathblow: { segs: [['Sword_Heavy_A', 0.3, 0.45, 0.6], ['Sword_Heavy_A', 0.45, 0.52, 0.2], ['Sword_Heavy_A', 0.52, 0.73, 0.55], ['Sword_Heavy_A_Rec', 0.1, 1.0, 0.55]],
     hit: [0.72, 0.8], cancel: 1.75, track: 0, lunge: [0.45, 0.72, 0.45], kind: 'deathblow', range: 3 },
@@ -61,6 +64,7 @@ export const REACT = {
   roll: { segs: [['Roll', 0.05, 1.1, 0.62], ['Roll', 1.1, 1.47, 0.18]] },
   die: { segs: [['Death01', 0, 2.4, 2.1]] },
   dieFwd: { segs: [['Death02', 0, 2.47, 2.2]] },
+  jump: { segs: [['Jump_Start', 0.12, 0.45, 0.16], ['Jump_Start', 0.45, 1.25, 0.46], ['Jump_Land', 0.05, 0.75, 0.32]] },
   revive: { segs: [['LayToIdle', 0, 1.53, 1.6]] },
   draw: { segs: [['Sword_Enter', 0, 1.3, 1.25]] },
   sheathe: { segs: [['Sword_Exit', 0, 1.3, 1.4]] },

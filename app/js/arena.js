@@ -210,6 +210,15 @@ function buildDojo(scene, renderer, cfg) {
   };
 }
 
+// ---- per-map look tuning (bloom works on linear HDR before tone mapping; threshold > 1 = only true highlights) ----
+const BLOOM_DEFAULT = { strength: 0.55, threshold: 1.0 };
+const LOOK = {
+  dojo: { bloom: { strength: 0.6, threshold: 1.0 }, camFill: 0.55 },
+  sakura: { bloom: { strength: 0.4, threshold: 1.15 }, camFill: 0.2 },
+  snow: { bloom: { strength: 0.3, threshold: 1.3 }, camFill: 0.15 },
+  bamboo: { bloom: { strength: 0.55, threshold: 1.0 }, camFill: 0.4 },
+};
+
 // ===================================================================================
 // Outdoor maps + map manager. The fighting rectangle (ARENA) is identical everywhere,
 // so online opponents may pick different maps without any desync.
@@ -329,12 +338,12 @@ function buildSakura(g, renderer, cfg) {
 // ---------- Snow temple at dawn ----------
 function buildSnow(g, renderer, cfg) {
   ROOM = { hx: 60, hz: 60, h: 40 };
-  cfg.background = new THREE.Color(0xcfd9e6); cfg.fog = new THREE.FogExp2(0xd2dce8, 0.0075); cfg.exposure = 0.82; cfg.envI = 1.0; cfg.amb = 'snow';
+  cfg.background = new THREE.Color(0xb8c4d2); cfg.fog = new THREE.FogExp2(0xbcc8d6, 0.0075); cfg.exposure = 0.7; cfg.envI = 0.55; cfg.amb = 'snow';
   const sunDir = [0.4, 0.35, -0.85];
   skyAndEnv(g, cfg, gradSky(0x6a8cbc, 0xb4c6dc, 0xe6dcd4, sunDir, 0xfff0d8, 300, 0.4));
-  g.add(new THREE.HemisphereLight(0xdfe8ff, 0x7a808c, 1.1));
-  const sun = sunLight(g, 0xfff0dc, 2.3, [sunDir[0] * 40, 28, sunDir[2] * 40]);
-  const snowM = new THREE.MeshStandardMaterial({ map: noiseTex('#eef3f8', () => [210, rnd(5, 20), rnd(82, 98)], 5000, 512, 20), roughness: 0.92 });
+  g.add(new THREE.HemisphereLight(0xdfe8ff, 0x6a707c, 0.7));
+  const sun = sunLight(g, 0xfff0dc, 2.0, [sunDir[0] * 40, 28, sunDir[2] * 40]);
+  const snowM = new THREE.MeshStandardMaterial({ map: noiseTex('#c6ccd4', () => [210, rnd(6, 18), rnd(65, 80)], 7000, 512, 20), roughness: 1.0 });
   snowM.map.repeat.set(24, 24);
   const ground = new THREE.Mesh(new THREE.CircleGeometry(150, 48), snowM); ground.rotation.x = -Math.PI / 2; ground.position.y = -0.02; ground.receiveShadow = true; g.add(ground);
   const tiles = tilesTex('#7d7f86', '#4e5058'); tiles.repeat.set(6, 4);
@@ -349,7 +358,7 @@ function buildSnow(g, renderer, cfg) {
   const spire = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, 3, 8), new THREE.MeshStandardMaterial({ color: 0xb08a40, metalness: 0.8, roughness: 0.35 })); spire.position.y = 14.5; pag.add(spire);
   pag.position.set(0, 0, 22); g.add(pag);
   // snowy pines
-  const pine = new THREE.MeshStandardMaterial({ color: 0x1f3a2c, roughness: 1 });
+  const pine = new THREE.MeshStandardMaterial({ color: 0x1f3a2c, roughness: 1 }); capM.color.set(0xc8ced6); capM.roughness = 1;
   for (let i = 0; i < 40; i++) { const a = rnd(0, Math.PI * 2), r = rnd(14, 45), t = new THREE.Group(), s = rnd(0.8, 1.7);
     const tr = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.25, 2, 6), wood); tr.position.y = 1; t.add(tr);
     for (let k = 0; k < 4; k++) { const c = new THREE.Mesh(new THREE.ConeGeometry(1.8 - k * 0.38, 1.6, 8), pine); c.position.y = 2 + k * 1.05; c.castShadow = true; t.add(c); const sc = new THREE.Mesh(new THREE.ConeGeometry(1.5 - k * 0.33, 0.5, 8), capM); sc.position.y = 2.55 + k * 1.05; t.add(sc); }
@@ -404,7 +413,7 @@ export function buildArena(scene, renderer) {
   let cur = null, q = 'high';
   const dispose = o => o.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) for (const m of [].concat(c.material)) { for (const k in m) if (m[k] && m[k].isTexture) m[k].dispose(); m.dispose(); } });
   return {
-    get name() { return cur && cur.name; }, get amb() { return cur && cur.cfg.amb; },
+    get name() { return cur && cur.name; }, get cfg() { return cur ? cur.cfg : {}; }, get amb() { return cur && cur.cfg.amb; },
     setMap(name) {
       if (!BUILDERS[name]) name = 'dojo';
       if (cur && cur.name === name) return;
@@ -414,6 +423,7 @@ export function buildArena(scene, renderer) {
       scene.add(g); scene.background = cfg.background; scene.fog = cfg.fog;
       const envTex = pm.fromScene(cfg.envScene, 0.03).texture; scene.environment = envTex; scene.environmentIntensity = cfg.envI;
       renderer.toneMappingExposure = cfg.exposure;
+      Object.assign(cfg, { bloom: BLOOM_DEFAULT, camFill: 0.55 }, LOOK[name]);
       cur = { name, group: g, api, envTex, cfg }; api.setQuality(q);
     },
     setQuality(qq) { q = qq; if (cur) cur.api.setQuality(q); },

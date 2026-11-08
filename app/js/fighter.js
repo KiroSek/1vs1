@@ -11,6 +11,17 @@ const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 const angDiff = (a, b) => { let d = (b - a) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d; };
 const smooth = u => u * u * (3 - 2 * u);
 export const PARRY_WINDOW = 0.2;
+// ---- tuning ----
+const HEAD_RATE = 8;               // 1/s, smoothing of head/neck tracking
+const HEAD_MAX = 0.9;              // rad, max head+neck turn
+const HEAD_BEHIND = 1.7;           // rad, opponent behind this angle -> look straight ahead
+const HEAD_NECK_SHARE = 0.4;       // share of the turn on neck_01 (rest on Head)
+const HEAD_OFF = new Set(['dodgeL', 'dodgeR', 'roll', 'guardBreak', 'dbVictim', 'hitL', 'hitR', 'hitU', 'hitD', 'hitHeavy', 'deflected', 'deathblow', 'die', 'dieFwd', 'revive', 'draw', 'sheathe', 'jump']);
+const SPEED = { lockRun: 3.8, lockSprint: 5.6, freeRun: 3.8, freeSprint: 5.6, guardWalk: 2.2, walk: 1.4 };
+const CANCEL_AFTER_HIT = 0.08;     // s after the active frames when guard/dodge/jump may cancel a swing
+const JUMP = { height: 0.8, air: [0.14, 0.62], carry: 0.85 };   // airborne window (s) of the 'jump' act
+const SWEEP_JUMP_POST = 40;        // posture an attacker takes when a sweep is jumped
+const HIT_FLASH = 0.08;            // s, emissive flash on the body when struck
 
 // ---------- clip library (shared by all fighters) ----------
 const LOWER = /^(root|pelvis|thigh_|calf_|foot_|ball_)/;
@@ -60,7 +71,7 @@ export class Fighter {
     this.hitDone = false; this.queued = null; this.jolt = 0; this.joltDir = 1; this.flash = 0;
     this.dodgeDir = new V3(0, 0, -1); this.sprint = false; this.sheathed = false; this.opp = null; this.target = { x: 0, z: 0, yaw: 0 };
     this.tempo = 1; this.dmgMul = 1; this.fMul = 1; this.parryWin = PARRY_WINDOW; this.iExtra = 0; this.postRegen = 1; this.scaleF = 1;
-    this.events = [];
+    this.events = []; this.headYaw = 0; this.jumpY = 0; this.flashT = 0; this.flashMats = null;
   }
 
   // ---------- helpers ----------
@@ -75,6 +86,7 @@ export class Fighter {
   get broken() { return this.act === 'guardBreak' && this.t < REACT.guardBreak.dur - 0.7; }
   get brokenLeft() { return this.broken ? REACT.guardBreak.dur - 0.7 - this.t : 0; }
   get chest() { return this.b.sp3.getWorldPosition(new V3()); }
+  get airborne() { return this.act === 'jump' && this.t > JUMP.air[0] && this.t < JUMP.air[1]; }
   inActive() { const m = MOVES[this.act]; return m && this.t >= m.hit[0] && this.t <= m.hit[1]; }
   perilousWarn() { const m = MOVES[this.act]; return m && m.perilous && this.t < m.hit[0]; }
 
@@ -104,6 +116,11 @@ export class Fighter {
       if (this.hp <= 0) { this.hp = 0; this.die(true); return { res: 'finisher', killed: true }; }
       this.setAct('dbVictim'); this.vel.addScaledVector(toAtt, -3); return { res: 'finisher', killed: false };
     }
+    // a broken / finished fighter can only be hurt by the deathblow
+    if (this.act === 'guardBreak' || this.act === 'dbVictim') return { res: 'immune' };
+    // perilous sweep: guard, deflect and dodge don't help - only a jump does (then the attacker is exposed)
+    if (m.kind === 'sweep') { if (this.airborne) return { res: 'jumped', apost: SWEEP_JUMP_POST }; }
+    else {
     // dodge i-frames; stepping INTO a thrust = Mikiri counter
     if ((this.act === 'dodgeL' || this.act === 'dodgeR' || this.act === 'roll') && this.t > 0.02 && this.t < 0.34 + this.iExtra) {
       if (m.kind === 'thrust' && this.dodgeDir.dot(toAtt) > 0.35) { this.posture = Math.max(0, this.posture - 10); return { res: 'mikiri', apost: 46 }; }
@@ -127,20 +144,21 @@ export class Fighter {
         return { res: 'block', heavy: !!m.heavy };
       }
     }
+    }
     // clean hit
-    const brokenNow = this.act === 'guardBreak';
-    this.hp -= m.dmg * mul * (brokenNow ? 1.4 : 1); this.posture += m.hitPost; this.lastPost = this.time;
+    this.hp -= m.dmg * mul; this.flashT = HIT_FLASH; this.posture += m.hitPost; this.lastPost = this.time;
     this.vel.addScaledVector(toAtt, -(m.heavy ? 4.5 : 2.6)); this.jolt = 1; this.joltDir = Math.random() < .5 ? 1 : -1;
     if (this.hp <= 0) { this.hp = 0; this.die(false); return { res: 'hit', heavy: !!m.heavy, killed: true, kind: m.kind }; }
     let broke = false;
     const armored = this.isAttack && MOVES[this.act].armor && this.t < MOVES[this.act].hit[0] && !m.heavy;
-    if (!brokenNow) { broke = this.checkBreak(); if (!broke && !armored) this.setAct(m.heavy || m.kind === 'kick' ? 'hitHeavy' : m.dir === 'down' ? 'hitU' : m.dir === 'up' ? 'hitD' : Math.random() < .5 ? 'hitL' : 'hitR'); }
+    { broke = this.checkBreak(); if (!broke && !armored) this.setAct(m.heavy || m.kind === 'kick' ? 'hitHeavy' : m.dir === 'down' ? 'hitU' : m.dir === 'up' ? 'hitD' : Math.random() < .5 ? 'hitL' : 'hitR'); }
     return { res: 'hit', heavy: !!m.heavy, broke, kind: m.kind };
   }
   checkBreak() { if (this.posture >= 100 && this.act !== 'guardBreak') { this.posture = 100; this.guard = false; this.setAct('guardBreak'); this.emit('broken'); return true; } return false; }
   // attacker side
   applyOutcome(r) {
     if (r.res === 'deflect' || r.res === 'clash') { this.posture += r.apost; this.lastPost = this.time; this.vel.addScaledVector(this.fwd, -2.2); if (!this.checkBreak()) this.setAct('deflected'); }
+    else if (r.res === 'jumped') { this.posture += r.apost; this.lastPost = this.time; if (!this.checkBreak()) this.setAct('deflected'); }
     else if (r.res === 'mikiri') { this.posture += r.apost; this.lastPost = this.time; if (!this.checkBreak()) this.setAct('hitHeavy'); }
   }
   die(fwd) { this.dead = true; this.lives = Math.max(0, this.lives - 1); this.guard = false; this.setAct(fwd ? 'dieFwd' : 'die'); }
@@ -153,7 +171,10 @@ export class Fighter {
     this.t += dt * tempo;
     if (this.remote) this.updateRemote(dt); else this.updateLocal(dt, inp || {}, opp);
     if (!isFinite(this.pos.x + this.pos.z + this.yaw)) { this.pos.set(0, 0, 0); this.yaw = 0; this.vel.set(0, 0, 0); }
-    this.group.position.copy(this.pos); this.group.rotation.y = this.yaw;
+    // procedural jump arc (same on local and remote fighters: derived from act/t)
+    const ja = this.act === 'jump' ? clamp((this.t - JUMP.air[0]) / (JUMP.air[1] - JUMP.air[0]), 0, 1) : 0;
+    this.jumpY = this.act === 'jump' ? 4 * JUMP.height * ja * (1 - ja) : Math.max(0, this.jumpY - dt * 6);
+    this.group.position.copy(this.pos); this.group.position.y = this.jumpY; this.group.rotation.y = this.yaw;
     this.visYaw += angDiff(this.visYaw, this.visYawT) * Math.min(1, dt * 10); this.body.rotation.y = this.visYaw;
     this.animate(dt);
   }
@@ -198,9 +219,18 @@ export class Fighter {
     const idle = A === 'idle';
     const recov = md && MOVES[A] && this.t >= (MOVES[A].cancel);
     const reactDone = md && !MOVES[A] && this.t >= md.dur;
-    const canAct = idle || recov || (A === 'deflect' && this.t > 0.12) || ((A === 'dodgeL' || A === 'dodgeR' || A === 'roll') && this.t > 0.42);
+    // defensive cancel: guard / dodge / jump out of a swing once its active frames are over (combo links unchanged)
+    const earlyOut = MOVES[A] && A !== 'deathblow' && !recov && this.t >= MOVES[A].hit[1] + CANCEL_AFTER_HIT;
+    if (earlyOut && !this.dead) {
+      if (inp.guard && !inp.dodge && !inp.jump) { this.setAct('idle'); this.queued = null; }
+      else if (inp.dodge > 0 || inp.jump > 0) this.setAct('idle');
+    }
+    const canAct = idle || recov || (A === 'deflect' && this.t > 0.12) || ((A === 'dodgeL' || A === 'dodgeR' || A === 'roll') && this.t > 0.42) || (A === 'jump' && this.t > JUMP.air[1] + 0.05);
     if (this.dead) { this.guard = false; }
     else if (canAct && A !== 'draw' && A !== 'sheathe' && A !== 'revive') {
+      if (inp.jump > 0 && this.act !== 'jump') {
+        inp.jump = 0; this.setAct('jump'); this.guard = false; this.vel.copy(this.locoV).multiplyScalar(JUMP.carry); sfx.dodge(); this.emit('dodge'); return this.integrate(dt, null, 0, opp);
+      }
       if (inp.dodge > 0 && this.act !== 'roll') {
         inp.dodge = 0;
         const mv = inp.move && inp.move.lengthSq() > 0.01 ? inp.move.clone().normalize() : (toOpp ? toOpp.clone().negate() : this.fwd.negate());
@@ -235,7 +265,7 @@ export class Fighter {
         this.guard = !!inp.guard;
         const mv = inp.move && inp.move.lengthSq() > 0.01 ? inp.move.clone().normalize() : null;
         this.sprint = !!inp.sprint && !this.guard && !!mv;
-        const top = this.guard ? 1.6 : inp.walk ? 1.4 : locked ? (this.sprint ? 4.6 : 2.9) : this.sprint ? 5.6 : 3.8;
+        const top = this.guard ? SPEED.guardWalk : inp.walk ? SPEED.walk : locked ? (this.sprint ? SPEED.lockSprint : SPEED.lockRun) : this.sprint ? SPEED.freeSprint : SPEED.freeRun;
         moveDir = mv; moveSpeed = mv ? top : 0;
         if (locked && !this.sprint) face(toOpp, 12);
         else if (mv) face(mv, this.sprint ? 8 : 12);
@@ -255,6 +285,8 @@ export class Fighter {
           }
           this.hitCheck(m, opp, toOpp, dist);
           if (this.t >= m.dur) this.setAct('idle');
+        } else if (this.act === 'jump') {
+          if (this.t >= REACT.jump.dur) this.setAct('idle');
         } else if (this.act === 'dodgeL' || this.act === 'dodgeR' || this.act === 'roll') {
           const u = clamp(this.t / 0.4, 0, 1), sp = (this.act === 'roll' ? 6.5 : 7.6) * (1 - u) * (1 - u) * 1.6;
           this.vel.set(this.dodgeDir.x * sp, 0, this.dodgeDir.z * sp);
@@ -274,7 +306,7 @@ export class Fighter {
     if (this.act !== 'idle') target.set(0, 0, 0);
     this.locoV.lerp(target, 1 - Math.exp(-(moveDir ? 10 : 14) * dt));
     this.pos.x += (this.locoV.x + this.vel.x) * dt; this.pos.z += (this.locoV.z + this.vel.z) * dt;
-    const dodging = this.act === 'dodgeL' || this.act === 'dodgeR' || this.act === 'roll';
+    const dodging = this.act === 'dodgeL' || this.act === 'dodgeR' || this.act === 'roll' || this.act === 'jump';
     this.vel.multiplyScalar(dodging || MOVES[this.act] ? Math.exp(-3 * dt) : Math.exp(-8 * dt));
     if (MOVES[this.act]) { const m = MOVES[this.act]; if (this.t > m.lunge[1]) this.vel.multiplyScalar(Math.exp(-10 * dt)); }
     this.speed = Math.hypot(this.locoV.x, this.locoV.z);
@@ -410,12 +442,23 @@ export class Fighter {
     // impact jolt: thrown back + twisted
     const j = smooth(Math.min(1, this.jolt));
     if (j > 0) { tw(this.b.sp1, new V3(1, 0, 0), -0.18 * j); tw(this.b.sp2, new V3(1, 0, 0), -0.22 * j); tw(this.b.sp2, new V3(0, 1, 0), 0.25 * j * this.joltDir); tw(this.b.head, new V3(1, 0, 0), -0.3 * j); }
-    // head tracks the opponent
-    if (this.opp && !this.dead && this.act !== 'revive') {
-      const want = Math.atan2(this.opp.pos.x - this.pos.x, this.opp.pos.z - this.pos.z), d = clamp(angDiff(this.yaw + this.visYaw, want), -0.9, 0.9);
-      const bw = MOVES[this.act] ? 0.35 : 0.7;
-      const hq = this.b.head.getWorldQuaternion(new Q()), axis = UP.clone().applyQuaternion(hq.invert());
-      this.b.head.quaternion.multiply(new Q().setFromAxisAngle(axis, d * bw));
+    // head + neck track the opponent: smoothed, off during reactions/dodges, neutral when he is behind us
+    let want = 0;
+    if (this.opp && !this.dead && !HEAD_OFF.has(this.act)) {
+      const raw = angDiff(this.yaw + this.visYaw, Math.atan2(this.opp.pos.x - this.pos.x, this.opp.pos.z - this.pos.z));
+      want = Math.abs(raw) > HEAD_BEHIND ? 0 : clamp(raw, -HEAD_MAX, HEAD_MAX) * (MOVES[this.act] ? 0.5 : 1);
+    }
+    this.headYaw += (want - this.headYaw) * (1 - Math.exp(-HEAD_RATE * dt));
+    if (Math.abs(this.headYaw) > 1e-4) for (const [bone, share] of [[this.b.neck, HEAD_NECK_SHARE], [this.b.head, 1 - HEAD_NECK_SHARE]]) {
+      const axis = UP.clone().applyQuaternion(bone.getWorldQuaternion(new Q()).invert());
+      bone.quaternion.multiply(new Q().setFromAxisAngle(axis, this.headYaw * share));
+    }
+    // hit flash: brief emissive pulse on body and clothes
+    if (this.flashT > 0 || this.flashOn) {
+      if (!this.flashMats) { this.flashMats = []; this.model.traverse(o => { if (o.isMesh && o.material && o.material.emissive) for (const m of [].concat(o.material)) if (!this.flashMats.includes(m)) this.flashMats.push({ m, c: m.emissive.clone(), i: m.emissiveIntensity }); }); }
+      this.flashT = Math.max(0, this.flashT - dt); const k = this.flashT / HIT_FLASH;
+      for (const f of this.flashMats) { if (k > 0) { f.m.emissive.setRGB(1, 0.82, 0.75); f.m.emissiveIntensity = 0.9 * k; } else { f.m.emissive.copy(f.c); f.m.emissiveIntensity = f.i; } }
+      this.flashOn = k > 0;
     }
   }
 
