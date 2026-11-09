@@ -1,5 +1,6 @@
 // Character dressing: katana, saya, cloth shells grown from the skinned body, armour plates, verlet cloth tails.
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const V3 = THREE.Vector3, Q = THREE.Quaternion, M4 = THREE.Matrix4;
 
@@ -59,6 +60,7 @@ export const WEAPONS = {
   crimson: { name: 'Crimson Moon', desc: 'Blood-red steel with a glowing temper line.', price: 900, blade: 'red', glow: 0xff2a14, fit: 0x120b0b, fitMetal: 0.7, wrap: '#7a0c10', same: '#1a1214', saya: 0x4a0505, trail: 0xff5040, tsuba: 'flower' },
   gilded: { name: 'Gilded Lotus', desc: 'Gold fittings and a gold-leaf scabbard.', price: 1200, blade: 'steel', fit: 0xd0a248, fitMetal: 1, wrap: '#f0e2c0', same: '#2a1e10', saya: 0x8a6420, trail: 0xffd27a, tsuba: 'flower' },
   frost: { name: 'Frostbite', desc: 'Ice-pale blade that glows cold.', price: 1800, blade: 'ice', glow: 0x6ad0ff, fit: 0xc0c6cc, fitMetal: 1, wrap: '#1c3a5a', same: '#dfe8f0', saya: 0xd8e2ea, trail: 0x8ae0ff, tsuba: 'round' },
+  yari: { name: 'Yari', desc: 'Spear (enemy only).', price: 0, hidden: true, blade: 'steel', fit: 0x1c1c20, fitMetal: 0.6, wrap: '#3a1a10', same: '#2a1a10', saya: 0x0c0b0e, trail: 0xdfe8ff, tsuba: 'round' },
   mortal: { name: 'Mortal Edge', desc: 'A cursed blade bleeding red light.', price: 3000, blade: 'mortal', glow: 0xff1010, fit: 0x0b0607, fitMetal: 0.6, wrap: '#1a0606', same: '#2a0a0a', saya: 0x120404, trail: 0xff2020, tsuba: 'square' },
 };
 const BLADES = {   // gradient spine->edge, hamon colour, shinogi line
@@ -110,6 +112,7 @@ function tsubaShape(kind) {
 
 // local frame: blade along +Z (tsuba at z=0), edge toward +Y, flats face +-X. Grip from z=-0.27 to z=-0.01.
 export function makeKatana(key = 'standard') {
+  if (key === 'yari') return makeYari();
   const W0 = WEAPONS[key] || WEAPONS.standard, g = new THREE.Group();
   const L = 0.74, N = 40, W = 0.031, TH = 0.0075, SORI = 0.022;
   const pos = [], uv = [], idx = [];
@@ -140,7 +143,18 @@ export function makeKatana(key = 'standard') {
   const kashira = new THREE.Mesh(new THREE.SphereGeometry(0.016, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2).rotateX(-Math.PI / 2).scale(0.82, 1, 0.7), fit); kashira.position.z = -0.264; g.add(kashira);
   for (const sx of [-1, 1]) { const m = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.008, 0.024), gold); m.position.set(sx * 0.012, 0, -0.12); g.add(m); }
   g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = false; } });
-  g.userData = { blade, bladeMat, len: L, trail: W0.trail };
+  blade.userData.keep = true; mergeRigid(g);
+  g.userData = { blade, bladeMat, len: L, trail: W0.trail, baseZ: 0.12, tipZ: 0.76 };
+  return g;
+}
+// spear: long lacquered shaft held near its middle, leaf blade at the front (same local frame as the katana)
+function makeYari() {
+  const g = new THREE.Group();
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.019, 2.4, 8).rotateX(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x3a1a10, roughness: 0.4 })); shaft.position.z = 0.35; g.add(shaft);
+  const ferr = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 0.08, 8).rotateX(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0xc8a050, metalness: 1, roughness: 0.3 })); ferr.position.z = 1.55; g.add(ferr);
+  const bl = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.42, 4).rotateX(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0xdfe4ea, metalness: 0.95, roughness: 0.2, envMapIntensity: 2.5 })); bl.scale.set(1, 0.35, 1); bl.position.z = 1.78; g.add(bl);
+  g.traverse(o => { if (o.isMesh) o.castShadow = true; });
+  g.userData = { len: 2.0, trail: 0xdfe8ff, baseZ: 1.1, tipZ: 1.98, spear: true };
   return g;
 }
 // saya (scabbard), same local frame: mouth at z=0, extends along +Z
@@ -155,7 +169,7 @@ export function makeSaya(key = 'standard', len = 0.8) {
   const koi = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.02, 12).rotateX(Math.PI / 2).scale(0.75, 1.2, 1), fit); koi.position.z = 0.01; g.add(koi);
   const cord = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.005, 6, 16), new THREE.MeshStandardMaterial({ color: 0x5a2a7a, roughness: 0.9 })); cord.position.set(0, 0.02, 0.12 * len / 0.8); cord.rotation.y = Math.PI / 2; g.add(cord);
   g.traverse(o => { if (o.isMesh) o.castShadow = true; });
-  return g;
+  return mergeRigid(g);
 }
 
 // ---------------- armour textures (UVs come from a planar projection of the bind pose) ----------------
@@ -249,7 +263,7 @@ export class Rope {
     const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 2 * 3), 3));
     const uv = []; for (let i = 0; i < n; i++) uv.push(0, i / (n - 1), 1, i / (n - 1)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
     const id = []; for (let i = 0; i < n - 1; i++) { const a = i * 2; id.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); } geo.setIndex(id);
-    this.mesh = new THREE.Mesh(geo, material); this.mesh.frustumCulled = false; this.mesh.castShadow = true; scene.add(this.mesh);
+    this.mesh = new THREE.Mesh(geo, material); this.mesh.frustumCulled = false; this.mesh.castShadow = false; scene.add(this.mesh);
     this.colliders = [];
   }
   update(dt, anchor, side, wind) {   // anchor: world V3; side: world V3 (ribbon width direction)
@@ -282,8 +296,21 @@ export class Rope {
   dispose(scene) { scene.remove(this.mesh); this.mesh.geometry.dispose(); }
 }
 
-// attach a rigid object to a bone, given its desired transform in the model's bind/world space at dress time
+// merge a rigid group's meshes that share a material into one mesh each (armour plates, helmet ribs, sword fittings)
+function mergeRigid(group) {
+  group.updateMatrixWorld(true); const inv = new M4().copy(group.matrixWorld).invert(), by = new Map();
+  group.traverse(o => { if (o.isMesh && !o.isSkinnedMesh && !Array.isArray(o.material) && !o.userData.keep) { let l = by.get(o.material); if (!l) by.set(o.material, l = []); l.push(o); } });
+  for (const [mat, list] of by) {
+    if (list.length < 2) continue;
+    const geos = list.map(o => { let g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone(); for (const k of Object.keys(g.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'uv') g.deleteAttribute(k); if (!g.attributes.uv) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2)); g.applyMatrix4(new M4().multiplyMatrices(inv, o.matrixWorld)); return g; });
+    const merged = mergeGeometries(geos, false); if (!merged) continue;
+    const m = new THREE.Mesh(merged, mat); m.castShadow = true; group.add(m);
+    for (const o of list) { o.parent.remove(o); o.geometry.dispose(); } for (const x of geos) x.dispose();
+  }
+  return group;
+}// attach a rigid object to a bone, given its desired transform in the model's bind/world space at dress time
 function attachAt(bone, obj, pos, quat = new Q(), scl = 1) {
+  if (obj.isGroup) mergeRigid(obj);
   const wm = new M4().compose(pos, quat, new V3(scl, scl, scl));
   const local = bone.matrixWorld.clone().invert().multiply(wm);
   local.decompose(obj.position, obj.quaternion, obj.scale); bone.add(obj);
@@ -336,7 +363,7 @@ export function dress(model, scene, outfitKey = 'shinobi', weaponKey = 'standard
   main.geometry = main.geometry.clone(); main.geometry.setAttribute('color', new THREE.BufferAttribute(cols, 3));
   main.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, metalness: S === 'kage' ? 0.3 : 0 });
   main.castShadow = true; main.receiveShadow = true; main.frustumCulled = false;
-  if (joints) { joints.material = new THREE.MeshStandardMaterial({ color: outfit.under, roughness: 0.85 }); joints.castShadow = true; joints.frustumCulled = false; }
+  if (joints) { joints.userData.sharedGeo = true; joints.material = new THREE.MeshStandardMaterial({ color: outfit.under, roughness: 0.85 }); joints.castShadow = true; joints.frustumCulled = false; }
 
   const out = { mats, ropes: [], tint: [], extra: [] };
   const armoured = S === 'samurai' || S === 'oni' || S === 'kage', tucked = S === 'oni' || S === 'kage';
@@ -355,7 +382,7 @@ export function dress(model, scene, outfitKey = 'shinobi', weaponKey = 'standard
 
   // katana + saya(s) on the left hip
   out.katana = makeKatana(weaponKey); scene.add(out.katana); out.trail = out.katana.userData.trail;
-  out.saya = makeSaya(weaponKey);
+  out.saya = makeSaya(weaponKey === 'yari' ? 'standard' : weaponKey); if (weaponKey === 'yari') out.saya.visible = false;
   const sq = new Q().setFromEuler(new THREE.Euler(-0.35, -0.25, 0, 'YXZ')), sd = new V3(0, 0, 1).applyQuaternion(sq);
   const back = new Q().setFromUnitVectors(new V3(0, 0, 1), new V3(-sd.x, sd.y, -sd.z).normalize());
   attachAt(bone('pelvis'), out.saya, new V3(pel.x + 0.19, pel.y + 0.12, pel.z + 0.17), back);
@@ -413,7 +440,8 @@ export function dress(model, scene, outfitKey = 'shinobi', weaponKey = 'standard
       for (const sx of [-1, 1]) { const r = new Rope(scene, 9, 0.085, 0.085, scarfM, { grav: 4.5, drag: 0.07, taper: 0.55 }), a = new THREE.Object3D(); attachAt(bone('neck_01'), a, neck.clone().add(new V3(sx * 0.04, -0.03, -0.09))); out.ropes.push({ rope: r, anchor: a, sideBone: bone('spine_03') }); }
     } else {
       // straw kasa
-      const straw = canvasTex(256, 256, (x, w, h) => { x.fillStyle = '#c9a868'; x.fillRect(0, 0, w, h); for (let i = 0; i < 260; i++) { x.strokeStyle = `rgba(90,60,20,${rnd(.15, .4)})`; x.beginPath(); const a = rnd(0, 6.3); x.moveTo(w / 2, h / 2); x.lineTo(w / 2 + Math.cos(a) * w, h / 2 + Math.sin(a) * h); x.stroke(); } });
+      const straw = texCache.straw || canvasTex(256, 256, (x, w, h) => { x.fillStyle = '#c9a868'; x.fillRect(0, 0, w, h); for (let i = 0; i < 260; i++) { x.strokeStyle = `rgba(90,60,20,${rnd(.15, .4)})`; x.beginPath(); const a = rnd(0, 6.3); x.moveTo(w / 2, h / 2); x.lineTo(w / 2 + Math.cos(a) * w, h / 2 + Math.sin(a) * h); x.stroke(); } });
+      texCache.straw = straw;
       const kasa = new THREE.Mesh(new THREE.ConeGeometry(0.36, 0.17, 32, 1, true), new THREE.MeshStandardMaterial({ map: straw, roughness: 1, side: THREE.DoubleSide })); mats.push(kasa.material);
       attachAt(bone('Head'), kasa, head.clone().add(new V3(0, 0.2, 0.0)));
       ropeTails(scarfM, [neck.clone().add(new V3(0.05, -0.02, -0.08))], 8, 0.08, 0.07, 'neck_01');

@@ -27,20 +27,40 @@ function start(port, opts = {}) {
   const rooms = new Map();
   const newCode = () => { let c; do { c = Array.from({ length: 4 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ'[Math.random() * 24 | 0]).join(''); } while (rooms.has(c)); return c; };
 
+  // Rooms: two slots + meta { mode, params, persist }. Persistent rooms (hunt / survival) survive a disconnect for
+  // GRACE seconds so the same code can be used to rejoin; the remaining player receives 'peerleft' / 'peerback'.
+  const GRACE = 45000;
   io.on('connection', s => {
+    // never let a malformed message take the relay down
+    const safe = fn => (...a) => { try { fn(...a); } catch (e) { console.error('handler error', e && e.message); } };
+    const on0 = s.on.bind(s); s.on = (ev, fn) => on0(ev, safe(fn));
     const leave = () => {
-      const c = s.data.room; if (!c) return;
-      s.to(c).emit('peerleft'); rooms.delete(c); s.leave(c); s.data.room = null;
+      const c = s.data.room; if (!c) return; const r = rooms.get(c); s.leave(c); s.data.room = null;
+      if (!r) return;
+      r.slots[s.data.slot] = null;
+      const left = r.slots.filter(Boolean).length;
+      if (!r.meta.persist || !r.started || left === 0) { s.to(c).emit('peerleft', {}); clearTimeout(r.timer); rooms.delete(c); return; }
+      s.to(c).emit('peerleft', { grace: GRACE / 1000 });
+      clearTimeout(r.timer); r.timer = setTimeout(() => { io.to(c).emit('peergone'); rooms.delete(c); }, GRACE);
     };
-    s.on('create', cb => { leave(); const c = newCode(); rooms.set(c, { n: 1 }); s.join(c); s.data.room = c; cb({ ok: true, code: c, slot: 0 }); });
-    s.on('join', (c, cb) => {
-      c = String(c || '').toUpperCase().trim(); const r = rooms.get(c);
-      if (!r) return cb({ ok: false, err: 'Room not found' });
-      if (r.n >= 2) return cb({ ok: false, err: 'Room is full' });
-      leave(); r.n = 2; s.join(c); s.data.room = c; cb({ ok: true, code: c, slot: 1 }); io.to(c).emit('start');
+    s.on('create', (meta, cb) => {
+      if (typeof meta === 'function') { cb = meta; meta = {}; } if (typeof cb !== 'function') return;
+      leave(); const c = newCode(); rooms.set(c, { slots: [s.id, null], meta: meta || {}, started: false });
+      s.join(c); s.data.room = c; s.data.slot = 0; cb({ ok: true, code: c, slot: 0, meta: meta || {} });
     });
-    for (const ev of ['state', 'strike', 'outcome', 'dead', 'rematch', 'round'])
-      s.on(ev, d => { if (s.data.room) s.to(s.data.room).emit(ev, d); });
+    s.on('join', (c, cb) => {
+      if (typeof cb !== 'function') return; c = String(c || '').toUpperCase().trim(); const r = rooms.get(c);
+      if (!r) return cb({ ok: false, err: 'Room not found' });
+      const slot = r.slots.indexOf(null);
+      if (slot < 0) return cb({ ok: false, err: 'Room is full' });
+      leave(); r.slots[slot] = s.id; s.join(c); s.data.room = c; s.data.slot = slot;
+      const resume = r.started; clearTimeout(r.timer);
+      cb({ ok: true, code: c, slot, meta: r.meta, resume });
+      if (resume) s.to(c).emit('peerback', { slot }); else { r.started = true; io.to(c).emit('start', { meta: r.meta }); }
+    });
+    s.on('meta', m => { const r = s.data.room && rooms.get(s.data.room); if (r && s.data.slot === 0) r.meta = { ...r.meta, ...m }; });
+    // relay everything else to the other player in the room
+    s.onAny((ev, d) => { if (ev === 'create' || ev === 'join' || ev === 'meta') return; if (s.data.room) s.to(s.data.room).emit(ev, d); });
     s.on('disconnect', leave);
   });
 

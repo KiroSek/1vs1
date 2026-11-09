@@ -7,6 +7,7 @@ import { camClip } from './arena.js';
 const V3 = THREE.Vector3;
 const angDiff = (a, b) => { let d = (b - a) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d; };
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+export const CAM = { lockRate: 3.2, closeDist: 2, closePitch: 0.12, closeBack: 0.7, followDelay: 1.5, unlockDist: 15, flick: 140 };   // rad/s, m, s, px
 
 export class CameraRig {
   constructor(camera) {
@@ -14,7 +15,7 @@ export class CameraRig {
     this.yaw = 0; this.pitch = 0.18; this.dist = 3.6; this.side = 0.62;
     this.pos = new V3(0, 2, -5); this.look = new V3(0, 1.3, 0);
     this.trauma = 0; this.kickV = new V3(); this.kickP = new V3(); this.fovPunch = 0; this.roll = 0; this.rollV = 0; this.t = 0;
-    this.cine = null; this.cineT = 0; this.userT = 9;
+    this.cine = null; this.cineT = 0; this.userT = 9; this.autoFollow = true;
   }
   shake(a) { this.trauma = Math.min(1.2, this.trauma + a); }
   kick(dir, a) { this.kickV.addScaledVector(dir, a); }
@@ -24,7 +25,7 @@ export class CameraRig {
   snapBehind(me) { this.yaw = me.yaw; this.pitch = 0.18; this.pos.copy(this.desired(me, null)); }
 
   desired(me, opp, dt = 0) {
-    const pivot = new V3(me.pos.x, 1.55 * (me.scaleF || 1), me.pos.z);
+    const pivot = new V3(me.pos.x, me.pos.y + (me.crouch ? 1.15 : 1.55) * (me.scaleF || 1), me.pos.z);
     const F = new V3(Math.sin(this.yaw), 0, Math.cos(this.yaw)), R = new V3(-F.z, 0, F.x);   // R = screen right when looking along F
     const cp = Math.cos(this.pitch), sp = Math.sin(this.pitch);
     const p = pivot.clone().addScaledVector(F, -cp * this.dist).addScaledVector(R, this.side); p.y += sp * this.dist;
@@ -45,30 +46,31 @@ export class CameraRig {
     if (locked && oppOk) {
       const dx = opp.pos.x - me.pos.x, dz = opp.pos.z - me.pos.z, d = Math.hypot(dx, dz), ty = Math.atan2(dx, dz);
       // keep a slight angle so the player stands left of the line of sight instead of covering the opponent
-      const bias = d < 3.2 ? 0.17 - (d - 1.2) * 0.04 : 0.09; this.yaw += angDiff(this.yaw, ty + bias) * Math.min(1, 6.5 * dt);
-      const wantPitch = clamp(0.25 - (d - 3) * 0.012, 0.16, 0.3);
+      const bias = d < 3.2 ? 0.17 - (d - 1.2) * 0.04 : 0.09; const dy = angDiff(this.yaw, ty + bias) * Math.min(1, 6.5 * dt); this.yaw += clamp(dy, -CAM.lockRate * dt, CAM.lockRate * dt);   // capped turn speed: no whip when he runs past
+      const close = clamp((CAM.closeDist - d) / CAM.closeDist, 0, 1);   // opponent nearer than 2 m: lift and pull back
+      const wantPitch = clamp(0.25 - (d - 3) * 0.012, 0.16, 0.3) + CAM.closePitch * close;
       this.pitch += (wantPitch - this.pitch) * Math.min(1, 3 * dt);
-      const wantDist = clamp(3.4 + (d - 2.5) * 0.18, 3.3, 4.4), wantSide = clamp(0.95 - (d - 1.5) * 0.12, 0.62, 0.95);
+      const wantDist = clamp(3.4 + (d - 2.5) * 0.18, 3.3, 4.4) + CAM.closeBack * close, wantSide = clamp(0.95 - (d - 1.5) * 0.12, 0.62, 0.95);
       this.dist += (wantDist - this.dist) * Math.min(1, 3 * dt);
       this.side += (wantSide - this.side) * Math.min(1, 4 * dt);
     } else {
       // free camera: drift behind the player's motion after a moment without mouse input
-      if (this.userT > 1.2 && me.speed > 1) this.yaw += angDiff(this.yaw, me.yaw) * Math.min(1, 1.2 * dt);
+      if (this.autoFollow && this.userT > CAM.followDelay && me.speed > 1) this.yaw += angDiff(this.yaw, me.yaw) * Math.min(1, 1.2 * dt);
       this.dist += (3.9 - this.dist) * Math.min(1, 3 * dt); this.side += (0.55 - this.side) * Math.min(1, 4 * dt);
     }
     let p = this.desired(me, opp, dt);
     // never let the player's own body hide the opponent's chest: widen the shoulder offset if the sight line clips him
     if (locked && oppOk) {
-      const oc = new V3(opp.pos.x, 1.3, opp.pos.z), mc = new V3(me.pos.x, 1.3, me.pos.z);
+      const oc = new V3(opp.pos.x, opp.pos.y + 1.3, opp.pos.z), mc = new V3(me.pos.x, me.pos.y + 1.3, me.pos.z);
       const seg = oc.clone().sub(p), t = clamp(mc.clone().sub(p).dot(seg) / seg.lengthSq(), 0, 1), close = p.clone().addScaledVector(seg, t).distanceTo(mc);
       if (close < 0.55) { this.side = Math.min(1.3, this.side + (0.55 - close) * 6 * dt); }
     }
     this.pos.lerp(p, 1 - Math.exp(-(locked ? 9 : 12) * dt));
     // aim point: player shoulder blended toward the opponent's chest
-    const pivot = new V3(me.pos.x, 1.4 * (me.scaleF || 1), me.pos.z);
+    const pivot = new V3(me.pos.x, me.pos.y + (me.crouch ? 1.05 : 1.4) * (me.scaleF || 1), me.pos.z);
     const F = new V3(Math.sin(this.yaw), 0, Math.cos(this.yaw)), R = new V3(-F.z, 0, F.x);
     let look = pivot.clone().addScaledVector(R, this.side * 0.35).addScaledVector(F, 1.2);
-    if (locked && oppOk) { const oc = new V3(opp.pos.x, 1.25 * (opp.scaleF || 1), opp.pos.z); look = pivot.clone().addScaledVector(R, this.side * 0.3).lerp(oc, 0.55); look.y = Math.max(look.y, 1.15); }
+    if (locked && oppOk) { const oc = new V3(opp.pos.x, opp.pos.y + 1.25 * (opp.scaleF || 1), opp.pos.z); look = pivot.clone().addScaledVector(R, this.side * 0.3).lerp(oc, 0.55); look.y = Math.max(look.y, Math.min(me.pos.y, opp.pos.y) + 1.15); }
     this.look.lerp(look, 1 - Math.exp(-10 * dt));
     this.apply(dt, locked ? 0.5 : 0);
   }
@@ -79,23 +81,27 @@ export class CameraRig {
     else if (c.type === 'deathblow') {
       const a = c.att, v = c.vic, mid = a.pos.clone().lerp(v.pos, 0.5), d = v.pos.clone().sub(a.pos).setY(0).normalize(), side = new V3(-d.z, 0, d.x).multiplyScalar(c.sign);
       const orbit = this.cineT * 0.25;
-      const p = mid.clone().addScaledVector(side, 2.5 * Math.cos(orbit)).addScaledVector(d, -0.9 + 2.5 * Math.sin(orbit) * 0.4); p.y = 1.05 + this.cineT * 0.15;
-      this.pos.lerp(p, 1 - Math.exp(-7 * dt)); this.look.lerp(mid.setY(1.15), 1 - Math.exp(-8 * dt));
+      const p = mid.clone().addScaledVector(side, 2.5 * Math.cos(orbit)).addScaledVector(d, -0.9 + 2.5 * Math.sin(orbit) * 0.4); p.y = a.pos.y + 1.05 + this.cineT * 0.15;
+      this.pos.lerp(p, 1 - Math.exp(-7 * dt)); this.look.lerp(mid.setY(a.pos.y + 1.15), 1 - Math.exp(-8 * dt));
     } else if (c.type === 'death' || c.type === 'revive') {
       const f = c.f, a = c.ang + this.cineT * 0.18, r = c.type === 'death' ? 3.2 - Math.min(0.8, this.cineT * 0.3) : 3.4;
-      const p = new V3(f.pos.x + Math.sin(a) * r, c.type === 'death' ? 1.4 + this.cineT * 0.25 : 1.1, f.pos.z + Math.cos(a) * r);
-      this.pos.lerp(p, 1 - Math.exp(-3 * dt)); this.look.lerp(new V3(f.pos.x, c.type === 'death' ? 0.4 : 0.9 + Math.min(0.5, this.cineT * 0.4), f.pos.z), 1 - Math.exp(-4 * dt));
+      const p = new V3(f.pos.x + Math.sin(a) * r, f.pos.y + (c.type === 'death' ? 1.4 + this.cineT * 0.25 : 1.1), f.pos.z + Math.cos(a) * r);
+      this.pos.lerp(p, 1 - Math.exp(-3 * dt)); this.look.lerp(new V3(f.pos.x, f.pos.y + (c.type === 'death' ? 0.4 : 0.9 + Math.min(0.5, this.cineT * 0.4)), f.pos.z), 1 - Math.exp(-4 * dt));
     } else if (c.type === 'intro') {
       const { me, opp } = ctx, mid = me.pos.clone().lerp(opp.pos, 0.5), d = opp.pos.clone().sub(me.pos).setY(0).normalize(), side = new V3(-d.z, 0, d.x);
       const u = Math.min(1, this.cineT / c.dur), a = -0.9 + u * 0.9;
-      const p = mid.clone().addScaledVector(side, Math.cos(a) * 5.2).addScaledVector(d, Math.sin(a) * 5.2); p.y = 1.25 + u * 0.4;
-      this.pos.lerp(p, 1 - Math.exp(-4 * dt)); this.look.lerp(mid.setY(1.2), 1 - Math.exp(-5 * dt));
+      const p = mid.clone().addScaledVector(side, Math.cos(a) * 5.2).addScaledVector(d, Math.sin(a) * 5.2); p.y = me.pos.y + 1.25 + u * 0.4;
+      this.pos.lerp(p, 1 - Math.exp(-4 * dt)); this.look.lerp(mid.setY(me.pos.y + 1.2), 1 - Math.exp(-5 * dt));
       if (u >= 1) { this.cine = null; this.snapBehind(me); }
+    } else if (c.type === 'orbit') {   // boss intro / phase change: slow low orbit around a fighter
+      const f = c.f, a = c.ang + this.cineT * 0.35, r = c.r || 4.2; const p = new V3(f.pos.x + Math.sin(a) * r, f.pos.y + 0.9 + this.cineT * 0.15, f.pos.z + Math.cos(a) * r);
+      this.pos.lerp(p, 1 - Math.exp(-3 * dt)); this.look.lerp(new V3(f.pos.x, f.pos.y + 1.5 * (f.scaleF || 1), f.pos.z), 1 - Math.exp(-4 * dt));
+      if (c.dur && this.cineT > c.dur) { this.cine = null; if (ctx.me) this.snapBehind(ctx.me); }
     } else if (c.type === 'victory') {
-      const f = c.f, a = c.ang + this.cineT * 0.22; const p = new V3(f.pos.x + Math.sin(a) * 3, 1.5, f.pos.z + Math.cos(a) * 3);
-      this.pos.lerp(p, 1 - Math.exp(-3 * dt)); this.look.lerp(new V3(f.pos.x, 1.3, f.pos.z), 1 - Math.exp(-4 * dt));
+      const f = c.f, a = c.ang + this.cineT * 0.22; const p = new V3(f.pos.x + Math.sin(a) * 3, f.pos.y + 1.5, f.pos.z + Math.cos(a) * 3);
+      this.pos.lerp(p, 1 - Math.exp(-3 * dt)); this.look.lerp(new V3(f.pos.x, f.pos.y + 1.3, f.pos.z), 1 - Math.exp(-4 * dt));
     }
-    const k = camClip(this.look, this.pos); if (k < 1) this.pos.copy(this.look.clone().lerp(this.pos, k));
+    if (c.type !== 'fixed') { const k = camClip(this.look, this.pos); if (k < 1) this.pos.copy(this.look.clone().lerp(this.pos, k)); }
     this.apply(dt, 0);
   }
   startCine(c) { this.cine = c; this.cineT = 0; }

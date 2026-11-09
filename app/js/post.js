@@ -48,7 +48,7 @@ export class Post {
     this.U = this.grade.uniforms; this.q = 'high'; this.dof = 0;
     this.fx = { aberr: 0, radial: 0, flash: 0, mono: 0 };
   }
-  setQuality(q) { this.q = q; this.applyBloom(); this.U.grain.value = q === 'low' ? 0 : 0.03; }
+  setQuality(q) { this.q = q; this.bloom.enabled = q !== 'low'; this.applyBloom(); this.U.grain.value = q === 'low' ? 0 : 0.03; }
   setBloom(b) { this.bloomCfg = b || { strength: 0.55, threshold: 1.0 }; this.applyBloom(); }
   applyBloom() { const b = this.bloomCfg || { strength: 0.55, threshold: 1.0 }; this.bloom.strength = b.strength * (this.q === 'low' ? 0.8 : 1); this.bloom.threshold = b.threshold; }
   setSize(w, h, pr) { this.composer.setPixelRatio(pr); this.composer.setSize(w, h); const k = this.q === 'high' ? 0.5 : 0.35; this.bloom.resolution.set(w * pr * k, h * pr * k); }

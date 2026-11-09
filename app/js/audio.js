@@ -50,7 +50,9 @@ function init() {
 export function resume() { init(); if (ctx.state !== 'running') ctx.resume(); if (!started) { started = true; ambient(); } }
 export function setVolume(v) { vol = v; if (master) master.gain.value = v; }
 
-function out(node, wet = 0.3) { node.connect(dry); if (wet > 0) { const g = ctx.createGain(); g.gain.value = wet; node.connect(g); g.connect(verb); } }
+// positional playback: sfx.at() sets PAN (stereo -1..1) and GAINK (distance attenuation) for the calls inside it
+const PAN = { v: 0, k: 1 };
+function out(node, wet = 0.3) { let n = node; if (PAN.k !== 1) { const g = ctx.createGain(); g.gain.value = PAN.k; n.connect(g); n = g; } if (PAN.v) { const p = ctx.createStereoPanner(); p.pan.value = PAN.v; n.connect(p); n = p; } n.connect(dry); if (wet > 0) { const g = ctx.createGain(); g.gain.value = wet; n.connect(g); g.connect(verb); } }
 function noise(dur, type, f0, f1, gain, q = 1, wet = 0.25, delay = 0) {
   if (!ctx) return; const t = ctx.currentTime + delay;
   const s = ctx.createBufferSource(); s.buffer = noiseBuf; s.loop = true;
@@ -109,3 +111,68 @@ function ambient() {
   const pluck = () => { const b = scale[Math.random() * scale.length | 0]; if (ctx.state === 'running') { tone(b, 2.4, 0.045, 'triangle', null, 0.7); tone(b * 2, 1.2, 0.015, 'sine', null, 0.7); } setTimeout(pluck, 2500 + Math.random() * 5000); };
   pluck();
 }
+
+// ---------- positional helpers ----------
+sfx.at = (name, pan, vol, ...args) => { if (!ctx || vol <= 0.01) return; PAN.v = Math.max(-1, Math.min(1, pan)); PAN.k = vol; try { sfx[name](...args); } finally { PAN.v = 0; PAN.k = 1; } };
+// footsteps by surface (also used for the opponent's steps in Samurai Hunt)
+sfx.foot = (surface = 'dirt', loud = 0.5) => {
+  const v = 0.25 + loud * 0.5;
+  if (surface === 'stone') { noise(0.05, 'bandpass', 2400, 1400, 0.35 * v, 2, 0.15); tone(180, 0.05, 0.08 * v, 'triangle', 120, 0.1); }
+  else if (surface === 'wood') { tone(140, 0.09, 0.25 * v, 'sine', 90, 0.2); noise(0.05, 'lowpass', 900, 300, 0.25 * v, 1, 0.2); }
+  else if (surface === 'water') { noise(0.22, 'bandpass', 900, 2600, 0.4 * v, 1.2, 0.2); noise(0.12, 'highpass', 3000, 5000, 0.15 * v, 1, 0.1, 0.05); }
+  else if (surface === 'grass') { noise(0.22, 'highpass', 2500, 5500, 0.22 * v, 0.7, 0.1); }
+  else if (surface === 'bamboo') { noise(0.18, 'highpass', 2000, 4500, 0.2 * v, 0.7, 0.1); tone(320 + Math.random() * 80, 0.25, 0.04 * v, 'triangle', 260, 0.3, 0.05); }
+  else { noise(0.07, 'lowpass', 700, 200, 0.28 * v, 1, 0.1); }
+};
+sfx.rustle = (k = 1) => { noise(0.4, 'highpass', 2200, 5200, 0.25 * k, 0.6, 0.15); };
+sfx.bell = () => { [196, 392.4, 588.6, 784.8].forEach((f, i) => tone(f * (1 + i * 0.003), 3.5 - i * 0.6, 0.18 / (i + 1), 'sine', null, 0.9)); };
+sfx.cue = () => { noise(0.25, 'bandpass', 3000, 7000, 0.4, 4, 0.3); tone(880, 0.25, 0.08, 'triangle', 1320, 0.3); };   // sudden-danger sting (surprise attack wind-up)
+sfx.breakWood = () => { noise(0.3, 'lowpass', 1600, 200, 0.7, 1, 0.3); for (let i = 0; i < 4; i++) tone(200 + Math.random() * 300, 0.12, 0.12, 'triangle', 90, 0.2, i * 0.04); };
+sfx.breakPaper = () => { noise(0.35, 'bandpass', 1800, 600, 0.5, 0.8, 0.3); noise(0.6, 'lowpass', 600, 100, 0.25, 1, 0.3, 0.2); };
+sfx.pebble = () => { tone(1800, 0.06, 0.1, 'triangle', 1200, 0.2); tone(1500, 0.05, 0.08, 'triangle', 1100, 0.2, 0.12); tone(1300, 0.05, 0.05, 'triangle', 1000, 0.2, 0.22); };
+sfx.roar = () => { noise(1.4, 'bandpass', 300, 120, 0.9, 0.8, 0.6); tone(70, 1.4, 0.7, 'sawtooth', 45, 0.6); tone(105, 1.2, 0.3, 'sawtooth', 60, 0.6); };
+sfx.wave = () => { [98, 147, 196].forEach((f, i) => tone(f, 2.2, 0.25, 'sine', null, 0.8, i * 0.08)); noise(0.5, 'lowpass', 500, 80, 0.8, 1, 0.6); };
+sfx.revive2 = () => { [523, 659, 784].forEach((f, i) => tone(f, 0.8, 0.1, 'sine', null, 0.6, i * 0.09)); };
+
+// ---------- adaptive music: 'off' | 'explore' | 'tension' | 'combat' | 'boss' ----------
+const SCALE = [146.83, 155.56, 196, 220, 233.08, 293.66, 311.13, 392];
+export const music = {
+  state: 'off', bus: null, timer: null, beat: 0, next: 0,
+  set(s) {
+    if (!ctx || s === this.state) return; this.state = s;
+    if (!this.bus) { this.bus = ctx.createGain(); this.bus.gain.value = 0; this.bus.connect(master); this.drone(); this.timer = setInterval(() => this.tick(), 60); }
+    const target = { off: 0, explore: 0.5, tension: 0.7, combat: 0.85, boss: 1 }[s] ?? 0;
+    this.bus.gain.cancelScheduledValues(ctx.currentTime); this.bus.gain.setTargetAtTime(target, ctx.currentTime, 0.8);
+    if (this.dg) { this.dg.gain.setTargetAtTime(s === 'off' ? 0 : s === 'explore' ? 0.05 : s === 'boss' ? 0.14 : 0.09, ctx.currentTime, 1); this.df.frequency.setTargetAtTime(s === 'boss' ? 420 : s === 'combat' ? 300 : 180, ctx.currentTime, 1); }
+  },
+  drone() {   // low string/brass drone under everything
+    const o1 = ctx.createOscillator(), o2 = ctx.createOscillator(); o1.type = 'sawtooth'; o2.type = 'sawtooth'; o1.frequency.value = 73.4; o2.frequency.value = 73.4 * 1.498;
+    const f = this.df = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 180; const g = this.dg = ctx.createGain(); g.gain.value = 0;
+    o1.connect(f); o2.connect(f); f.connect(g); g.connect(this.bus); o1.start(); o2.start();
+  },
+  hit(time, f0, dur, gain, noiseGain) {   // taiko-like drum
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(f0, time); o.frequency.exponentialRampToValueAtTime(f0 * 0.45, time + dur);
+    const g = ctx.createGain(); g.gain.setValueAtTime(gain, time); g.gain.exponentialRampToValueAtTime(0.0001, time + dur); o.connect(g); g.connect(this.bus); o.start(time); o.stop(time + dur + 0.05);
+    if (noiseGain) { const s = ctx.createBufferSource(); s.buffer = noiseBuf; const nf = ctx.createBiquadFilter(); nf.type = 'bandpass'; nf.frequency.value = 900; const ng = ctx.createGain(); ng.gain.setValueAtTime(noiseGain, time); ng.gain.exponentialRampToValueAtTime(0.0001, time + 0.08); s.connect(nf); nf.connect(ng); ng.connect(this.bus); s.start(time, Math.random()); s.stop(time + 0.1); }
+  },
+  pluck(time, f, gain) { const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = f; const g = ctx.createGain(); g.gain.setValueAtTime(gain, time); g.gain.exponentialRampToValueAtTime(0.0001, time + 0.9); o.connect(g); g.connect(this.bus); o.start(time); o.stop(time + 1); },
+  flute(time, f, dur, gain) { const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f; const lfo = ctx.createOscillator(); lfo.frequency.value = 5; const lg = ctx.createGain(); lg.gain.value = f * 0.012; lfo.connect(lg); lg.connect(o.frequency);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, time); g.gain.exponentialRampToValueAtTime(gain, time + 0.4); g.gain.exponentialRampToValueAtTime(0.0001, time + dur); o.connect(g); g.connect(this.bus); o.start(time); lfo.start(time); o.stop(time + dur + 0.1); lfo.stop(time + dur + 0.1); },
+  tick() {
+    if (!ctx || ctx.state !== 'running' || this.state === 'off') return;
+    const now = ctx.currentTime; if (this.next < now) this.next = now + 0.05;
+    const bpm = { explore: 50, tension: 72, combat: 118, boss: 136 }[this.state], spb = 60 / bpm;
+    while (this.next < now + 0.25) {
+      const t = this.next, b = this.beat++, s = this.state;
+      if (s === 'explore') { if (b % 16 === 0 && Math.random() < 0.6) this.flute(t, SCALE[5 + (Math.random() * 3 | 0)], 3.5, 0.05); if (b % 4 === 2 && Math.random() < 0.4) this.pluck(t, SCALE[Math.random() * 5 | 0], 0.04); }
+      else if (s === 'tension') { if (b % 2 === 0) this.hit(t, 70, 0.5, 0.25, 0); if (b % 2 === 1) this.hit(t, 62, 0.4, 0.14, 0); if (b % 8 === 4) this.pluck(t, SCALE[Math.random() * 3 | 0] * 2, 0.04); }
+      else {
+        const boss = s === 'boss', pat = boss ? [1, 0, 1, 1, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 1] : [1, 0, 0, 1, 1, 0, 1, 0];
+        if (pat[b % pat.length]) this.hit(t, b % 4 === 0 ? 62 : 90, b % 4 === 0 ? 0.55 : 0.25, b % 4 === 0 ? 0.45 : 0.22, 0.12);
+        if (b % 2 === 1) this.hit(t, 400, 0.05, 0.05, 0.06);
+        if (b % 4 === 2 && Math.random() < 0.7) this.pluck(t, SCALE[Math.random() * SCALE.length | 0], boss ? 0.07 : 0.05);
+      }
+      this.next += spb / (s === 'explore' ? 1 : 2);
+    }
+  },
+};

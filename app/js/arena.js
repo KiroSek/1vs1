@@ -6,13 +6,19 @@ let ROOM = { hx: 12, hz: 9, h: 6.2 };                    // camera limits (walls
 const PILLARS = [];
 const rnd = (a, b) => a + Math.random() * (b - a);
 
+import { bakeStatic } from './world.js';
+// open-world maps (Hunt / Survival) register a World here; bounds/camClip/ground then use its colliders and terrain
+export const WORLD = { active: null };
+export const groundAt = (x, z) => WORLD.active ? WORLD.active.ground(x, z) : 0;
 export function bounds(p, r = 0.4) {
+  if (WORLD.active) return WORLD.active.bounds(p, r);
   p.x = Math.max(-ARENA.hx + r, Math.min(ARENA.hx - r, p.x)); p.z = Math.max(-ARENA.hz + r, Math.min(ARENA.hz - r, p.z));
   for (const c of PILLARS) { const dx = p.x - c.x, dz = p.z - c.z, d = Math.hypot(dx, dz), m = c.r + r; if (d < m && d > 1e-4) { p.x = c.x + dx / d * m; p.z = c.z + dz / d * m; } }
   return p;
 }
 // shorten a camera boom so it doesn't pass through walls, ceiling or pillars. returns allowed fraction 0..1 of from->to
 export function camClip(from, to) {
+  if (WORLD.active) return WORLD.active.camClip(from, to);
   let k = 1; const d = to.clone().sub(from);
   const lim = (o, dd, lo, hi) => { if (dd > 0 && o + dd > hi) k = Math.min(k, (hi - o) / dd); if (dd < 0 && o + dd < lo) k = Math.min(k, (lo - o) / dd); };
   lim(from.x, d.x, -ROOM.hx + 0.35, ROOM.hx - 0.35); lim(from.z, d.z, -ROOM.hz + 0.35, ROOM.hz - 0.35); lim(from.y, d.y, 0.3, ROOM.h - 0.4);
@@ -223,7 +229,7 @@ const LOOK = {
 // Outdoor maps + map manager. The fighting rectangle (ARENA) is identical everywhere,
 // so online opponents may pick different maps without any desync.
 // ===================================================================================
-function gradSky(top, mid, hor, sunDir, sunCol, sunPow = 600, glow = 0.6) {
+export function gradSky(top, mid, hor, sunDir, sunCol, sunPow = 600, glow = 0.6) {
   return new THREE.ShaderMaterial({
     side: THREE.BackSide, depthWrite: false, fog: false,
     uniforms: { a: { value: new THREE.Color(hor) }, b: { value: new THREE.Color(mid) }, c: { value: new THREE.Color(top) }, s: { value: new THREE.Vector3(...sunDir).normalize() }, sc: { value: new THREE.Color(sunCol) }, sp: { value: sunPow }, gl: { value: glow } },
@@ -231,13 +237,13 @@ function gradSky(top, mid, hor, sunDir, sunCol, sunPow = 600, glow = 0.6) {
     fragmentShader: 'varying vec3 p;uniform vec3 a,b,c,sc,s;uniform float sp,gl;void main(){float h=clamp(p.y,-.2,1.);vec3 col=mix(a,b,smoothstep(-.02,.25,h));col=mix(col,c,smoothstep(.25,.9,h));float m=max(dot(p,s),0.);col+=sc*(pow(m,sp)*3.+pow(m,8.)*gl*.5);gl_FragColor=vec4(col,1.);}',
   });
 }
-function skyAndEnv(g, cfg, mat) {
+export function skyAndEnv(g, cfg, mat) {
   const sky = new THREE.Mesh(new THREE.SphereGeometry(220, 32, 16), mat); sky.frustumCulled = false; g.add(sky);
   const env = new THREE.Scene(); env.add(new THREE.Mesh(new THREE.SphereGeometry(100, 32, 16), mat.clone()));
   cfg.envScene = env;
   return env;
 }
-function sunLight(g, color, I, pos) {
+export function sunLight(g, color, I, pos) {
   const s = new THREE.DirectionalLight(color, I); s.position.set(...pos); s.target.position.set(0, 0, 0);
   s.castShadow = true; Object.assign(s.shadow.camera, { left: -13, right: 13, top: 11, bottom: -11, near: 1, far: 90 }); s.shadow.bias = -0.0003; s.shadow.normalBias = 0.025;
   g.add(s, s.target); return s;
@@ -272,7 +278,7 @@ function stoneLantern(g, x, z, lightOn, list) {
   if (lightOn) { const l = new THREE.PointLight(0xffa850, 6, 9, 1.6); l.position.set(x, 1.6, z); g.add(l); list && list.push(l); }
 }
 // falling particles: 'petals' | 'snow' | 'fireflies'
-function particles(g, kind, n) {
+export function particles(g, kind, n) {
   const p = new Float32Array(n * 3), v = new Float32Array(n * 3), ph = new Float32Array(n);
   const spawn = (i, top) => { p[i * 3] = rnd(-24, 24); p[i * 3 + 1] = top ? rnd(7, 12) : rnd(0, 12); p[i * 3 + 2] = rnd(-20, 20); ph[i] = rnd(0, 9);
     if (kind === 'petals') { v[i * 3] = rnd(-1.2, -0.4); v[i * 3 + 1] = rnd(-0.9, -0.5); v[i * 3 + 2] = rnd(-0.3, 0.3); }
@@ -407,26 +413,36 @@ function buildBamboo(g, renderer, cfg) {
 
 export const MAPS = { dojo: 'Night Dojo', sakura: 'Sakura Garden', snow: 'Snow Temple', bamboo: 'Bamboo Grove' };
 const BUILDERS = { dojo: buildDojo, sakura: buildSakura, snow: buildSnow, bamboo: buildBamboo };
+export const EXTRA_MAPS = {};
+// maps.js registers the open-world maps (not shown in the duel arena picker)
+export function registerMap(name, label, builder) { BUILDERS[name] = builder; EXTRA_MAPS[name] = label; }
 
 export function buildArena(scene, renderer) {
   const pm = new THREE.PMREMGenerator(renderer);
   let cur = null, q = 'high';
-  const dispose = o => o.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) for (const m of [].concat(c.material)) { for (const k in m) if (m[k] && m[k].isTexture) m[k].dispose(); m.dispose(); } });
+  // frees everything a map created; materials/textures flagged userData.shared (world-kit caches) are kept for the next build
+  const dispose = o => o.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) for (const m of [].concat(c.material)) { if (m.userData.shared) continue; for (const k in m) if (m[k] && m[k].isTexture && !m[k].userData.shared) m[k].dispose(); m.dispose(); } if (c.shadow && c.shadow.map) { c.shadow.map.dispose(); c.shadow.map = null; } });
   return {
     get name() { return cur && cur.name; }, get cfg() { return cur ? cur.cfg : {}; }, get amb() { return cur && cur.cfg.amb; },
-    setMap(name) {
+    get world() { return WORLD.active; },
+    setMap(name, opts = {}) {
       if (!BUILDERS[name]) name = 'dojo';
-      if (cur && cur.name === name) return;
-      if (cur) { scene.remove(cur.group); dispose(cur.group); cur.envTex.dispose(); }
-      PILLARS.length = 0;
-      const g = new THREE.Group(), cfg = {}, api = BUILDERS[name](g, renderer, cfg);
+      const key = name + JSON.stringify(opts);
+      if (cur && cur.key === key) return;
+      if (cur) { scene.remove(cur.group); dispose(cur.group); if (cur.cfg.envScene) dispose(cur.cfg.envScene); cur.envRT.dispose(); }
+      PILLARS.length = 0; WORLD.active = null;
+      const g = new THREE.Group(), cfg = {}, api = BUILDERS[name](g, renderer, cfg, opts);
+      WORLD.active = cfg.world || null;
+      cfg.merged = bakeStatic(g);   // static scenery -> few draw calls
       scene.add(g); scene.background = cfg.background; scene.fog = cfg.fog;
-      const envTex = pm.fromScene(cfg.envScene, 0.03).texture; scene.environment = envTex; scene.environmentIntensity = cfg.envI;
+      const envRT = pm.fromScene(cfg.envScene, 0.03), envTex = envRT.texture; scene.environment = envTex; scene.environmentIntensity = cfg.envI;
       renderer.toneMappingExposure = cfg.exposure;
-      Object.assign(cfg, { bloom: BLOOM_DEFAULT, camFill: 0.55 }, LOOK[name]);
-      cur = { name, group: g, api, envTex, cfg }; api.setQuality(q);
+      cfg.bloom = cfg.bloom || (LOOK[name] && LOOK[name].bloom) || BLOOM_DEFAULT; cfg.camFill = cfg.camFill ?? (LOOK[name] && LOOK[name].camFill) ?? 0.55;
+      cur = { name, key, group: g, api, envTex, envRT, cfg }; api.setQuality(q);
     },
     setQuality(qq) { q = qq; if (cur) cur.api.setQuality(q); },
-    update(dt) { if (cur) (cur.api.update)(dt); },
+    update(dt) { if (cur) (cur.api.update)(dt); if (WORLD.active) WORLD.active.update(dt); },
+    // large maps: the shadow-casting sun follows the local player
+    follow(p) { const s = cur && cur.cfg.sun; if (!s) return; s.target.position.set(p.x, p.y, p.z); s.position.set(p.x + cur.cfg.sunOff.x, p.y + cur.cfg.sunOff.y, p.z + cur.cfg.sunOff.z); },
   };
 }
