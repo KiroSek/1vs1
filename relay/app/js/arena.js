@@ -29,6 +29,8 @@ export function camClip(from, to) {
   return Math.max(0.12, k);
 }
 
+import { forest, grass, tuftGeo, foliageMat, foliageDepth } from './foliage.js';
+import { torii as archTorii, lantern as archLantern } from './arch.js';
 function canvasTex(w, h, draw, srgb = true) {
   const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h);
   const t = new THREE.CanvasTexture(c); if (srgb) t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
@@ -269,12 +271,10 @@ function woodStage(g) {
   const rim = new THREE.MeshStandardMaterial({ color: 0x6a1410, roughness: 0.45 });
   for (const [w, d, x, z] of [[ARENA.hx * 2 + 1.3, 0.16, 0, ARENA.hz + 0.62], [ARENA.hx * 2 + 1.3, 0.16, 0, -ARENA.hz - 0.62], [0.16, ARENA.hz * 2 + 1.3, ARENA.hx + 0.62, 0], [0.16, ARENA.hz * 2 + 1.3, -ARENA.hx - 0.62, 0]]) { const b = new THREE.Mesh(new THREE.BoxGeometry(w, 0.56, d), rim); b.position.set(x, -0.22, z); g.add(b); }
 }
+const LANTERN_M = {};
 function stoneLantern(g, x, z, lightOn, list) {
-  const stone = new THREE.MeshStandardMaterial({ color: 0x8a867e, roughness: 0.95 }), t = new THREE.Group();
-  const parts = [[new THREE.CylinderGeometry(0.32, 0.42, 0.35, 8), 0.17], [new THREE.CylinderGeometry(0.13, 0.17, 1.0, 8), 0.85], [new THREE.BoxGeometry(0.55, 0.45, 0.55), 1.55], [new THREE.ConeGeometry(0.58, 0.42, 4), 2.0]];
-  for (const [geo, y] of parts) { const m = new THREE.Mesh(geo, stone); m.position.y = y; if (geo.type === 'ConeGeometry') m.rotation.y = Math.PI / 4; m.castShadow = true; t.add(m); }
-  const glow = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.3, 0.38), new THREE.MeshStandardMaterial({ color: 0xffd090, emissive: 0xffa040, emissiveIntensity: 2.2 })); glow.position.y = 1.55; t.add(glow);
-  t.position.set(x, 0, z); g.add(t);
+  if (!LANTERN_M.stone) { LANTERN_M.stone = new THREE.MeshStandardMaterial({ color: 0x8a867e, roughness: 0.95 }); LANTERN_M.paper = new THREE.MeshStandardMaterial({ color: 0xffd090, emissive: 0xffa040, emissiveIntensity: 2.2 }); }
+  const t = archLantern(LANTERN_M, true); t.position.set(x, 0, z); g.add(t);
   if (lightOn) { const l = new THREE.PointLight(0xffa850, 6, 9, 1.6); l.position.set(x, 1.6, z); g.add(l); list && list.push(l); }
 }
 // falling particles: 'petals' | 'snow' | 'fireflies'
@@ -322,18 +322,13 @@ function buildSakura(g, renderer, cfg) {
   woodStage(g);
   const trunk = new THREE.MeshStandardMaterial({ color: 0x3a2620, roughness: 1 });
   const bl = [0xffb3c8, 0xffc8d8, 0xf59ab5, 0xffd6e2].map(c => new THREE.MeshStandardMaterial({ color: c, roughness: 0.85, flatShading: true }));
-  for (let i = 0; i < 22; i++) {
-    const a = rnd(0, Math.PI * 2), r = rnd(13, 34), x = Math.cos(a) * r, z = Math.sin(a) * r, t = new THREE.Group(), s = rnd(0.9, 1.6);
-    const tr = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.45, 4.2, 7), trunk); tr.position.y = 2.1; tr.rotation.z = rnd(-.2, .2); tr.castShadow = true; t.add(tr);
-    for (let k = 0; k < 10; k++) { const b = new THREE.Mesh(new THREE.IcosahedronGeometry(rnd(1.1, 2.1), 1), bl[k % 4]); b.position.set(rnd(-2.6, 2.6), rnd(3.6, 6.4), rnd(-2.6, 2.6)); b.castShadow = true; t.add(b); }
-    t.position.set(x, -0.5, z); t.scale.setScalar(s); g.add(t);
-  }
+  const trees = []; for (let i = 0; i < 26; i++) { const a = rnd(0, Math.PI * 2), r = rnd(13, 34); trees.push([Math.cos(a) * r, -0.5, Math.sin(a) * r, rnd(0.9, 1.5)]); }
+  forest(g, 'sakura', trees); void trunk; void bl;
+  const gr = []; for (let i = 0; i < 900; i++) { const a = rnd(0, Math.PI * 2), r = rnd(9.5, 40); gr.push([Math.cos(a) * r, -0.5, Math.sin(a) * r, rnd(0.6, 1.2)]); }
+  grass(g, gr, ['#6d7a3c', '#7d8a46', '#5c6a34', '#a09060', '#8a8048']);
   // torii gate behind the stage, lanterns around
   const red = new THREE.MeshStandardMaterial({ color: 0xc0201a, roughness: 0.5 }), blk = new THREE.MeshStandardMaterial({ color: 0x1a1414, roughness: 0.6 });
-  const torii = new THREE.Group();
-  for (const sx of [-1, 1]) { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.38, 7.5, 14), red); p.position.set(sx * 3.4, 3.75, 0); p.castShadow = true; torii.add(p); }
-  const k1 = new THREE.Mesh(new THREE.BoxGeometry(10.5, 0.45, 0.6), blk); k1.position.y = 7.7; torii.add(k1);
-  const k2 = new THREE.Mesh(new THREE.BoxGeometry(8.6, 0.35, 0.45), red); k2.position.y = 6.6; torii.add(k2);
+  const torii = archTorii({ red, black: blk }, 1.5);
   torii.position.set(0, -0.5, 17); g.add(torii); const t2 = torii.clone(); t2.position.set(0, -0.5, 27); t2.scale.setScalar(1.15); g.add(t2);
   for (const [x, z] of [[-11.5, -8], [11.5, -8], [-11.5, 8], [11.5, 8], [-4, 10], [4, 10], [-4, -10], [4, -10]]) stoneLantern(g, x, z, false);
   mountains(g, 0xb97a8a, 14, 120, 170);
@@ -365,10 +360,7 @@ function buildSnow(g, renderer, cfg) {
   pag.position.set(0, 0, 22); g.add(pag);
   // snowy pines
   const pine = new THREE.MeshStandardMaterial({ color: 0x1f3a2c, roughness: 1 }); capM.color.set(0xc8ced6); capM.roughness = 1;
-  for (let i = 0; i < 40; i++) { const a = rnd(0, Math.PI * 2), r = rnd(14, 45), t = new THREE.Group(), s = rnd(0.8, 1.7);
-    const tr = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.25, 2, 6), wood); tr.position.y = 1; t.add(tr);
-    for (let k = 0; k < 4; k++) { const c = new THREE.Mesh(new THREE.ConeGeometry(1.8 - k * 0.38, 1.6, 8), pine); c.position.y = 2 + k * 1.05; c.castShadow = true; t.add(c); const sc = new THREE.Mesh(new THREE.ConeGeometry(1.5 - k * 0.33, 0.5, 8), capM); sc.position.y = 2.55 + k * 1.05; t.add(sc); }
-    t.position.set(Math.cos(a) * r, 0, Math.sin(a) * r); t.scale.setScalar(s); g.add(t); }
+  { const pts = []; for (let i = 0; i < 40; i++) { const a = rnd(0, Math.PI * 2), r = rnd(14, 45); pts.push([Math.cos(a) * r, 0, Math.sin(a) * r, rnd(0.7, 1.4)]); } forest(g, 'snowpine', pts); void wood; void pine; }
   for (const [x, z] of [[-11, -7.5], [11, -7.5], [-11, 7.5], [11, 7.5]]) stoneLantern(g, x, z, true);
   mountains(g, 0xb8c4d6, 14, 120, 170);
   const upd = particles(g, 'snow', 900);
@@ -396,8 +388,8 @@ function buildBamboo(g, renderer, cfg) {
     const r = rnd(0.05, 0.1), h = rnd(9, 16); e.set(rnd(-.06, .06), 0, rnd(-.06, .06)); q.setFromEuler(e); M.compose(new THREE.Vector3(x, h / 2, z), q, new THREE.Vector3(r, h, r)); inst.setMatrixAt(i, M); }
   inst.castShadow = true; g.add(inst);
   // leaf canopies (flattened instanced cones)
-  const leafM = new THREE.MeshStandardMaterial({ color: 0x4a7a34, roughness: 0.9, flatShading: true }), LN = 220, leaves = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0), leafM, LN);
-  for (let i = 0; i < LN; i++) { let x, z; do { x = rnd(-40, 40); z = rnd(-40, 40); } while (Math.abs(x) < ARENA.hx + 3 && Math.abs(z) < ARENA.hz + 3); const s = rnd(1.5, 3); M.compose(new THREE.Vector3(x, rnd(8, 14), z), q.identity(), new THREE.Vector3(s, s * 0.35, s)); leaves.setMatrixAt(i, M); }
+  const LN = 220, leaves = new THREE.InstancedMesh(tuftGeo('bamboo', 30, 1.2, 1.0, 11), foliageMat('bamboo'), LN); leaves.customDepthMaterial = foliageDepth('bamboo'); leaves.castShadow = true;
+  for (let i = 0; i < LN; i++) { let x, z; do { x = rnd(-40, 40); z = rnd(-40, 40); } while (Math.abs(x) < ARENA.hx + 3 && Math.abs(z) < ARENA.hz + 3); const s = rnd(1.5, 3); M.compose(new THREE.Vector3(x, rnd(8, 14), z), q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rnd(0, 6.3)), new THREE.Vector3(s * 0.8, s * 0.6, s * 0.8)); leaves.setMatrixAt(i, M); }
   g.add(leaves);
   // paper lanterns on posts along the clearing
   const post = new THREE.MeshStandardMaterial({ color: 0x2a1c14, roughness: 0.8 }), lan = new THREE.MeshStandardMaterial({ color: 0xffe0b0, emissive: 0xff9a40, emissiveIntensity: 2.2 });

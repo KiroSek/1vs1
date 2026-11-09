@@ -1,11 +1,11 @@
 // Rebindable controls. Codes are KeyboardEvent.code or 'Mouse0/1/2'. Two slots per action.
 import { t } from './i18n.js';
 
-export const ACTIONS = ['forward', 'back', 'left', 'right', 'light', 'heavy', 'guard', 'dodge', 'jump', 'sprint', 'walk', 'crouch', 'finisher', 'lock', 'interact', 'lure'];
+export const ACTIONS = ['forward', 'back', 'left', 'right', 'light', 'heavy', 'guard', 'dodge', 'jump', 'sprint', 'walk', 'crouch', 'finisher', 'lock', 'interact', 'lure', 'grab'];
 const DEFAULTS = {
   forward: ['KeyW', ''], back: ['KeyS', ''], left: ['KeyA', ''], right: ['KeyD', ''],
   light: ['Mouse0', ''], heavy: ['KeyE', ''], guard: ['Mouse2', 'KeyC'], dodge: ['Space', ''], jump: ['KeyV', 'Mouse1'],
-  sprint: ['ShiftLeft', ''], walk: ['ControlLeft', 'AltLeft'], finisher: ['KeyF', ''], lock: ['KeyQ', ''], crouch: ['KeyX', ''], interact: ['KeyR', ''], lure: ['KeyG', ''],
+  sprint: ['ShiftLeft', ''], walk: ['ControlLeft', 'AltLeft'], finisher: ['KeyF', ''], lock: ['KeyQ', ''], crouch: ['KeyX', ''], interact: ['KeyR', ''], lure: ['KeyG', ''], grab: ['KeyT', ''],
 };
 const KEY = 'kd-binds';
 export let BINDS = JSON.parse(JSON.stringify(DEFAULTS));

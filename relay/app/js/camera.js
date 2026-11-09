@@ -7,7 +7,10 @@ import { camClip } from './arena.js';
 const V3 = THREE.Vector3;
 const angDiff = (a, b) => { let d = (b - a) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d; };
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
-export const CAM = { lockRate: 3.2, closeDist: 2, closePitch: 0.12, closeBack: 0.7, followDelay: 1.5, unlockDist: 15, flick: 140 };   // rad/s, m, s, px
+// crowdDist / crowdUp: extra boom length / pitch when a second enemy is close (2 vs 2, survival); sprintFov: max FOV gain at full sprint
+// deathblow shot cuts (attacker's deathblow time, s): approach until cut1, impact close-up until cut2, then the pull-back
+const DB_SHOTS = { cut1: 0.5, cut2: 0.95 };
+export const CAM = { crowdDist: 0.7, crowdUp: 0.05, sprintFov: 5, lockRate: 3.2, closeDist: 2, closePitch: 0.12, closeBack: 0.7, followDelay: 1.5, unlockDist: 15, flick: 140 };   // rad/s, m, s, px
 
 export class CameraRig {
   constructor(camera) {
@@ -37,6 +40,7 @@ export class CameraRig {
   update(dt, ctx) {
     this.t += dt; this.userT += dt;
     const { me, opp, locked, mode } = ctx, cam = this.cam;
+    this.crowd = (this.crowd || 0) + ((ctx.crowd ? 1 : 0) - (this.crowd || 0)) * Math.min(1, 2 * dt); this.spd = me ? me.speed || 0 : 0;
     if (mode === 'menu') {
       const a = this.t * 0.07 + 0.4; const p = new V3(Math.cos(a) * 5.4, 1.7 + Math.sin(this.t * 0.2) * 0.2, Math.sin(a) * 5.4);
       this.pos.lerp(p, 1 - Math.exp(-2 * dt)); this.look.lerp(new V3(0, 1.15, 0), 1 - Math.exp(-3 * dt)); this.apply(dt, 0); return;
@@ -48,9 +52,9 @@ export class CameraRig {
       // keep a slight angle so the player stands left of the line of sight instead of covering the opponent
       const bias = d < 3.2 ? 0.17 - (d - 1.2) * 0.04 : 0.09; const dy = angDiff(this.yaw, ty + bias) * Math.min(1, 6.5 * dt); this.yaw += clamp(dy, -CAM.lockRate * dt, CAM.lockRate * dt);   // capped turn speed: no whip when he runs past
       const close = clamp((CAM.closeDist - d) / CAM.closeDist, 0, 1);   // opponent nearer than 2 m: lift and pull back
-      const wantPitch = clamp(0.25 - (d - 3) * 0.012, 0.16, 0.3) + CAM.closePitch * close;
+      const wantPitch = clamp(0.25 - (d - 3) * 0.012, 0.16, 0.3) + CAM.closePitch * close + CAM.crowdUp * this.crowd;
       this.pitch += (wantPitch - this.pitch) * Math.min(1, 3 * dt);
-      const wantDist = clamp(3.4 + (d - 2.5) * 0.18, 3.3, 4.4) + CAM.closeBack * close, wantSide = clamp(0.95 - (d - 1.5) * 0.12, 0.62, 0.95);
+      const wantDist = clamp(3.4 + (d - 2.5) * 0.18, 3.3, 4.4) + CAM.closeBack * close + CAM.crowdDist * this.crowd, wantSide = clamp(0.95 - (d - 1.5) * 0.12, 0.62, 0.95);
       this.dist += (wantDist - this.dist) * Math.min(1, 3 * dt);
       this.side += (wantSide - this.side) * Math.min(1, 4 * dt);
     } else {
@@ -80,9 +84,14 @@ export class CameraRig {
     if (c.type === 'fixed') { this.pos.copy(c.p); this.look.copy(c.l); }
     else if (c.type === 'deathblow') {
       const a = c.att, v = c.vic, mid = a.pos.clone().lerp(v.pos, 0.5), d = v.pos.clone().sub(a.pos).setY(0).normalize(), side = new V3(-d.z, 0, d.x).multiplyScalar(c.sign);
-      const orbit = this.cineT * 0.25;
-      const p = mid.clone().addScaledVector(side, 2.5 * Math.cos(orbit)).addScaledVector(d, -0.9 + 2.5 * Math.sin(orbit) * 0.4); p.y = a.pos.y + 1.05 + this.cineT * 0.15;
-      this.pos.lerp(p, 1 - Math.exp(-7 * dt)); this.look.lerp(mid.setY(a.pos.y + 1.15), 1 - Math.exp(-8 * dt));
+      // three shots with hard cuts keyed to the blow: wide side (approach) -> low close-up at the impact -> pull-back orbit
+      const t = a.act === 'deathblow' ? a.t : 9, shot = t < DB_SHOTS.cut1 ? 0 : t < DB_SHOTS.cut2 ? 1 : 2, cut = shot !== c.shot; c.shot = shot;
+      let p, look;
+      if (shot === 0) { const orbit = this.cineT * 0.25; p = mid.clone().addScaledVector(side, 2.6 * Math.cos(orbit)).addScaledVector(d, -0.9 + 2.5 * Math.sin(orbit) * 0.4); p.y = a.pos.y + 1.05 + this.cineT * 0.12; look = mid.clone().setY(a.pos.y + 1.15); }
+      else if (shot === 1) { p = v.pos.clone().addScaledVector(side, 2.0).addScaledVector(d, 0.7); p.y = v.pos.y + 0.8; look = v.pos.clone().lerp(a.pos, 0.45).setY(v.pos.y + 1.25); }
+      else { const ang = (this.cineT - (c.t2 ?? (c.t2 = this.cineT))) * 0.3; p = mid.clone().addScaledVector(side, 3.6 * Math.cos(ang)).addScaledVector(d, 3.6 * Math.sin(ang) * 0.5); p.y = a.pos.y + 1.7 + ang * 0.4; look = mid.clone().setY(a.pos.y + 0.9); }
+      if (cut) { this.pos.copy(p); this.look.copy(look); } else { this.pos.lerp(p, 1 - Math.exp(-(shot === 1 ? 4 : 7) * dt)); this.look.lerp(look, 1 - Math.exp(-8 * dt)); }
+      c.fovK = shot === 1 ? 1 : 0;
     } else if (c.type === 'death' || c.type === 'revive') {
       const f = c.f, a = c.ang + this.cineT * 0.18, r = c.type === 'death' ? 3.2 - Math.min(0.8, this.cineT * 0.3) : 3.4;
       const p = new V3(f.pos.x + Math.sin(a) * r, f.pos.y + (c.type === 'death' ? 1.4 + this.cineT * 0.25 : 1.1), f.pos.z + Math.cos(a) * r);
@@ -119,7 +128,8 @@ export class CameraRig {
     cam.lookAt(this.look);
     cam.rotateZ(this.roll + n(29, 4) * s * 0.03);
     this.fovPunch = Math.max(0, this.fovPunch - dt * 18);
-    const fov = this.baseFov - this.fovPunch * (this.cine ? -0.6 : 1) + (this.cine && this.cine.type === 'deathblow' ? -8 : 0);
+    this.sprintK = (this.sprintK || 0) + (clamp(((this.spd || 0) - 4.5) / 2.5, 0, 1) * (this.cine ? 0 : 1) - (this.sprintK || 0)) * Math.min(1, 3 * dt);   // speed feel
+    const fov = this.baseFov - this.fovPunch * (this.cine ? -0.6 : 1) + (this.cine && this.cine.type === 'deathblow' ? (this.cine.fovK ? -12 : -6) : 0) + CAM.sprintFov * this.sprintK;
     if (Math.abs(cam.fov - fov) > 0.02) { cam.fov += (fov - cam.fov) * Math.min(1, 12 * dt); cam.updateProjectionMatrix(); }
   }
 }

@@ -39,28 +39,39 @@ function start(port, opts = {}) {
       if (!r) return;
       r.slots[s.data.slot] = null;
       const left = r.slots.filter(Boolean).length;
+      if (r.slots.length > 2) {   // team room (2 vs 2): the host (slot 0) runs the bots and the match; without it the room ends
+        if (s.data.slot === 0 || left === 0) { s.to(c).emit('peergone'); clearTimeout(r.timer); rooms.delete(c); return; }
+        io.to(c).emit('roster', { slots: r.slots.map(Boolean), left: s.data.slot }); return;
+      }
       if (!r.meta.persist || !r.started || left === 0) { s.to(c).emit('peerleft', {}); clearTimeout(r.timer); rooms.delete(c); return; }
       s.to(c).emit('peerleft', { grace: GRACE / 1000 });
       clearTimeout(r.timer); r.timer = setTimeout(() => { io.to(c).emit('peergone'); rooms.delete(c); }, GRACE);
     };
     s.on('create', (meta, cb) => {
       if (typeof meta === 'function') { cb = meta; meta = {}; } if (typeof cb !== 'function') return;
-      leave(); const c = newCode(); rooms.set(c, { slots: [s.id, null], meta: meta || {}, started: false });
+      leave(); const c = newCode(); const size = Math.max(2, Math.min(4, (meta && +meta.size) || 2));
+      const slots = Array(size).fill(null); slots[0] = s.id; rooms.set(c, { slots, meta: meta || {}, started: false });
       s.join(c); s.data.room = c; s.data.slot = 0; cb({ ok: true, code: c, slot: 0, meta: meta || {} });
     });
     s.on('join', (c, cb) => {
       if (typeof cb !== 'function') return; c = String(c || '').toUpperCase().trim(); const r = rooms.get(c);
       if (!r) return cb({ ok: false, err: 'Room not found' });
+      if (r.slots.length > 2 && r.started) return cb({ ok: false, err: 'Match already started' });   // team rooms: no joining mid-match
       const slot = r.slots.indexOf(null);
       if (slot < 0) return cb({ ok: false, err: 'Room is full' });
       leave(); r.slots[slot] = s.id; s.join(c); s.data.room = c; s.data.slot = slot;
       const resume = r.started; clearTimeout(r.timer);
-      cb({ ok: true, code: c, slot, meta: r.meta, resume });
+      cb({ ok: true, code: c, slot, meta: r.meta, resume, slots: r.slots.map(Boolean) });
+      if (r.slots.length > 2) { io.to(c).emit('roster', { slots: r.slots.map(Boolean), joined: slot }); return; }   // team room: host starts
       if (resume) s.to(c).emit('peerback', { slot }); else { r.started = true; io.to(c).emit('start', { meta: r.meta }); }
     });
+    // team rooms: host starts the match; 'tm' messages are relayed with the sender's slot (f) and an optional target slot (to)
+    s.on('tmstart', () => { const r = s.data.room && rooms.get(s.data.room); if (!r || s.data.slot !== 0) return; r.started = true; io.to(s.data.room).emit('start', { meta: r.meta, slots: r.slots.map(Boolean) }); });
+    s.on('tm', d => { const c = s.data.room, r = c && rooms.get(c); if (!r || !d || typeof d !== 'object') return; const m = { ...d, f: s.data.slot };
+      if (typeof d.to === 'number' && r.slots[d.to]) io.to(r.slots[d.to]).emit('tm', m); else s.to(c).emit('tm', m); });
     s.on('meta', m => { const r = s.data.room && rooms.get(s.data.room); if (r && s.data.slot === 0) r.meta = { ...r.meta, ...m }; });
     // relay everything else to the other player in the room
-    s.onAny((ev, d) => { if (ev === 'create' || ev === 'join' || ev === 'meta') return; if (s.data.room) s.to(s.data.room).emit(ev, d); });
+    s.onAny((ev, d) => { if (ev === 'create' || ev === 'join' || ev === 'meta' || ev === 'tm' || ev === 'tmstart') return; if (s.data.room) s.to(s.data.room).emit(ev, d); });
     s.on('disconnect', leave);
   });
 

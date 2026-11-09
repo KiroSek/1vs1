@@ -30,6 +30,7 @@
     <button data-go="duelMenu"><span data-i18n="m.duel"></span><small data-i18n="m.duel.s"></small></button>
     <button data-go="huntSetup"><span data-i18n="m.hunt"></span><small data-i18n="m.hunt.s"></small></button>
     <button data-go="svSetup"><span data-i18n="m.sv"></span><small data-i18n="m.sv.s"></small></button>
+    <button data-go="teamSetup"><span data-i18n="m.team"></span><small data-i18n="m.team.s"></small></button>
     <button data-go="training" data-i18n="m.training"></button>
     <button data-go="shop"><span data-i18n="m.shop"></span><small data-i18n="m.shop.s"></small></button>
     <button data-go="settings" data-i18n="m.settings"></button>
@@ -71,6 +72,19 @@
   <div id="svBest" class="msg"></div>
   <button class="back" data-go="menu" data-i18n="back"></button></div></div>
 <div id="upgrades" class="screen hidden"><div class="panel wide"><h2 data-i18n="sv.upTitle"></h2><div id="upList"></div><div id="upInfo" class="msg"></div></div></div>
+<div id="teamSetup" class="screen hidden"><div class="panel wide"><h2 data-i18n="m.team"></h2><p class="msg desc" data-i18n="ts.desc"></p>
+  <div class="grid2">
+    <label data-i18n="ss.map"></label><select id="tMap"></select>
+    <label data-i18n="ts.bots"></label><select id="tBot"><option value="0" data-i18n="ts.b0"></option><option value="1" data-i18n="ts.b1" selected></option><option value="2" data-i18n="ts.b2"></option></select>
+  </div>
+  <div class="row"><button class="big" id="tSolo" data-i18n="ts.solo"></button></div>
+  <div class="row"><button class="big" id="tHost" data-i18n="ts.host"></button></div>
+  <div class="row split"><input id="tCode" maxlength="4" placeholder="CODE" data-i18n-ph="on.code" autocomplete="off" class="code4"><button class="big" id="tJoin" data-i18n="on.join"></button></div>
+  <label><span data-i18n="on.server"></span> <small data-i18n="on.serverHint"></small></label><input id="tSrv" class="srv" placeholder="http://192.168.1.10:3000">
+  <div id="tMsg" class="msg"></div>
+  <div id="tLobby" class="hidden"><div class="code" id="tRoom"></div><div id="tSlots" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:10px 0"></div>
+    <div class="msg" data-i18n="ts.fill"></div><div class="row"><button class="big" id="tStart" data-i18n="ts.start"></button></div></div>
+  <button class="back" data-go="menu" data-i18n="back"></button></div></div>
 <div id="gdiff" class="screen hidden"><div class="panel"><h2 data-i18n="gd.title"></h2><div id="gdList"></div><div class="msg" data-i18n="gd.note"></div><button class="back" data-go="duelMenu" data-i18n="back"></button></div></div>
 <div id="shop" class="screen hidden"><div class="panel wide"><h2><span data-i18n="shop.title"></span> <span class="coins in" id="coinShop"></span></h2>
   <div class="tabs"><button class="tab on" data-tab="skins" data-i18n="shop.skins"></button><button class="tab" data-tab="weapons" data-i18n="shop.blades"></button></div>
@@ -93,12 +107,13 @@
   <h2 data-i18n="st.title"></h2>
   <label data-i18n="st.lang"></label><select id="sLang"></select>
   <label data-i18n="st.quality"></label>
-  <select id="sQuality"><option value="auto" data-i18n="q.auto"></option><option value="low" data-i18n="q.low"></option><option value="med" data-i18n="q.med"></option><option value="high" data-i18n="q.high"></option></select>
+  <select id="sQuality"><option value="auto" data-i18n="q.auto"></option><option value="low" data-i18n="q.low"></option><option value="med" data-i18n="q.med"></option><option value="high" data-i18n="q.high"></option><option value="ultra" data-i18n="q.ultra"></option></select>
   <label data-i18n="st.diff"></label>
   <select id="sDiff"><option value="0" data-i18n="d0"></option><option value="1" data-i18n="d1"></option><option value="2" data-i18n="d2"></option></select>
   <label><span data-i18n="st.sens"></span> <span id="vSens"></span></label><input type="range" id="sSens" min="0.3" max="3" step="0.1">
   <label><span data-i18n="st.vol"></span> <span id="vVol"></span></label><input type="range" id="sVol" min="0" max="1" step="0.05">
   <label class="chk"><input type="checkbox" id="sInvert"> <span data-i18n="st.invert"></span></label>
+  <label class="chk"><input type="checkbox" id="sPvpPeril"> <span data-i18n="st.pvpPeril"></span></label>
   <label class="chk"><input type="checkbox" id="sFps"> <span data-i18n="st.fps"></span></label>
   <label class="chk"><input type="checkbox" id="sAutoCam"> <span data-i18n="st.autocam"></span></label>
   <label data-i18n="st.controls"></label>

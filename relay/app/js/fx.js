@@ -110,6 +110,8 @@ export class FX {
   }
   broken(pos) { this.spark(pos, 70, 5, 0xff7a30, 0.6); this.ring(pos, 1.2, 0.4, 0xff8a40); this.flare(pos, 0.7, 0.25, 0xff9a50); }
   revive(pos) { this.puff(pos, 70, 0.9, 0xffc060, 1.8, 1, 1.6, -0.3, 3); this.spark(pos, 80, 3, 0xffd890, 1.2, new THREE.Vector3(0, 1, 0), 0.6, -1); this.ring(new THREE.Vector3(pos.x, 0.05, pos.z), 2, 0.8, 0xffd27a); this.light(pos, 0xffc070, 30, 0.8); }
+  // leaves / petals kicked up by fast movement: slow fall, wide spread
+  leaves(pos, n = 10, color = 0xb06a2a) { this.puff(new THREE.Vector3(pos.x, 0.15, pos.z), n, 2.2, color, 1.4, 0.55, 1.4, 1.2, 2.5); }
   dust(pos, n = 10) { this.puff(new THREE.Vector3(pos.x, 0.08, pos.z), n, 1.2, 0x6a5a4a, 0.7, 1, 0.25, 0, 2); }
   perilous(f) { this.kikenFighter = f; this.kikenT = 0.65; }
 

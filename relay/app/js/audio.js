@@ -53,21 +53,24 @@ export function setVolume(v) { vol = v; if (master) master.gain.value = v; }
 // positional playback: sfx.at() sets PAN (stereo -1..1) and GAINK (distance attenuation) for the calls inside it
 const PAN = { v: 0, k: 1 };
 function out(node, wet = 0.3) { let n = node; if (PAN.k !== 1) { const g = ctx.createGain(); g.gain.value = PAN.k; n.connect(g); n = g; } if (PAN.v) { const p = ctx.createStereoPanner(); p.pan.value = PAN.v; n.connect(p); n = p; } n.connect(dry); if (wet > 0) { const g = ctx.createGain(); g.gain.value = wet; n.connect(g); g.connect(verb); } }
+// every synthesized voice gets a little random pitch / level spread so repeated actions never sound identical
+const VARY = { pitch: 0.06, gain: 0.15 }, vp = () => 1 + (Math.random() * 2 - 1) * VARY.pitch, vg = () => 1 + (Math.random() * 2 - 1) * VARY.gain;
 function noise(dur, type, f0, f1, gain, q = 1, wet = 0.25, delay = 0) {
-  if (!ctx) return; const t = ctx.currentTime + delay;
+  if (!ctx) return; const t = ctx.currentTime + delay; { const k = vp(); f0 *= k; f1 *= k; gain *= vg(); }
   const s = ctx.createBufferSource(); s.buffer = noiseBuf; s.loop = true;
   const f = ctx.createBiquadFilter(); f.type = type; f.Q.value = q; f.frequency.setValueAtTime(f0, t); f.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
   const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(gain, t + Math.min(0.008, dur / 4)); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
   s.connect(f); f.connect(g); out(g, wet); s.start(t, Math.random()); s.stop(t + dur + 0.05);
 }
 function tone(freq, dur, gain, type = 'sine', slideTo, wet = 0.3, delay = 0, attack = 0.002) {
-  if (!ctx) return; const t = ctx.currentTime + delay;
+  if (!ctx) return; const t = ctx.currentTime + delay; { const k = vp(); freq *= k; if (slideTo) slideTo *= k; gain *= vg(); }
   const o = ctx.createOscillator(); o.type = type; o.frequency.setValueAtTime(freq, t); if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
   const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(gain, t + attack); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
   o.connect(g); out(g, wet); o.start(t); o.stop(t + dur + 0.05);
 }
 // struck steel: inharmonic partials (free bar modes ~ 1, 2.76, 5.40, 8.93) + sizzle
 function metal(f0, dur, gain, wet = 0.4, delay = 0) {
+  f0 *= vp(); gain *= vg();
   [[1, 1], [2.76, 0.6], [5.4, 0.38], [8.93, 0.22], [13.3, 0.12]].forEach(([m, a], i) => tone(f0 * m * (1 + (Math.random() - 0.5) * 0.01), dur * (1 - i * 0.13), gain * a, 'sine', null, wet, delay));
 }
 export const sfx = {
@@ -80,8 +83,18 @@ export const sfx = {
   },
   clash() { sample('clash', 1, 0.5); noise(0.05, 'highpass', 3000, 8000, 1, 1, 0.3); metal(880, 1.1, 0.3, 0.5); metal(940, 1, 0.2, 0.5, 0.012); tone(90, 0.35, 0.7, 'sine', 45, 0.2); },
   hit(heavy) { const k = heavy && BANK.hitheavy ? sample('hitheavy', 1, 0.15) : sample('hit', heavy ? 1 : 0.75, 0.15); noise(heavy ? 0.28 : 0.16, 'bandpass', 1800, 500, (heavy ? 1 : 0.75) * k, 0.8, 0.15); noise(0.06, 'highpass', 4000, 8000, 0.3 * k, 1, 0.05); tone(heavy ? 85 : 120, 0.25, 0.6, 'sine', 40, 0.1); noise(0.35, 'lowpass', 600, 120, heavy ? 0.5 : 0.3, 1, 0.2, 0.02); },
+  slam() { noise(0.35, 'lowpass', 600, 80, 0.9, 1, 0.25); tone(58, 0.45, 0.6, 'sine', 32, 0.4); noise(0.08, 'bandpass', 1800, 900, 0.25, 2, 0.1); },   // heavy landing of an air attack
   dodge() { noise(0.26, 'bandpass', 500, 1500, 0.28, 0.9, 0.1); noise(0.08, 'lowpass', 400, 150, 0.25, 1, 0.1, 0.2); },
-  step() { noise(0.06, 'lowpass', 700, 200, 0.1, 1, 0.08); },
+  // footstep by surface; k: loudness (sprint / distance)
+  step(k = 1, surf = 'stone') {
+    if (surf === 'wood') { noise(0.07, 'bandpass', 420, 260, 0.13 * k, 3, 0.12); tone(140, 0.06, 0.03 * k, 'sine', 90, 0.1); }   // hollow boards
+    else if (surf === 'grass' || surf === 'dirt') { noise(0.09, 'highpass', 1800, 900, 0.05 * k, 0.7, 0.05); noise(0.05, 'lowpass', 500, 200, 0.06 * k, 1, 0.05); }
+    else if (surf === 'snow') { noise(0.13, 'bandpass', 1300, 700, 0.09 * k, 1.5, 0.05); noise(0.05, 'highpass', 3500, 2500, 0.025 * k, 1, 0.03); }   // crunch
+    else if (surf === 'water') { noise(0.18, 'bandpass', 900, 2200, 0.08 * k, 1.2, 0.2); }
+    else if (surf === 'bamboo') { noise(0.08, 'bandpass', 2200, 1200, 0.05 * k, 1.5, 0.08); noise(0.06, 'lowpass', 600, 200, 0.06 * k, 1, 0.05); }
+    else { noise(0.05, 'bandpass', 2000, 900, 0.07 * k, 2, 0.08); noise(0.06, 'lowpass', 700, 200, 0.08 * k, 1, 0.08); }   // stone / tiles
+    if (k > 1.2) noise(0.04, 'bandpass', 2400, 1200, 0.03 * k, 2, 0.05);
+  },
   broken() { metal(300, 0.9, 0.25, 0.6); [1600, 1200, 900, 640].forEach((f, i) => tone(f, 0.45, 0.12, 'triangle', f * 0.5, 0.4, i * 0.045)); noise(0.6, 'highpass', 5000, 1500, 0.3, 1, 0.4); },
   perilous() { tone(196, 1.6, 0.4, 'sine', null, 0.7); tone(392, 1.1, 0.18, 'sine', null, 0.7); tone(587, 0.7, 0.08, 'triangle', null, 0.7); noise(0.18, 'lowpass', 300, 80, 0.8, 1, 0.5); },
   mikiri() { noise(0.12, 'lowpass', 900, 120, 1, 1, 0.3); tone(70, 0.5, 0.8, 'sine', 35, 0.3); metal(700, 0.6, 0.2, 0.5, 0.02); },

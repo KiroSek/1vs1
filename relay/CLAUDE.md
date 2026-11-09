@@ -16,7 +16,7 @@
 `npm install && npm start` → http://localhost:3000 (server.js раздаёт app/ и Socket.IO-комнаты по коду).
 
 ## Карта проекта
-- `server.js` — Express + Socket.IO: раздача app/, комнаты по 4-буквенному коду, ретрансляция событий между двумя игроками, `/sfx-list`, `/health`.
+- `server.js` — Express + Socket.IO: раздача app/, комнаты по 4-буквенному коду (2 места, для 2 на 2 — 4; старт по `tmstart` хоста, сообщения `tm` с номером отправителя), `/sfx-list`, `/health`.
 - `app/index.html`, `app/style.css` — меню, HUD, экраны (importmap на /vendor/three).
 - `app/js/main.js` — игровой цикл, ввод, режимы (Gauntlet, Duel vs AI, Training, Online), HUD, `showResult` (эффекты исходов), загрузка клипов, отладочные `window.__dbg/__step/__inp`.
 - `app/js/fighter.js` — боец: состояния, `resolveStrike`, движение/прыжок/уворот, слои анимации (full-body + низ/верх), процедурные кости, IK, крепление меча, `prepareClips`.
@@ -36,6 +36,10 @@
 - `app/js/stealth.js` — обнаружение (зрение/слух) для Samurai Hunt.
 - `app/js/modes/hunt.js` — режим Samurai Hunt (выследить и устроить засаду).
 - `app/js/modes/survival.js` — кооп/соло волны врагов.
+- `app/js/modes/team.js` — режим 2 на 2: 4 места (команда = место % 2), пустые места — боты хоста; сообщения `tm` (st/strike/out/ph), раунды до 2 побед.
+- `app/js/foliage.js` — процедурные деревья (сакура/клён/сосна/ель), бамбук, трава; ветер в шейдере; леса по ячейкам 48 м; качество через `setFoliageQuality`.
+- `app/js/arch.js` — архитектура: тории, каменные фонари, черепичные крыши, решётки, стены исигаки, арочные мосты, камни с мхом, «грязь» у основания.
+- `app/js/tune.js` — панель настройки (F9): MOVES и группы констант из `fighter.js` (`TUNE`) и `camera.js` (`CAM`), сохранение в localStorage, выгрузка JSON.
 - `app/assets/kd_ual1.glb`, `kd_ual2.glb` — модель + клипы Quaternius UAL (CC0); `kd_mixamo.glb` — Mixamo-клипы `MX_*`, перенесённые на этот скелет (только анимация).
 
 ## Онлайн

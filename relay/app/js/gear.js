@@ -71,34 +71,74 @@ const BLADES = {   // gradient spine->edge, hamon colour, shinogi line
   mortal: [['#0b0606', '#1e0a0a', '#2c0c0c', '#400e0e'], 'rgba(255,40,30,.95)'],
 };
 const texCache = {};
+// blade texture, u = across (0 spine .. 1 edge), v = along (0 habaki .. 1 tip). Zones: mune / shinogi-ji (darker, brushed) /
+// hira-ji (bright polish) / hamon (frosted temper line with a soft nioi glow and nie sparkles) / yokote line at the kissaki.
+const U_SHINOGI = 0.34, YOKOTE = 0.9;
+function hamonX(y, h, w) { const v = y / h; return w * (0.74 + 0.045 * Math.sin(v * 41) + 0.025 * Math.sin(v * 113 + 1.3) + 0.012 * Math.sin(v * 271 + 0.4)); }
 function bladeTex(kind) {
   if (texCache['b' + kind]) return texCache['b' + kind];
   const [g4, ham] = BLADES[kind] || BLADES.steel;
-  return texCache['b' + kind] = canvasTex(128, 512, (x, w, h) => {
-    const g = x.createLinearGradient(0, 0, w, 0); g.addColorStop(0, g4[0]); g.addColorStop(0.45, g4[1]); g.addColorStop(0.62, g4[2]); g.addColorStop(1, g4[3]);
+  return texCache['b' + kind] = canvasTex(256, 1024, (x, w, h) => {
+    const g = x.createLinearGradient(0, 0, w, 0);
+    g.addColorStop(0, g4[0]); g.addColorStop(U_SHINOGI - 0.02, g4[1]); g.addColorStop(U_SHINOGI + 0.01, g4[2]); g.addColorStop(0.7, g4[3]); g.addColorStop(1, g4[3]);
     x.fillStyle = g; x.fillRect(0, 0, w, h);
-    x.beginPath(); x.moveTo(w, 0);
-    for (let y = 0; y <= h; y += 4) x.lineTo(w * (0.7 + 0.06 * Math.sin(y * 0.09) + 0.03 * Math.sin(y * 0.31 + 1)), y);
-    x.lineTo(w, h); x.closePath(); x.fillStyle = ham; x.fill();
-    for (let i = 0; i < 400; i++) { x.fillStyle = `rgba(255,255,255,${rnd(.05, .2)})`; x.fillRect(w * rnd(.62, .8), rnd(0, h), 1, 1); }
-    if (kind === 'mortal') for (let i = 0; i < 26; i++) { x.strokeStyle = `rgba(255,30,20,${rnd(.3, .7)})`; x.lineWidth = rnd(1, 2); x.beginPath(); let px = rnd(0, w * 0.6), py = rnd(0, h); x.moveTo(px, py); for (let k = 0; k < 6; k++) { px += rnd(-8, 12); py += rnd(4, 16); x.lineTo(px, py); } x.stroke(); }
-    x.fillStyle = 'rgba(40,44,50,.5)'; x.fillRect(w * 0.44, 0, 1.5, h);
+    // polishing streaks along the blade (sashikomi)
+    for (let i = 0; i < 900; i++) { x.fillStyle = `rgba(${Math.random() < 0.5 ? '255,255,255' : '0,0,0'},${rnd(.03, .09)})`; x.fillRect(rnd(0, w), rnd(0, h), 1, rnd(12, 70)); }
+    // shinogi-ji: brushed, slightly darker band
+    x.fillStyle = 'rgba(20,24,30,.22)'; x.fillRect(w * 0.06, 0, w * (U_SHINOGI - 0.06), h);
+    // hamon: soft glow (nioi) then the bright frosted zone
+    x.save(); x.shadowColor = ham; x.shadowBlur = 14;
+    x.beginPath(); x.moveTo(w, 0); for (let y = 0; y <= h; y += 3) x.lineTo(hamonX(y, h, w), y); x.lineTo(w, h); x.closePath(); x.fillStyle = ham; x.globalAlpha = 0.75; x.fill(); x.restore();
+    for (let i = 0; i < 1600; i++) { const y = rnd(0, h), hx = hamonX(y, h, w); x.fillStyle = `rgba(255,255,255,${rnd(.15, .5)})`; x.fillRect(hx + rnd(-6, 5), y, 1.2, 1.2); }   // nie
+    // ridge (shinogi) and yokote lines
+    x.fillStyle = 'rgba(255,255,255,.55)'; x.fillRect(w * U_SHINOGI - 1, 0, 2, h * YOKOTE);
+    x.fillStyle = 'rgba(255,255,255,.6)'; x.fillRect(w * U_SHINOGI, h * YOKOTE - 1, w * (1 - U_SHINOGI), 2);
+    x.fillStyle = 'rgba(30,34,40,.6)'; x.fillRect(0, 0, w * 0.03, h);   // mune shadow
+    if (kind === 'mortal') for (let i = 0; i < 40; i++) { x.strokeStyle = `rgba(255,30,20,${rnd(.3, .7)})`; x.lineWidth = rnd(1, 3); x.beginPath(); let px = rnd(0, w * 0.6), py = rnd(0, h); x.moveTo(px, py); for (let k = 0; k < 6; k++) { px += rnd(-14, 22); py += rnd(8, 30); x.lineTo(px, py); } x.stroke(); }
   });
+}
+// roughness: polished ji (smooth, sharp reflections) vs frosted hamon (soft sheen) -> the light runs along the edge as it swings
+function bladeRough() {
+  return texCache.rough || (texCache.rough = canvasTex(128, 512, (x, w, h) => {
+    x.fillStyle = 'rgb(40,40,40)'; x.fillRect(0, 0, w, h);
+    x.fillStyle = 'rgb(70,70,70)'; x.fillRect(0, 0, w * U_SHINOGI, h);
+    x.beginPath(); x.moveTo(w, 0); for (let y = 0; y <= h; y += 3) x.lineTo(hamonX(y * 2, h * 2, w), y); x.lineTo(w, h); x.closePath(); x.fillStyle = 'rgb(120,120,120)'; x.fill();
+    for (let i = 0; i < 500; i++) { x.fillStyle = `rgba(0,0,0,${rnd(.1, .3)})`; x.fillRect(rnd(0, w), rnd(0, h), 1, rnd(6, 30)); }
+  }, false));
 }
 function edgeMask() {
   return texCache.edge || (texCache.edge = canvasTex(64, 256, (x, w, h) => { const g = x.createLinearGradient(0, 0, w, 0); g.addColorStop(0, '#000'); g.addColorStop(0.62, '#000'); g.addColorStop(0.78, '#fff'); g.addColorStop(1, '#fff'); x.fillStyle = g; x.fillRect(0, 0, w, h); }, false));
 }
+// tsuka-maki: crossed silk bands with diamond windows of rayskin (same). Texture covers HALF the circumference
+// (repeat 2 around), so each flat face of the grip shows one column of diamonds, like a real wrap.
+const TSUKA_ROWS = 7;
+function tsukaDiamonds(x, w, h, inset) {
+  const p = h / TSUKA_ROWS;
+  for (let i = 0; i < TSUKA_ROWS; i++) { const cy = (i + 0.5) * p, hw = w * 0.36 - inset, hh = p * 0.36 - inset * 0.8;
+    x.beginPath(); x.moveTo(w / 2, cy - hh); x.lineTo(w / 2 + hw, cy); x.lineTo(w / 2, cy + hh); x.lineTo(w / 2 - hw, cy); x.closePath(); x.fill(); }
+}
 function tsukaTex(wrap, same) {
   const k = 't' + wrap + same; if (texCache[k]) return texCache[k];
-  return texCache[k] = canvasTex(64, 256, (x, w, h) => {
-    x.fillStyle = same; x.fillRect(0, 0, w, h);
-    for (let i = 0; i < 300; i++) { x.fillStyle = `rgba(128,128,128,${rnd(.15, .35)})`; x.beginPath(); x.arc(rnd(0, w), rnd(0, h), rnd(0.6, 1.6), 0, 6.3); x.fill(); }
-    x.fillStyle = wrap; const n = 8, p = h / n;
-    for (let i = 0; i < n; i++) { const y = i * p;
-      x.beginPath(); x.moveTo(0, y); x.lineTo(w / 2, y + p * .42); x.lineTo(0, y + p * .84); x.closePath(); x.fill();
-      x.beginPath(); x.moveTo(w, y + p * .16); x.lineTo(w / 2, y + p * .58); x.lineTo(w, y + p); x.closePath(); x.fill();
-      x.beginPath(); x.moveTo(0, y); x.lineTo(w, y); x.lineTo(w / 2, y + p * .42); x.closePath(); x.fill(); }
+  const t = texCache[k] = canvasTex(128, 512, (x, w, h) => {
+    x.fillStyle = wrap; x.fillRect(0, 0, w, h);
+    const p = h / TSUKA_ROWS;   // silk twist: fine diagonal threads, shaded band crossings
+    for (let i = 0; i <= TSUKA_ROWS; i++) { const y = i * p;
+      x.strokeStyle = 'rgba(255,255,255,.10)'; x.lineWidth = 1;
+      for (let d = -w; d < w; d += 5) { x.beginPath(); x.moveTo(d, y - p / 2); x.lineTo(d + w, y + p / 2); x.stroke(); }
+      x.fillStyle = 'rgba(0,0,0,.35)'; x.fillRect(0, y - 2, w, 4); }
+    x.fillStyle = same; tsukaDiamonds(x, w, h, 0);
+    for (let i = 0; i < 500; i++) { x.fillStyle = `rgba(90,80,60,${rnd(.15, .35)})`; x.beginPath(); x.arc(rnd(0, w), rnd(0, h), rnd(0.8, 1.8), 0, 6.3); x.fill(); }   // rayskin nodules
   });
+  t.repeat.set(2, 1); return t;
+}
+function tsukaBump() {   // bands raised, diamonds sunk
+  if (texCache.tb) return texCache.tb;
+  const t = texCache.tb = canvasTex(128, 512, (x, w, h) => {
+    x.fillStyle = '#d8d8d8'; x.fillRect(0, 0, w, h); const p = h / TSUKA_ROWS;
+    for (let i = 0; i <= TSUKA_ROWS; i++) { x.fillStyle = '#7a7a7a'; x.fillRect(0, i * p - 2, w, 4); }
+    x.fillStyle = '#555'; tsukaDiamonds(x, w, h, 0); x.fillStyle = '#3a3a3a'; tsukaDiamonds(x, w, h, 4);
+  }, false);
+  t.repeat.set(2, 1); return t;
 }
 function tsubaShape(kind) {
   const sh = new THREE.Shape(), R = 0.042;
@@ -114,31 +154,36 @@ function tsubaShape(kind) {
 export function makeKatana(key = 'standard') {
   if (key === 'yari') return makeYari();
   const W0 = WEAPONS[key] || WEAPONS.standard, g = new THREE.Group();
-  const L = 0.74, N = 40, W = 0.031, TH = 0.0075, SORI = 0.022;
+  // shinogi-zukuri cross-section (6 points): mune ridge, mune corners, shinogi ridges, edge. Kissaki from YOKOTE to the tip.
+  const L = 0.74, N = 60, W = 0.032, TH = 0.0078, SORI = 0.024;
   const pos = [], uv = [], idx = [];
   for (let i = 0; i <= N; i++) {
     const s = i / N, z = 0.012 + s * L;
-    const taper = 1 - 0.28 * s, tip = s > 0.93 ? Math.max(0.0, 1 - (s - 0.93) / 0.07) : 1;
-    const w = W * taper, th = TH * taper * (0.4 + 0.6 * tip), curve = -SORI * s * s;
-    const edgeY = curve + w * 0.5 * (s > 0.93 ? 0.35 + 0.65 * tip : 1), spineY = curve - w * 0.5 * (s > 0.93 ? tip : 1), sideY = curve + w * 0.05;
-    pos.push(0, spineY, z, th, sideY, z, 0, edgeY, z, -th, sideY, z);
-    uv.push(0, s, 0.45, s, 1, s, 0.45, s);
+    const k = s > YOKOTE ? (s - YOKOTE) / (1 - YOKOTE) : 0;                     // 0..1 through the kissaki
+    const w = W * (1 - 0.3 * s), th = TH * (1 - 0.35 * s) * (1 - 0.75 * k * k), curve = -SORI * s * s;
+    const spine = curve - w * 0.5, edge = curve + w * 0.5 - w * 0.95 * (1 - Math.sqrt(Math.max(0, 1 - k * k)));   // fukura: edge sweeps up to the spine
+    const shin = spine + (edge - spine) * (U_SHINOGI + 0.08 * k);
+    pos.push(0, spine - 0.0012, z,  th * 0.55, spine + 0.0012, z,  th, shin, z,  0, edge, z,  -th, shin, z,  -th * 0.55, spine + 0.0012, z);
+    uv.push(0, s, 0.06, s, U_SHINOGI, s, 1, s, U_SHINOGI, s, 0.06, s);
   }
-  for (let i = 0; i < N; i++) { const a = i * 4, b = a + 4; for (let k = 0; k < 4; k++) { const k1 = (k + 1) % 4; idx.push(a + k, b + k, a + k1, a + k1, b + k, b + k1); } }
-  const tipI = pos.length / 3; pos.push(0, -SORI * 1.02 + W * 0.2, 0.012 + L + 0.008); uv.push(1, 1);
-  const lb = N * 4; for (let k = 0; k < 4; k++) idx.push(lb + k, tipI, lb + (k + 1) % 4);
-  const bg = new THREE.BufferGeometry(); bg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); bg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); bg.setIndex(idx); bg.computeVertexNormals();
+  const R = 6;
+  for (let i = 0; i < N; i++) { const a = i * R, b = a + R; for (let q = 0; q < R; q++) { const q1 = (q + 1) % R; idx.push(a + q, b + q, a + q1, a + q1, b + q, b + q1); } }
+  const tipI = pos.length / 3; pos.push(0, -SORI * 1.0 - W * 0.7 * 0.5 + 0.001, 0.012 + L + 0.006); uv.push(0.5, 1);
+  const lb = N * R; for (let q = 0; q < R; q++) idx.push(lb + q, tipI, lb + (q + 1) % R);
+  const bg = new THREE.BufferGeometry(); bg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); bg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); bg.setIndex(idx);
+  const bgf = bg.toNonIndexed(); bgf.computeVertexNormals();   // flat facets: the ridge lines catch the light
   const glow = W0.glow !== undefined;
-  const bladeMat = new THREE.MeshStandardMaterial({ map: bladeTex(W0.blade), color: 0xffffff, metalness: W0.blade === 'ice' ? 0.7 : 0.92, roughness: 0.22, envMapIntensity: 3.2,
+  const bladeMat = new THREE.MeshStandardMaterial({ map: bladeTex(W0.blade), roughnessMap: bladeRough(), color: 0xffffff, metalness: W0.blade === 'ice' ? 0.7 : 0.95, roughness: 1, envMapIntensity: 3.4,
     emissive: glow ? W0.glow : 0x1a2028, emissiveMap: glow ? edgeMask() : null, emissiveIntensity: glow ? 2.2 : 1, side: THREE.DoubleSide });
-  const blade = new THREE.Mesh(bg, bladeMat); g.add(blade);
+  const blade = new THREE.Mesh(bgf, bladeMat); g.add(blade);
   const fit = new THREE.MeshStandardMaterial({ color: W0.fit, metalness: W0.fitMetal, roughness: 0.32 });
   const gold = new THREE.MeshStandardMaterial({ color: 0xc8a050, metalness: 1, roughness: 0.28 });
-  const hab = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.036, 0.03), gold); hab.position.set(0, 0, 0.022); g.add(hab);
+  const hab = new THREE.Mesh(new THREE.CylinderGeometry(0.0125, 0.0105, 0.032, 6).rotateX(Math.PI / 2).rotateZ(Math.PI / 2).scale(0.75, 1.55, 1), gold); hab.position.set(0, 0, 0.02); g.add(hab);
+  for (const z of [0.0055, -0.0055]) { const sp = new THREE.Mesh(new THREE.CylinderGeometry(0.019, 0.019, 0.0016, 18).rotateX(Math.PI / 2).scale(0.8, 1.12, 1), gold); sp.position.z = z; g.add(sp); }   // seppa
   const tg = new THREE.ExtrudeGeometry(tsubaShape(W0.tsuba), { depth: 0.006, bevelEnabled: true, bevelSize: 0.0015, bevelThickness: 0.0015, bevelSegments: 2, curveSegments: 24 }); tg.translate(0, 0, -0.003);
   const tsuba = new THREE.Mesh(tg, fit); tsuba.rotation.z = Math.PI / 2; tsuba.scale.set(1, 1.18, 1); g.add(tsuba);
   const tsg = new THREE.CylinderGeometry(0.0145, 0.016, 0.255, 14, 1, true); tsg.rotateX(Math.PI / 2); tsg.scale(0.8, 1, 1); tsg.translate(0, 0, -0.135);
-  g.add(new THREE.Mesh(tsg, new THREE.MeshStandardMaterial({ map: tsukaTex(W0.wrap, W0.same), roughness: 0.85 })));
+  g.add(new THREE.Mesh(tsg, new THREE.MeshStandardMaterial({ map: tsukaTex(W0.wrap, W0.same), bumpMap: tsukaBump(), bumpScale: 3, roughness: 0.75 })));
   const fuchi = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.017, 0.012, 14).rotateX(Math.PI / 2).scale(0.82, 1, 1), fit); fuchi.position.z = -0.01; g.add(fuchi);
   const kashira = new THREE.Mesh(new THREE.SphereGeometry(0.016, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2).rotateX(-Math.PI / 2).scale(0.82, 1, 0.7), fit); kashira.position.z = -0.264; g.add(kashira);
   for (const sx of [-1, 1]) { const m = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.008, 0.024), gold); m.position.set(sx * 0.012, 0, -0.12); g.add(m); }
