@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Katana Duel</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="style.css">
+<script type="importmap">{"imports":{"three":"/vendor/three/three.module.js","three/addons/":"/vendor/addons/"}}</script>
+</head><body>
+<canvas id="c"></canvas>
+<div id="vignette"></div>
+
+<div id="hud" class="hidden">
+  <div class="bars top" id="oppBars"><div class="nm"><span id="oppName">ENEMY</span><span class="lives" id="oppLives"><i></i><i></i></span></div>
+    <div class="posture"><i id="oppPost"></i></div><div class="hp"><b id="oppHpTrail"></b><i id="oppHp"></i></div></div>
+  <div class="bars bottom"><div class="nm"><span id="meName">YOU</span><span class="lives" id="meLives"><i></i><i></i></span></div>
+    <div class="posture"><i id="mePost"></i></div><div class="hp"><b id="meHpTrail"></b><i id="meHp"></i></div></div>
+  <div id="lock"></div><div id="fin"><b>忍殺</b><span>F</span></div><div id="flash"></div>
+  <div id="banner"></div>
+  <div id="title"></div>
+  <div id="coinHud"></div>
+  <div id="huntInfo"></div><div id="eye"><i></i></div><div id="hidden"></div><div id="noiseRing"></div>
+  <div id="waveInfo"></div><div id="ebars"></div><div id="prompt"></div>
+  <div id="mateCard"><span data-i18n="sv.ally"></span><div class="hp"><i id="mateHp"></i></div><em id="mateSt"></em></div>
+  <div id="bossBar"><div id="bossName"></div><div class="posture"><i id="bossPost"></i></div><div class="hp"><i id="bossHp"></i></div></div>
+  <div id="hint"></div>
+  <div id="count"></div>
+</div>
+
+<div id="menu" class="screen">
+  <div class="title"><span class="seal">剣</span><h1>KATANA<br>DUEL</h1><p data-i18n="m.tagline">Posture · Parry · Deathblow</p></div>
+  <div class="list" id="mainList">
+    <button data-go="duelMenu"><span data-i18n="m.duel"></span><small data-i18n="m.duel.s"></small></button>
+    <button data-go="huntSetup"><span data-i18n="m.hunt"></span><small data-i18n="m.hunt.s"></small></button>
+    <button data-go="svSetup"><span data-i18n="m.sv"></span><small data-i18n="m.sv.s"></small></button>
+    <button data-go="training" data-i18n="m.training"></button>
+    <button data-go="shop"><span data-i18n="m.shop"></span><small data-i18n="m.shop.s"></small></button>
+    <button data-go="settings" data-i18n="m.settings"></button>
+    <button data-go="quit" data-i18n="m.quit"></button>
+  </div>
+  <div class="foot" data-i18n="m.fs"></div><div class="rec" id="rec"></div>
+  <div class="coins" id="coinMenu"></div>
+  <div class="mapsel"><small data-i18n="m.arena"></small><button id="mapPrev">◂</button><span id="mapName"></span><button id="mapNext">▸</button></div>
+</div>
+
+<div id="intro" class="screen hidden"><div class="introbox"><div id="inStage"></div><h1 id="inName"></h1><p id="inLine"></p><small data-i18n="intro.skip"></small></div></div>
+<div id="duelMenu" class="screen hidden"><div class="panel narrow"><h2 data-i18n="m.duel"></h2>
+  <button class="big" data-go="gauntlet"><span data-i18n="m.gauntlet"></span></button><button class="big" data-go="ai"><span data-i18n="m.ai"></span></button><button class="big" data-go="online"><span data-i18n="m.online"></span></button>
+  <button class="back" data-go="menu" data-i18n="back"></button></div></div>
+<div id="huntSetup" class="screen hidden"><div class="panel wide"><h2 data-i18n="m.hunt"></h2><p class="msg desc" data-i18n="hs.desc"></p>
+  <div class="grid2">
+    <label data-i18n="hs.dur"></label><select id="hDur"><option value="5">5 min</option><option value="10" selected>10 min</option><option value="15">15 min</option><option value="20">20 min</option></select>
+    <label data-i18n="hs.tod"></label><select id="hTod"><option value="dusk" data-i18n="tod.dusk"></option><option value="night" data-i18n="tod.night"></option><option value="fog" data-i18n="tod.fog"></option><option value="day" data-i18n="tod.day"></option></select>
+    <label data-i18n="hs.weather"></label><select id="hWeather"><option value="clear" data-i18n="w.clear"></option><option value="rain" data-i18n="w.rain"></option><option value="wind" data-i18n="w.wind"></option><option value="snow" data-i18n="w.snow"></option></select>
+    <label data-i18n="hs.lives"></label><select id="hLives"><option value="1">1</option><option value="2" selected>2</option><option value="3">3</option></select>
+  </div>
+  <div class="row split"><button class="big" id="hPractice" data-i18n="hs.practice"></button><select id="hBot" class="narrowsel"><option value="0" data-i18n="d0"></option><option value="1" selected data-i18n="d1"></option><option value="2" data-i18n="d2"></option></select></div>
+  <div class="row"><button class="big" id="hHost" data-i18n="on.create"></button></div>
+  <div class="row split"><input id="hCode" maxlength="4" placeholder="CODE" data-i18n-ph="on.code" autocomplete="off" class="code4"><button class="big" id="hJoin" data-i18n="on.join"></button></div>
+  <label><span data-i18n="on.server"></span> <small data-i18n="on.serverHint"></small></label><input id="hSrv" class="srv" placeholder="http://192.168.1.10:3000">
+  <div id="hMsg" class="msg"></div><div id="hLobby" class="hidden"><div class="code" id="hRoom"></div><div class="msg" data-i18n="on.wait"></div></div>
+  <button class="back" data-go="menu" data-i18n="back"></button></div></div>
+<div id="svSetup" class="screen hidden"><div class="panel wide"><h2 data-i18n="m.sv"></h2><p class="msg desc" data-i18n="ss.desc"></p>
+  <div class="grid2">
+    <label data-i18n="ss.map"></label><select id="sMap"><option value="sv_temple" data-i18n="map.sv_temple"></option><option value="sv_village" data-i18n="map.sv_village"></option><option value="sv_castle" data-i18n="map.sv_castle"></option><option value="sv_glade" data-i18n="map.sv_glade"></option><option value="sv_fortress" data-i18n="map.sv_fortress"></option><option value="random" data-i18n="map.random"></option></select>
+    <label data-i18n="ss.diff"></label><select id="sDiffSel"><option value="normal" data-i18n="gd.normal"></option><option value="hard" data-i18n="gd.hard"></option></select>
+    <label data-i18n="hs.tod"></label><select id="sTod"><option value="auto" data-i18n="tod.auto"></option><option value="dusk" data-i18n="tod.dusk"></option><option value="night" data-i18n="tod.night"></option><option value="fog" data-i18n="tod.fog"></option><option value="day" data-i18n="tod.day"></option></select>
+  </div>
+  <div class="row"><button class="big" id="sSolo" data-i18n="ss.solo"></button></div>
+  <div class="row"><button class="big" id="sHost" data-i18n="ss.host"></button></div>
+  <div class="row split"><input id="sCode" maxlength="4" placeholder="CODE" data-i18n-ph="on.code" autocomplete="off" class="code4"><button class="big" id="sJoin" data-i18n="on.join"></button></div>
+  <label><span data-i18n="on.server"></span> <small data-i18n="on.serverHint"></small></label><input id="sSrv" class="srv" placeholder="http://192.168.1.10:3000">
+  <div id="sMsg" class="msg"></div><div id="sLobby" class="hidden"><div class="code" id="sRoom"></div><div class="msg" data-i18n="on.wait"></div></div>
+  <div id="svBest" class="msg"></div>
+  <button class="back" data-go="menu" data-i18n="back"></button></div></div>
+<div id="upgrades" class="screen hidden"><div class="panel wide"><h2 data-i18n="sv.upTitle"></h2><div id="upList"></div><div id="upInfo" class="msg"></div></div></div>
+<div id="gdiff" class="screen hidden"><div class="panel"><h2 data-i18n="gd.title"></h2><div id="gdList"></div><div class="msg" data-i18n="gd.note"></div><button class="back" data-go="duelMenu" data-i18n="back"></button></div></div>
+<div id="shop" class="screen hidden"><div class="panel wide"><h2><span data-i18n="shop.title"></span> <span class="coins in" id="coinShop"></span></h2>
+  <div class="tabs"><button class="tab on" data-tab="skins" data-i18n="shop.skins"></button><button class="tab" data-tab="weapons" data-i18n="shop.blades"></button></div>
+  <div id="shopList"></div><div class="msg" id="shopNote"></div><button class="back" data-go="menu" data-i18n="back"></button></div></div>
+<div id="perks" class="screen hidden"><div class="panel"><h2 data-i18n="perks.title"></h2><div id="perkList"></div><div id="perkHave" class="msg"></div></div></div>
+<div id="fps"></div><div id="toast"></div>
+
+<div id="online" class="screen hidden"><div class="panel">
+  <h2 data-i18n="on.title"></h2>
+  <div class="row"><button id="btnHost" class="big" data-i18n="on.create"></button></div>
+  <div class="row split"><input id="joinCode" maxlength="4" placeholder="CODE" data-i18n-ph="on.code" autocomplete="off"><button id="btnJoin" class="big" data-i18n="on.join"></button></div>
+  <label><span data-i18n="on.server"></span> <small data-i18n="on.serverHint"></small></label>
+  <input id="serverUrl" placeholder="http://192.168.1.10:3000">
+  <div id="onMsg" class="msg"></div>
+  <div id="lobby" class="hidden"><div class="code" id="roomCode"></div><div id="lanInfo" class="msg"></div><div class="msg" data-i18n="on.wait"></div></div>
+  <button class="back" data-go="menu" data-i18n="back"></button>
+</div></div>
+
+<div id="settings" class="screen hidden"><div class="panel">
+  <h2 data-i18n="st.title"></h2>
+  <label data-i18n="st.lang"></label><select id="sLang"></select>
+  <label data-i18n="st.quality"></label>
+  <select id="sQuality"><option value="auto" data-i18n="q.auto"></option><option value="low" data-i18n="q.low"></option><option value="med" data-i18n="q.med"></option><option value="high" data-i18n="q.high"></option></select>
+  <label data-i18n="st.diff"></label>
+  <select id="sDiff"><option value="0" data-i18n="d0"></option><option value="1" data-i18n="d1"></option><option value="2" data-i18n="d2"></option></select>
+  <label><span data-i18n="st.sens"></span> <span id="vSens"></span></label><input type="range" id="sSens" min="0.3" max="3" step="0.1">
+  <label><span data-i18n="st.vol"></span> <span id="vVol"></span></label><input type="range" id="sVol" min="0" max="1" step="0.05">
+  <label class="chk"><input type="checkbox" id="sInvert"> <span data-i18n="st.invert"></span></label>
+  <label class="chk"><input type="checkbox" id="sFps"> <span data-i18n="st.fps"></span></label>
+  <label class="chk"><input type="checkbox" id="sAutoCam"> <span data-i18n="st.autocam"></span></label>
+  <label data-i18n="st.controls"></label>
+  <div id="bindList"></div>
+  <button class="back" data-go="menu" data-i18n="back"></button>
+</div></div>
+
+<div id="pause" class="screen hidden"><div class="panel narrow"><h2 data-i18n="pause.title"></h2>
+  <button class="big" id="bResume" data-i18n="pause.resume"></button><button class="big" id="bQuitMatch" data-i18n="pause.leave"></button></div></div>
+
+<div id="result" class="screen hidden"><div class="panel narrow"><div id="resBig"></div><div id="resSub"></div>
+  <button class="big" id="bRematch">Rematch</button><button class="big" id="bResMenu" data-i18n="res.menu"></button></div></div>
+
+<div id="loading"><div>Loading…</div></div>
+<script src="/socket.io/socket.io.js"></script>
+<script type="module" src="js/main.js"></script>
+</body></html>
+
