@@ -19,9 +19,9 @@ export function torii(mats, s = 1) {
   const { red, black } = mats, g = new THREE.Group(), H = 5, span = 2.2;
   const reds = [], blacks = [];
   for (const sx of [-1, 1]) {
-    const p = new THREE.CylinderGeometry(0.2, 0.25, H, 16); p.rotateZ(sx * 0.035); reds.push(at(p, sx * span, H / 2, 0));   // pillars lean in a touch
-    blacks.push(at(new THREE.CylinderGeometry(0.32, 0.36, 0.42, 16), sx * (span + 0.02), 0.21, 0));                          // kamebara (base sleeves)
-    blacks.push(at(new THREE.CylinderGeometry(0.27, 0.27, 0.08, 16), sx * span * 0.995, 0.47, 0));
+    const p = new THREE.CylinderGeometry(0.2, 0.25, H, 10); p.rotateZ(sx * 0.035); reds.push(at(p, sx * span, H / 2, 0));   // pillars lean in a touch
+    blacks.push(at(new THREE.CylinderGeometry(0.32, 0.36, 0.42, 10), sx * (span + 0.02), 0.21, 0));                          // kamebara (base sleeves)
+    blacks.push(at(new THREE.CylinderGeometry(0.27, 0.27, 0.08, 10), sx * span * 0.995, 0.47, 0));
   }
   reds.push(at(new THREE.BoxGeometry(span * 2 + 1.5, 0.24, 0.26), 0, H * 0.82, 0));     // nuki through the pillars, ends sticking out
   for (const sx of [-1, 1]) reds.push(at(new THREE.BoxGeometry(0.1, 0.3, 0.32), sx * (span + 0.55), H * 0.82, 0));   // kusabi wedges
@@ -37,8 +37,8 @@ export function lantern(mats, lit) {
   const { stone, paper } = mats, g = new THREE.Group(), parts = [];
   parts.push(at(new THREE.CylinderGeometry(0.36, 0.42, 0.16, 6), 0, 0.08, 0));            // kiso
   parts.push(at(new THREE.CylinderGeometry(0.26, 0.34, 0.14, 6), 0, 0.23, 0));
-  parts.push(at(new THREE.CylinderGeometry(0.12, 0.14, 0.86, 12), 0, 0.73, 0));            // sao
-  for (const y of [0.52, 0.96]) parts.push(at(new THREE.TorusGeometry(0.135, 0.022, 6, 16), 0, y, 0, Math.PI / 2));   // rings
+  parts.push(at(new THREE.CylinderGeometry(0.12, 0.14, 0.86, 8), 0, 0.73, 0));            // sao
+  for (const y of [0.52, 0.96]) parts.push(at(new THREE.TorusGeometry(0.135, 0.022, 4, 10), 0, y, 0, Math.PI / 2));   // rings
   parts.push(at(new THREE.CylinderGeometry(0.32, 0.18, 0.18, 6), 0, 1.25, 0));            // chudai
   // hibukuro: four corner posts around the light box
   for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3 + Math.PI / 6; parts.push(at(new THREE.BoxGeometry(0.06, 0.34, 0.06), Math.cos(a) * 0.22, 1.51, Math.sin(a) * 0.22, 0, -a)); }
@@ -48,7 +48,7 @@ export function lantern(mats, lit) {
   for (let i = 0; i < kp.count; i++) { const y = kp.getY(i); if (y < -0.1) { const x = kp.getX(i), z = kp.getZ(i), rr = Math.hypot(x, z); kp.setY(i, y + Math.max(0, rr - 0.42) * 0.9); } }
   parts.push(at(kasa, 0, 1.86, 0));
   parts.push(at(new THREE.CylinderGeometry(0.1, 0.13, 0.08, 10), 0, 2.03, 0));
-  parts.push(at(new THREE.SphereGeometry(0.09, 12, 8), 0, 2.12, 0)); parts.push(at(new THREE.ConeGeometry(0.06, 0.1, 10), 0, 2.22, 0));
+  parts.push(at(new THREE.SphereGeometry(0.09, 8, 6), 0, 2.12, 0)); parts.push(at(new THREE.ConeGeometry(0.06, 0.1, 6), 0, 2.22, 0));
   const m = new THREE.Mesh(merge(parts), stone); m.castShadow = true; m.receiveShadow = true; g.add(m);
   const glow = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.28, 6), lit ? paper : stone); glow.position.y = 1.51; g.add(glow);
   return g;
@@ -59,10 +59,10 @@ export function tiledRoof(mats, w, d, rh, { rows = 0, ridgeCol = null } = {}) {
   const { roof, black, wood } = mats, g = new THREE.Group(), nr = rows || Math.max(8, Math.round(w * 3.2));
   const slopeL = Math.hypot(d / 2, rh), tiles = [];
   for (const s of [-1, 1]) {
-    const pl = new THREE.PlaneGeometry(w, slopeL, nr * 2, 10), p = pl.attributes.position;
+    const pl = new THREE.PlaneGeometry(w, slopeL, nr, 6), p = pl.attributes.position;
     for (let i = 0; i < p.count; i++) {
       const x = p.getX(i), y = p.getY(i), u = x / (w / 2), v = (y + slopeL / 2) / slopeL;   // v: 0 eave .. 1 ridge
-      const corr = Math.abs(Math.sin((x / w) * nr * Math.PI)) * 0.07;                            // round tiles
+      const corr = (Math.round((x / w + 0.5) * nr) % 2) * 0.07;   // alternating raised / sunk columns = round tiles                            // round tiles
       const eave = (1 - v) * (1 - v) * 0.28 + Math.pow(Math.abs(u), 3) * (1 - v) * 0.35;           // eave + corner sweep
       p.setZ(i, corr + eave);
     }
@@ -103,9 +103,9 @@ export function grime(mesh, height, amount = 0.45) {
 // ---------------------------------------------------------------- natural rock with moss on top (smooth, noise-displaced)
 const ROCKS = {};
 function hash3(x, y, z) { const s = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453; return s - Math.floor(s); }
-export function rockGeo(variant = 0) {
-  if (ROCKS[variant]) return ROCKS[variant];
-  const g = new THREE.IcosahedronGeometry(1, 3), p = g.attributes.position, c = [], v = new V3(), k = variant * 3.7 + 1.3;
+export function rockGeo(variant = 0, detail = 2) {   // detail 1 = pebble / kerb (80 tris), 2 = boulder (320 tris)
+  const key = variant + ':' + detail; if (ROCKS[key]) return ROCKS[key];
+  const g = new THREE.IcosahedronGeometry(1, detail), p = g.attributes.position, c = [], v = new V3(), k = variant * 3.7 + 1.3;
   for (let i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i);
     const n = 0.55 * Math.sin(v.x * 2.1 + k) * Math.cos(v.z * 1.7 - k) + 0.25 * Math.sin(v.y * 4.3 + v.x * 3.1 + k * 2) + 0.12 * (hash3(Math.round(v.x * 6), Math.round(v.y * 6), Math.round(v.z * 6)) - 0.5);
     v.multiplyScalar(1 + n * 0.28); if (v.y < -0.35) v.y = -0.35 + (v.y + 0.35) * 0.3; p.setXYZ(i, v.x, v.y, v.z); }
@@ -113,7 +113,7 @@ export function rockGeo(variant = 0) {
   for (let i = 0; i < p.count; i++) { const up = nr.getY(i), moss = Math.max(0, (up - 0.55) / 0.45) * (0.6 + 0.4 * hash3(p.getX(i) * 3, p.getY(i) * 3, p.getZ(i) * 3));
     const base = 0.82 + 0.18 * hash3(p.getX(i) * 9, p.getY(i) * 9, p.getZ(i) * 9);   // speckle
     c.push(base * (1 - moss) + 0.42 * moss, base * (1 - moss) + 0.55 * moss, base * (1 - moss) + 0.3 * moss); }
-  g.setAttribute('color', new THREE.Float32BufferAttribute(c, 3)); return ROCKS[variant] = g;
+  g.setAttribute('color', new THREE.Float32BufferAttribute(c, 3)); return ROCKS[key] = g;
 }
 // ---------------------------------------------------------------- dry-stone base (ishigaki) + plaster wall + tile cap
 export function stoneWall(mats, len, h, { broken = false, seed = 1 } = {}) {

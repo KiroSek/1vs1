@@ -2,12 +2,12 @@
 // fighter.js (TUNE) and camera.js (CAM) — so changes apply on the next swing / frame. Values persist in localStorage
 // ('kd-tune') and can be copied out as JSON to paste back into the code.
 // Online: timings are local. Both players must use the same values or hits / parries will feel out of sync.
-import { MOVES, moveDur } from './moves.js';
+import { MOVES, moveDur, WARP, invalidateWarps } from './moves.js';
 import { TUNE } from './fighter.js';
 import { CAM } from './camera.js';
 
 const KEY = 'kd-tune';
-const GROUPS = { ...TUNE, CAM };
+const GROUPS = { ...TUNE, CAM, WARP };
 const MOVE_FIELDS = ['hit', 'cancel', 'track', 'lunge', 'dmg', 'post', 'hitPost', 'deflPost', 'range'];
 const DEFAULTS = JSON.parse(JSON.stringify({ moves: Object.fromEntries(Object.entries(MOVES).map(([k, m]) => [k, snapMove(m)])), groups: GROUPS }));
 let saved = {}; try { saved = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { saved = {}; }
@@ -15,7 +15,7 @@ let saved = {}; try { saved = JSON.parse(localStorage.getItem(KEY) || '{}'); } c
 function snapMove(m) { const o = { segs: m.segs.map(s => s[3]) }; for (const f of MOVE_FIELDS) if (m[f] !== undefined) o[f] = m[f]; return o; }
 function applyMove(name, o) { const m = MOVES[name]; if (!m || !o) return; if (o.segs) o.segs.forEach((d, i) => { if (m.segs[i]) m.segs[i][3] = d; }); for (const f of MOVE_FIELDS) if (o[f] !== undefined) m[f] = Array.isArray(o[f]) ? [...o[f]] : o[f]; m.dur = moveDur(m); }
 function applyGroup(name, o) { const g = GROUPS[name]; if (!g || !o) return; for (const k in o) if (k in g) g[k] = Array.isArray(o[k]) ? [...o[k]] : o[k]; }
-function apply(all) { for (const k in all.moves || {}) applyMove(k, all.moves[k]); for (const k in all.groups || {}) applyGroup(k, all.groups[k]); }
+function apply(all) { for (const k in all.moves || {}) applyMove(k, all.moves[k]); for (const k in all.groups || {}) applyGroup(k, all.groups[k]); invalidateWarps(); }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (e) { } }
 function diff() {   // only what differs from the shipped values
   const out = { moves: {}, groups: {} };
@@ -39,7 +39,7 @@ function num(label, val, onInput, step) {
 }
 function section(title) { const d = document.createElement('details'); d.style.margin = '6px 0'; d.innerHTML = `<summary style="cursor:pointer;color:#ffd890;font-weight:600">${title}</summary>`; return d; }
 function buildMoveFields(box, name) {
-  box.innerHTML = ''; const m = MOVES[name]; const rec = () => { saved.moves = saved.moves || {}; saved.moves[name] = snapMove(m); save(); info(); };
+  box.innerHTML = ''; const m = MOVES[name]; const rec = () => { m.warp = null; saved.moves = saved.moves || {}; saved.moves[name] = snapMove(m); save(); info(); };
   const info = () => { box.querySelector('.inf').textContent = `dur ${m.dur.toFixed(2)} s · hit ${m.hit[0].toFixed(2)}–${m.hit[1].toFixed(2)} · cancel ${m.cancel}`; };
   const i = document.createElement('div'); i.className = 'inf'; i.style.cssText = 'color:#aaa;margin:4px 0'; box.appendChild(i);
   m.segs.forEach((s, k) => box.appendChild(num(`seg${k} ${s[0]}`, s[3], v => { s[3] = v; m.dur = moveDur(m); rec(); })));
@@ -57,7 +57,7 @@ function build() {
   for (const [gname, g] of Object.entries(GROUPS)) {
     const sec = section(gname);
     for (const [k, v] of Object.entries(g)) {
-      const rec = () => { saved.groups = saved.groups || {}; saved.groups[gname] = { ...(saved.groups[gname] || {}), [k]: Array.isArray(g[k]) ? [...g[k]] : g[k] }; save(); };
+      const rec = () => { invalidateWarps(); saved.groups = saved.groups || {}; saved.groups[gname] = { ...(saved.groups[gname] || {}), [k]: Array.isArray(g[k]) ? [...g[k]] : g[k] }; save(); };
       if (typeof v === 'number') sec.appendChild(num(k, v, x => { g[k] = x; rec(); }));
       else if (Array.isArray(v)) v.forEach((x, i) => typeof x === 'number' && sec.appendChild(num(`${k}[${i}]`, x, y => { g[k][i] = y; rec(); })));
     }

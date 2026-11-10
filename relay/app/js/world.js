@@ -178,7 +178,7 @@ export class World {
     this.flat(x, z, w / 2 + 0.6, d / 2 + 0.6, y0, rot);
     const M = { roof: mat('roof'), black: mat('black'), wood: mat('woodDark') };
     const base = new THREE.Mesh(new THREE.BoxGeometry(w + 0.6, 0.45, d + 0.6), mat('stone')); base.position.y = 0.2; base.receiveShadow = true; g.add(base);
-    const walls = new THREE.Mesh(new THREE.BoxGeometry(w, H, d, 4, 3, 3), [mat('plaster'), mat('plaster'), mat('timber'), mat('timber'), opt.lit ? mat('shojiLit') : mat('shoji'), mat('plaster')]);
+    const walls = new THREE.Mesh(new THREE.BoxGeometry(w, H, d, 1, 3, 1), [mat('plaster'), mat('plaster'), mat('timber'), mat('timber'), opt.lit ? mat('shojiLit') : mat('shoji'), mat('plaster')]);
     walls.position.y = 0.45 + H / 2; walls.castShadow = walls.receiveShadow = true; grime(walls, 1.1, 0.4); g.add(walls);
     // timber frame: corner + mid posts, sill and head beams
     for (const sx of [-1, -0.33, 0.33, 1]) for (const sz of [-1, 1]) { if (Math.abs(sx) < 1 && sz < 0) continue; const p = new THREE.Mesh(new THREE.BoxGeometry(0.2, H + 0.1, 0.2), M.wood); p.position.set(sx * w / 2, 0.45 + H / 2, sz * d / 2); p.castShadow = true; g.add(p); }
@@ -281,7 +281,7 @@ export class World {
     for (let i = 0; i < n; i++) { const a = R() * 6.283, d = Math.sqrt(R()) * r, x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d; if (clear && clear(x, z)) continue; pts.push([x, z]); }
     const t = tex('bamboo'); t.repeat.set(1, 5);
     const inst = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 1, 1, 7, 1, true), mat('bamboo'), pts.length), M = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
-    const leaves = new THREE.InstancedMesh(tuftGeo('bamboo', 30, 1.2, 1.0, 13), foliageMat('bamboo'), Math.ceil(pts.length / 3)); leaves.customDepthMaterial = foliageDepth('bamboo');
+    const leaves = new THREE.InstancedMesh(tuftGeo('bamboo', 22, 1.3, 1.1, 13), foliageMat('bamboo'), Math.ceil(pts.length / 3)); leaves.customDepthMaterial = foliageDepth('bamboo'); leaves.userData.noShadow = true;
     pts.forEach(([x, z], i) => { const h = 8 + R() * 7, rr = 0.05 + R() * 0.05; e.set((R() - 0.5) * 0.1, 0, (R() - 0.5) * 0.1); q.setFromEuler(e); M.compose(new V3(x, this.ground(x, z) + h / 2, z), q, new V3(rr, h, rr)); inst.setMatrixAt(i, M);
       if (i % 3 === 0) { const s = 1.4 + R() * 1.6; M.compose(new V3(x, this.ground(x, z) + h - 1, z), q.identity(), new V3(s * 0.8, s * 0.6, s * 0.8)); leaves.setMatrixAt(i / 3, M); }
       if (i % 4 === 0) this.circle(x, z, 0.16, 9); });
@@ -326,7 +326,7 @@ export class World {
   }
   flushEdges() {   // instanced kerb stones + grass clumps collected by path()
     if (this.edgeMesh) { this.group.remove(this.edgeMesh); this.edgeMesh.dispose(); } if (this.edgeGrassMesh) { this.group.remove(this.edgeGrassMesh); this.edgeGrassMesh.dispose(); }
-    if (this.edge.length) { const m = new THREE.InstancedMesh(rockGeo(1), mat('rock'), this.edge.length), M = new THREE.Matrix4(), q = new THREE.Quaternion();
+    if (this.edge.length) { const m = new THREE.InstancedMesh(rockGeo(1, 1), mat('rock'), this.edge.length), M = new THREE.Matrix4(), q = new THREE.Quaternion();
       this.edge.forEach(([x, y, z, s2], i) => { q.setFromAxisAngle(new V3(0, 1, 0), x * 3 + z); M.compose(new V3(x, y, z), q, new V3(s2 * 1.3, s2 * 0.6, s2)); m.setMatrixAt(i, M); });
       m.receiveShadow = true; this.group.add(m); this.edgeMesh = m; }
     if (this.edgeGrass.length) this.edgeGrassMesh = grassClumps(this.group, this.edgeGrass);

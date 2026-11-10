@@ -10,7 +10,7 @@ const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 // crowdDist / crowdUp: extra boom length / pitch when a second enemy is close (2 vs 2, survival); sprintFov: max FOV gain at full sprint
 // deathblow shot cuts (attacker's deathblow time, s): approach until cut1, impact close-up until cut2, then the pull-back
 const DB_SHOTS = { cut1: 0.5, cut2: 0.95 };
-export const CAM = { crowdDist: 0.7, crowdUp: 0.05, sprintFov: 5, lockRate: 3.2, closeDist: 2, closePitch: 0.12, closeBack: 0.7, followDelay: 1.5, unlockDist: 15, flick: 140 };   // rad/s, m, s, px
+export const CAM = { crowdDist: 0.7, crowdUp: 0.05, sprintFov: 5, lockRate: 3.2, closeDist: 2, closePitch: 0.12, closeBack: 0.7, followDelay: 1.5, unlockDist: 15, lockDist: 16, duelDist: 3.0, duelPitch: 0.31, switchPx: 80, switchDecay: 5, switchCd: 0.28 };   // switch*: mouse sweep to change lock target (px of travel, decay 1/s, cooldown s)   // rad/s, m, s, px
 
 export class CameraRig {
   constructor(camera) {
@@ -52,9 +52,9 @@ export class CameraRig {
       // keep a slight angle so the player stands left of the line of sight instead of covering the opponent
       const bias = d < 3.2 ? 0.17 - (d - 1.2) * 0.04 : 0.09; const dy = angDiff(this.yaw, ty + bias) * Math.min(1, 6.5 * dt); this.yaw += clamp(dy, -CAM.lockRate * dt, CAM.lockRate * dt);   // capped turn speed: no whip when he runs past
       const close = clamp((CAM.closeDist - d) / CAM.closeDist, 0, 1);   // opponent nearer than 2 m: lift and pull back
-      const wantPitch = clamp(0.25 - (d - 3) * 0.012, 0.16, 0.3) + CAM.closePitch * close + CAM.crowdUp * this.crowd;
+      const wantPitch = clamp(CAM.duelPitch - (d - 3) * 0.012, CAM.duelPitch - 0.08, CAM.duelPitch + 0.05) + CAM.closePitch * close + CAM.crowdUp * this.crowd;
       this.pitch += (wantPitch - this.pitch) * Math.min(1, 3 * dt);
-      const wantDist = clamp(3.4 + (d - 2.5) * 0.18, 3.3, 4.4) + CAM.closeBack * close + CAM.crowdDist * this.crowd, wantSide = clamp(0.95 - (d - 1.5) * 0.12, 0.62, 0.95);
+      const wantDist = clamp(CAM.duelDist + (d - 2.5) * 0.18, CAM.duelDist - 0.1, CAM.duelDist + 1.0) + CAM.closeBack * close + CAM.crowdDist * this.crowd, wantSide = clamp(0.95 - (d - 1.5) * 0.12, 0.62, 0.95);
       this.dist += (wantDist - this.dist) * Math.min(1, 3 * dt);
       this.side += (wantSide - this.side) * Math.min(1, 4 * dt);
     } else {

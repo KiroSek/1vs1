@@ -16,8 +16,11 @@ export const PARRY_WINDOW = 0.2;
 const HEAD_RATE = 8;               // 1/s, smoothing of head/neck tracking
 const HEAD_MAX = 1.05;             // rad (60°), max head+neck turn relative to the chest
 const BREATH = 0.02;               // rad, breathing sway of the spine
-const JOLT_BACK = 0.15;            // rad, total spine lean-back on impact
-const JOLT_TWIST = 0.2;            // rad, spine twist on impact
+const JOLT_BACK = 0.3;             // rad, spine lean-back at the peak of a full (1.0) impact
+const JOLT_TWIST = 0.32;           // rad, spine twist at the peak of a full impact
+// impact jolt is a damped spring: `this.jolt = k` kicks it, the spine is thrown, overshoots a little and settles
+// (hz: how fast it snaps, damp: 0..1, lower = more wobble)
+const JOLT = { hz: 3.4, damp: 0.42 };
 const HEAD_BEHIND = 1.7;           // rad, opponent behind this angle -> look straight ahead
 const NECK_MAX = 0.87;             // rad (50°), hard cap of the head's total twist vs the chest (mocap clips reach 90°+)
 const HEAD_NECK_SHARE = 0.4;       // share of the turn on neck_01 (rest on Head)
@@ -27,23 +30,39 @@ const AMBUSH_RANGE = 3.4;
 const AMBUSH = { back: 2.6, side: 1.6, front: 1, post: 2.2 };   // surprise-attack damage multipliers by angle; posture multiplier
 const SPEED = { lockSide: 0.78, lockBack: 0.72, crouch: 1.7, water: 0.6, lockRun: 3.8, lockSprint: 5.6, freeRun: 3.8, freeSprint: 5.6, guardWalk: 2.2, walk: 1.4 };
 const CANCEL_AFTER_HIT = 0.08;     // s after the active frames when guard/dodge/jump may cancel a swing
+const ARMORED = new Set(['ashina', 'oni', 'bone', 'kage']);   // skins in lacquered plates: armour foley and armour hits
 const JUMP = { height: 1.1, air: [0.12, 0.72], land: 0.1, airControl: 1.3, minSpeed: 3.8 };   // airborne window (s) of 'jump'; air control rate (1/s ~ 20%/0.17s)
 // attack pacing (anti-spam): rest = pause before a NEW chain may start after an attack ends (s; longer after a finisher);
 // early = presses this long before a link's active frames are swallowed instead of buffered; plunge = jump-attack gating
-const PACE = { rest: 0.22, restFinisher: 0.5, early: 0.12, plungeRise: 0.34, plungeHang: 0.14, plungeCd: 1.4, jumpCd: 0.28 };
+// blend into an attack: from idle / walk the first pose of the swing eases in over `enter` s (capped by the wind-up length),
+// chained swings over `chain` s; weights follow a smoothstep so poses never start or stop moving with a jerk
+const _rollQ = new THREE.Quaternion(), _Z = new THREE.Vector3(0, 0, 1), _fl = new THREE.Vector3(), _fr = new THREE.Vector3();
+// foot plant during swings: plantH = how high (m) a foot may be and still count as on the floor; maxStep = largest per-frame correction
+const FOOT = { on: true, plantH: 0.12, maxStep: 0.12, stepSpeed: 1.4 };   // stepSpeed: m/s of a foot relative to the body above which it counts as stepping
+const ATK_FADE = { enter: 0.15, chain: 0.07, min: 0.06 };
+const PACE = { rest: 0.22, restFinisher: 0.5, early: 0.12, plungeRise: 0.3, plungeLate: 0.52, plungeHang: 0.12, plungeCd: 2.2, jumpCd: 0.28 };
 // weight of a swing: spine leans into the strike around the active frames, then settles (rad; heavy / light)
 const STRIKE_LEAN = { heavy: 0.16, light: 0.07, pre: 0.12, post: 0.3 };
+// coil -> release: spine twist against the swing during the wind-up, unwinding past centre through the cut (rad);
+// back: lean-back coil before a vertical chop; post: seconds to settle after the hit window; rate: smoothing (1/s)
+const THRUST_MIN_REACH = 0.38;   // m, closest the deathblow hand comes to its own shoulder
+const COIL = { yaw: 0.2, release: 0.26, heavyK: 1.35, back: 0.12, post: 0.32, rate: 22 };
 // body response to movement (our layer): lean into acceleration, bank into turns, settle on stops; idle micro-motion
 const MOTION = { dodgeBank: 0.006, accLean: 0.011, maxLean: 0.13, bank: 0.035, maxBank: 0.1, rate: 7, sway: 0.022, swayHz: 0.55, blade: 0.03, bladeHz: 1.25 };
 // parry visuals: env = [blend in, hold until, blend out] (s); reach = contact point distance from the hand along the blade (m)
-const PARRY_FX = { env: [0.035, 0.12, 0.2], reach: 0.42, bounce: 0.45, recoil: 0.25 };
+const PARRY_FX = { env: [0.05, 0.1, 0.28], reach: 0.42, bounce: 0.85, recoil: 0.25 };
+// attacker recoil when the swing is stopped: push = m/s backwards, jolt = body kick (1 = clean hit on the victim)
+const RECOIL = { deflectPush: 4.2, clashPush: 3.2, blockPush: 1.2, deflectJolt: 1.1, clashJolt: 0.8, blockJolt: 0.45 };
 // hit reaction choice: attacker behind if front < back; on a side if |side| > side; heavy blows knock down above knockPost posture
 const REACT_PICK = { back: -0.35, side: 0.3, knockPost: 0.72, knockInv: 1.3 };
 // delayed heavy wind-ups for AI: wind-up stretched by a random factor in [min, max]
 const DELAY = { min: 1.35, max: 2.1 };
 // grab: victim stands this far in front of the grabber; player grab (PvP option) cooldown
 const GRAB = { dist: 0.85, cd: 8 };
-const GRIP = { z: -0.17, near: 0.12, far: 0.3, rate: 14 };   // left hand on the hilt: seat point (katana z), full weight below near, none beyond far (m)
+// finger curl (rad) per phalanx for the sword fist; thumb wraps less
+const FIST_RELAX = 0.45;   // sheathed: loosely closed hand
+const FIST = { finger: [1.15, 1.35, 0.85], thumb: [0.25, 0.45, 0.4] };
+const GRIP = { handZ: 0.065, z: -0.17, near: 0.12, far: 0.3, atkFar: 0.5, rate: 14, roll: 1.6, edgeRate: 14 };   // roll: base turn of the blade in the fist (edge down-forward in stance); edgeRate: wrist turn speed toward a swing's edge roll (1/s)   // left hand on the hilt: seat point (katana z), full weight below near, none beyond far (m)
 const LINK = { combo: 0.1, stepCut: 0.35, vault: 0.4, vaultRange: 3.2, vaultBack: 5.5, vaultHeight: 0.7, sprintDash: 4.2 };   // Sekiro-style link windows (s) / ranges (m)
 const SWEEP_JUMP_POST = 40;        // posture an attacker takes when a sweep is jumped
 const HIT_FLASH = 0.08;            // s, emissive flash on the body when struck
@@ -69,7 +88,7 @@ const WALK = { F: ['Walk_Fwd_Loop', 1.25], B: ['Walk_Bwd_Loop', 1.2], L: ['Walk_
 const JOG = { F: ['Jog_Fwd_Loop', 3.4], B: ['Jog_Bwd_Loop', 1.25], L: ['Jog_Left_Loop', 1.2], R: ['Jog_Left_Loop', 1.2, true] };   // R = the left side-step clip played backwards (the stock right clip's feet do not plant)   // natural speeds measured from planted-foot slip
 const STRIDE = { maxRate: 4.4, sprintCycle: 0.47 };   // max clip speed-up for locomotion; MX_Run2 cycle at full sprint (s)
 // live-tunable groups (tune.js, F9): the objects are mutated in place, so the game reads the new values immediately
-export const TUNE = { PACE, STRIKE_LEAN, MOTION, PARRY_FX, REACT_PICK, DELAY, GRIP, STRIDE, SPEED, JUMP };
+export const TUNE = { FOOT, COIL, RECOIL, JOLT, ATK_FADE, PACE, STRIKE_LEAN, MOTION, PARRY_FX, REACT_PICK, DELAY, GRIP, STRIDE, SPEED, JUMP };
 
 export class Fighter {
   constructor(scene, base, style, name, weapon = 'standard') {
@@ -86,6 +105,7 @@ export class Fighter {
     const fdir = this.b.hand.getWorldPosition(new V3()).sub(this.b.farm.getWorldPosition(new V3()));
     this.edgeSign = Math.sign(hx.dot(fdir)) || 1;
     this.gripQ = new Q().setFromAxisAngle(new V3(0, 0, 1), -Math.PI / 2 * this.edgeSign);
+    this.setupGrip();
     // animation
     this.mixer = new THREE.AnimationMixer(this.model); this.acts = new Map();
     this.full = [];                 // full-body layer entries {a, w}
@@ -119,11 +139,13 @@ export class Fighter {
   get broken() { return this.act === 'guardBreak' && this.t < REACT.guardBreak.dur - 0.7; }
   get brokenLeft() { return this.broken ? REACT.guardBreak.dur - 0.7 - this.t : 0; }
   get chest() { return this.b.sp3.getWorldPosition(new V3()); }
+  get armored() { return ARMORED.has(this.style); }
   get airborne() { return this.act === 'jump' && this.t > JUMP.air[0] && this.t < JUMP.air[1]; }
   inActive() { const m = MOVES[this.act]; return m && this.t >= m.hit[0] && this.t <= m.hit[1]; }
   perilousWarn() { const m = MOVES[this.act]; return m && m.perilous && this.t < m.hit[0]; }
 
   setAct(name, t0 = 0) {
+    this.actStart = (this.actStart || 0) + 1;
     if (this.act === 'dodgeL' || this.act === 'dodgeR' || this.act === 'roll') this.dodgeEnd = this.time;
     const pm = MOVES[this.act];
     if (pm && !MOVES[name]) this.atkRestUntil = this.time + (pm.next || pm.nextHeavy ? PACE.rest : PACE.restFinisher);   // swing over -> short breath
@@ -132,6 +154,7 @@ export class Fighter {
     this.act = name; this.t = t0; this.seq++; this.hitDone = false; this.slamDone = false;
     this.delayK = this.delayChance && MOVES[name] && MOVES[name].heavy && !this.remote && Math.random() < this.delayChance ? DELAY.min + Math.random() * (DELAY.max - DELAY.min) : 0; this.queued = null; this.hitSet.clear(); this.feint = 0;
     const m = MOVES[name]; if (m) { this.swungSfx = false; if (m.perilous) this.emit('perilous'); }
+    this.fadeIn = m ? Math.max(ATK_FADE.min, Math.min(pm ? ATK_FADE.chain : ATK_FADE.enter, m.hit[0] * 0.9)) : 0;   // blend done before the blade goes live
     if (name === 'idle') this.visYawT = 0;
   }
   emit(type, data) { this.events.push({ type, data }); }
@@ -223,10 +246,21 @@ export class Fighter {
     return { res: 'hit', heavy: !!m.heavy, broke, kind: m.kind };
   }
   checkBreak() { if (this.posture >= this.maxPosture && this.act !== 'guardBreak') { this.posture = this.maxPosture; this.guard = false; this.setAct('guardBreak'); this.emit('broken'); return true; } return false; }
+  joltStep(dt) {   // spring: x'' = -w^2 x - 2 z w x'
+    const w = 2 * Math.PI * JOLT.hz, z = JOLT.damp;
+    if (this.jolt > 0) { this.jV = (this.jV || 0) + this.jolt * w * 1.6; this.jDir = this.joltDir || 1; this.jolt = 0; }
+    let x = this.jX || 0, v = this.jV || 0; const n = Math.max(1, Math.ceil(dt / (1 / 120))), h = dt / n;
+    for (let i = 0; i < n; i++) { v += (-w * w * x - 2 * z * w * v) * h; x += v * h; }
+    this.jX = Math.abs(x) < 1e-4 && Math.abs(v) < 1e-3 ? 0 : x; this.jV = this.jX ? v : 0;
+  }
   // attacker side
   applyOutcome(r) {
     if (r.res === 'grabbed') { this.setAct('grabHold'); this.grabbedAt = this.time; return; }
-    if (r.res === 'deflect' || r.res === 'clash') { this.posture += r.apost; this.lastPost = this.time; this.vel.addScaledVector(this.fwd, -2.2); if (!this.checkBreak()) this.setAct('deflected'); }
+    if (r.res === 'deflect' || r.res === 'clash') {   // blade knocked back: the whole body is thrown back off the opponent's sword
+      this.posture += r.apost; this.lastPost = this.time; this.vel.addScaledVector(this.fwd, r.res === 'deflect' ? -RECOIL.deflectPush : -RECOIL.clashPush);
+      this.jolt = r.res === 'deflect' ? RECOIL.deflectJolt : RECOIL.clashJolt; this.joltDir = Math.random() < 0.5 ? 1 : -1;
+      if (!this.checkBreak()) this.setAct('deflected'); }
+    else if (r.res === 'block') { this.jolt = r.heavy ? RECOIL.blockJolt * 1.4 : RECOIL.blockJolt; this.joltDir = Math.random() < 0.5 ? 1 : -1; this.vel.addScaledVector(this.fwd, -RECOIL.blockPush); }
     else if (r.res === 'jumped') { this.posture += r.apost; this.lastPost = this.time; if (!this.checkBreak()) this.setAct('deflected'); }
     else if (r.res === 'mikiri') { this.posture += r.apost; this.lastPost = this.time; if (!this.checkBreak()) this.setAct('hitHeavy'); }
   }
@@ -240,7 +274,7 @@ export class Fighter {
   // ================= update =================
   update(dt, inp, opp) {
     if (this.invulnT > 0) { this.invulnT -= dt; if (this.invulnT <= 0) this.invuln = false; }   // game-time invulnerability (boss intros, respawns)
-    this.opp = opp; this.time += dt; this.jolt = Math.max(0, this.jolt - dt * 4); this.counterT = Math.max(0, this.counterT - dt);
+    this.opp = opp; this.time += dt; this.joltStep(dt); this.counterT = Math.max(0, this.counterT - dt);
     const md = this.moveDef, tempo = MOVES[this.act] && this.act !== 'deathblow' ? this.tempo : 1;
     // feint: an AI-set slow-down of the first part of the wind-up (changes the rhythm, not the reaction window)
     const fe = MOVES[this.act] && this.feint && this.t < MOVES[this.act].hit[0] * 0.7 ? this.feint : 1;
@@ -257,6 +291,26 @@ export class Fighter {
     this.group.position.copy(this.pos); this.group.position.y = this.pos.y + this.jumpY; this.group.rotation.y = this.yaw;
     this.visYaw += angDiff(this.visYaw, this.visYawT) * Math.min(1, dt * 10); this.body.rotation.y = this.visYaw;
     this.animate(dt);
+    this.footLock();
+  }
+  // foot plant: the attack clips step in place, and the game lunge moves the body on top of that - the feet skated.
+  // While a swing is on, the lower foot that touches the floor is pinned where it landed and the body is moved instead,
+  // so the fighter travels by stepping. (Local simulation only: remote fighters get the resulting positions.)
+  footLock() {
+    const A = this.act, on = !this.remote && !this.dead && MOVES[A] && !MOVES[A].glide && A !== 'deathblow' && this.jumpY < 0.02 && FOOT.on;
+    if (!on) { this.plant = null; return; }
+    if (!this.b.footL) { this.b.footL = this.model.getObjectByName('foot_l'); this.b.footR = this.model.getObjectByName('foot_r'); }
+    const pl = this.b.footL.getWorldPosition(_fl), pr = this.b.footR.getWorldPosition(_fr), left = pl.y < pr.y, sp = left ? pl : pr;
+    // body-local foot position: a foot that moves fast relative to the body is stepping (or dragging), not standing
+    const c = Math.cos(this.yaw), sn = Math.sin(this.yaw), lx = (sp.x - this.pos.x) * c - (sp.z - this.pos.z) * sn, lz = (sp.x - this.pos.x) * sn + (sp.z - this.pos.z) * c;
+    const lv = this.footLoc && this.footLoc.left === left && this.dtLast > 0 ? Math.hypot(lx - this.footLoc.x, lz - this.footLoc.z) / this.dtLast : 0;
+    this.footLoc = { left, x: lx, z: lz };
+    if (sp.y - this.pos.y > FOOT.plantH * this.scaleF || lv > FOOT.stepSpeed) { this.plant = null; return; }
+    if (this.plant && this.plant.left === left && this.plant.seq === this.seq) {
+      const dx = this.plant.x - sp.x, dz = this.plant.z - sp.z;
+      if (dx * dx + dz * dz < FOOT.maxStep * FOOT.maxStep) { this.pos.x += dx; this.pos.z += dz; this.group.position.x += dx; this.group.position.z += dz; this.group.updateMatrixWorld(true); return; }
+    }
+    this.plant = { left, seq: this.seq, x: sp.x, z: sp.z };
   }
 
   updateRemote(dt) {
@@ -280,7 +334,7 @@ export class Fighter {
 
   sfxEvents() {
     const m = MOVES[this.act];
-    if (m && !this.swungSfx && this.t >= m.hit[0] - 0.06) { this.swungSfx = true; this.act === 'deathblow' ? sfx.deathblow() : sfx.swing(m.heavy || m.kind === 'thrust'); }
+    if (m && !this.swungSfx && this.t >= m.hit[0] - 0.06) { this.swungSfx = true; this.act === 'deathblow' ? sfx.deathblow() : sfx.swing(m.heavy || m.kind === 'thrust', this.armored); }
   }
 
   updateLocal(dt, inp, opp) {
@@ -309,13 +363,13 @@ export class Fighter {
     const canAct = idle || recov || (A === 'deflect' && this.t > 0.12) || ((A === 'dodgeL' || A === 'dodgeR' || A === 'roll') && this.t > (this.quickDodge ? 0.18 : 0.42)) || (A === 'jump' && this.t > JUMP.air[1] + JUMP.land);
     // ---- Sekiro-style links (checked before the generic action gate) ----
     if (!this.dead && toOpp) {
-      if (this.act === 'jump' && this.airborne && inp.jump > 0 && this.time - (this.sweepJumpedAt ?? -9) <= LINK.vault && dist < LINK.vaultRange) {
-        inp.jump = 0; face(toOpp); this.setAct('vault'); this.locoV.set(0, 0, 0); this.vel.copy(this.fwd).multiplyScalar(-LINK.vaultBack); return this.integrate(dt, null, 0, opp); }
       if (this.canAmbush && this.crouch && this.act === 'idle' && inp.light > 0 && dist < AMBUSH_RANGE) { inp.light = 0; face(toOpp); this.crouch = false; this.setAct('ambush'); return this.integrate(dt, null, 0, opp); }
-      if (this.act === 'jump' && this.airborne && inp.light > 0 && this.t >= PACE.plungeRise && this.time >= (this.plungeReadyAt ?? -9)) { inp.light = 0; face(toOpp); this.locoV.multiplyScalar(0.4); this.setAct('plunge'); return this.integrate(dt, null, 0, opp); }
+      if (this.act === 'jump' && this.airborne && (inp.light > 0 || inp.heavy > 0) && this.t >= PACE.plungeRise && this.t <= PACE.plungeLate && this.time >= (this.plungeReadyAt ?? -9)) { inp.heavy = 0; inp.light = 0; face(toOpp); this.locoV.multiplyScalar(0.4); this.setAct('plunge'); return this.integrate(dt, null, 0, opp); }
       const dodging = this.act === 'dodgeL' || this.act === 'dodgeR' || this.act === 'roll';
       if (inp.light > 0 && ((dodging && this.t > 0.2) || (this.act === 'idle' && this.time - (this.dodgeEnd ?? -9) <= LINK.stepCut))) {
         inp.light = 0; face(toOpp); this.setAct('stepCut'); this.guard = false; return this.integrate(dt, null, 0, opp); }
+      if (inp.heavy > 0 && (inp.heavyKind || 'heavy') === 'heavy' && ((dodging && this.t > 0.2) || (this.act === 'idle' && this.time - (this.dodgeEnd ?? -9) <= LINK.stepCut))) {
+        inp.heavy = 0; face(toOpp); this.setAct('dashCut'); this.guard = false; return this.integrate(dt, null, 0, opp); }
     }
     if (this.dead) { this.guard = false; }
     else if (canAct && A !== 'draw' && A !== 'sheathe' && A !== 'revive') {
@@ -323,7 +377,7 @@ export class Fighter {
         inp.jump = 0; this.setAct('jump'); this.guard = false;
         // keep momentum: input direction x current speed (at least running speed), so a sprint jump carries further
         const mv = inp.move && inp.move.lengthSq() > 0.01 ? inp.move.clone().normalize() : null;
-        this.jumpSpeed = mv ? Math.max(this.speed, JUMP.minSpeed) : this.speed; if (mv) this.locoV.copy(mv).multiplyScalar(this.jumpSpeed); this.vel.set(0, 0, 0); sfx.dodge(); this.emit('dodge'); return this.integrate(dt, null, 0, opp);
+        this.jumpSpeed = mv ? Math.max(this.speed, JUMP.minSpeed) : this.speed; if (mv) this.locoV.copy(mv).multiplyScalar(this.jumpSpeed); this.vel.set(0, 0, 0); sfx.jump(); this.landSfx = false; this.emit('dodge'); return this.integrate(dt, null, 0, opp);
       }
       if (inp.dodge > 0 && this.act !== 'roll') {
         inp.dodge = 0;
@@ -345,22 +399,17 @@ export class Fighter {
       const rested = this.counterT > 0 || (MOVES[A] ? !fin || this.t >= Math.min(MOVES[A].dur, MOVES[A].cancel + PACE.restFinisher) : this.time >= (this.atkRestUntil ?? -9));
       if (inp.heavy > 0 && rested) { inp.heavy = 0; let hk = inp.heavyKind || 'heavy';
         if (hk === 'heavy' && MOVES[A] && MOVES[A].nextHeavy && this.t < MOVES[A].dur - 0.05) hk = MOVES[A].nextHeavy;   // E x3 heavy chain
-        else if (hk === 'heavy' && inp.back && !MOVES[A]) hk = 'uppercutH';   // S + E
         face(aim()); this.setAct(hk); this.guard = false; return this.integrate(dt, null, 0, opp); }
       if (inp.light > 0 && rested) {
         inp.light = 0; let next = inp.lightKind || 'slash1';
         if (MOVES[A] && MOVES[A].next && this.t < MOVES[A].dur - 0.05) next = MOVES[A].next;
         if (this.counterT > 0 && !MOVES[A]) next = 'counter';
-        if (A === 'idle' && this.sprint && this.speed > LINK.sprintDash) next = 'dash';      // sprint + LMB
-        else if (inp.back && !MOVES[A] && next === 'slash1') next = 'uppercut';               // S + LMB
         this.counterT = 0; face(aim()); this.setAct(next); this.guard = false; return this.integrate(dt, null, 0, opp);
       }
       if ((recov || A === 'deflect') && inp.guard) { this.setAct('idle'); }
     }
-    // W + LMB + E pressed together (within LINK.combo): the swing that started first becomes the leaping strike
-    if (inp.fwd && ((A === 'slash1' && inp.heavy > 0) || (A === 'heavy' && inp.light > 0)) && this.t < LINK.combo) { inp.light = inp.heavy = 0; this.setAct('leap'); return this.integrate(dt, null, 0, opp); }
-    // player grab (PvP option): perilous shoulder rush with a long cooldown
-    if (inp.grab > 0 && (A === 'idle' || recov) && this.time >= (this.grabReadyAt ?? -9)) { inp.grab = 0; this.grabReadyAt = this.time + GRAB.cd; face(aim()); this.setAct('grab'); return this.integrate(dt, null, 0, opp); }
+    // (player move set kept simple: light chain, heavy chain, dodge cuts, apex slam. Specials such as leap / grab /
+    // uppercut / kick stay AI-only, chosen through inp.heavyKind)
     // combo buffering: an attack press during the swing queues the next link
     if (MOVES[A] && this.t < MOVES[A].hit[0] - PACE.early) { inp.light = 0; inp.heavy = 0; }   // mash during the wind-up -> dropped
     if (MOVES[A] && inp.light > 0 && this.t > MOVES[A].hit[0] - 0.1 && MOVES[A].next) { this.queued = MOVES[A].next; inp.light = 0; }
@@ -403,6 +452,7 @@ export class Fighter {
           if (m.slam !== undefined && !this.slamDone && this.t >= m.slam) { this.slamDone = true; this.emit('slam', { heavy: !!m.heavy }); }   // landing crash of air attacks
           if (this.t >= m.dur) this.setAct('idle');
         } else if (this.act === 'jump') {
+          if (!this.landSfx && this.t >= JUMP.air[1]) { this.landSfx = true; this.emit('land'); }
           if (this.t < JUMP.air[1] && inp.move && inp.move.lengthSq() > 0.01) this.locoV.lerp(inp.move.clone().normalize().multiplyScalar(Math.max(this.jumpSpeed || 0, this.locoV.length(), 1.5)), 1 - Math.exp(-JUMP.airControl * dt));
           if (this.t >= REACT.jump.dur) this.setAct('idle');
         } else if (this.act === 'dodgeL' || this.act === 'dodgeR' || this.act === 'roll') {
@@ -450,7 +500,8 @@ export class Fighter {
       if (m.kind === 'grab') { if (d < m.range * reach && this.fwd.dot(new V3(dx / d, 0, dz / d)) > 0.6 && Math.abs(v.pos.y - this.pos.y) < 0.6) hit = true; }
       else if (base && tip) {
         const r = 0.42 * (v.scaleF || 1), a = new V3(v.pos.x, v.pos.y + 0.25, v.pos.z), b = new V3(v.pos.x, v.pos.y + 1.75 * (v.scaleF || 1), v.pos.z);
-        for (let s = 0; s <= 1; s += 0.2) { const p = base.clone().lerp(tip, s); if (segPointDist(a, b, p) < r) { hit = true; break; } }
+        const hk = this.katana.userData.hitK ?? 1;   // the bigger drawn blade keeps the classic cutting reach (AI parry timing stays honest)
+        for (let s = 0; s <= 1.001; s += 0.2) { const p = base.clone().lerp(tip, s * hk); if (segPointDist(a, b, p) < r) { hit = true; break; } }
       }
       // forgiveness at the heart of the swing, only for the fighter we are facing
       if (!hit && this.t >= mid && d < m.range * reach && this.fwd.dot(new V3(dx / d, 0, dz / d)) > 0.55 && Math.abs(v.pos.y - this.pos.y) < 1.4) hit = true;
@@ -470,17 +521,18 @@ export class Fighter {
       [topClip, ct] = sample(md, this.t);
       if (this.act === 'guardBreak' && this.t > md.segs[0][3] && this.t < md.segs[0][3] + md.segs[1][3]) ct += Math.sin(this.time * 2.3) * 0.015;   // stagger sway
     }
-    const fade = MOVES[this.act] ? 0.07 : this.act === 'die' || this.act === 'dieFwd' ? 0.18 : 0.1;
+    const fade = MOVES[this.act] ? (this.fadeIn || 0.07) : this.act === 'die' || this.act === 'dieFwd' ? 0.18 : 0.1;
     if (topClip) {
       const a = this.action(L.all[topClip]); a.time = Math.min(ct, a.getClip().duration - 1e-4);
       let e = this.full.find(e => e.a === a); if (!e) { e = { a, w: 0 }; this.full.push(e); }
       this.full.splice(this.full.indexOf(e), 1); this.full.push(e);
     }
     const n = this.full.length;
-    for (let i = 0; i < n; i++) { const e = this.full[i], top = topClip && i === n - 1; e.w = top ? Math.min(1, e.w + dt / fade) : Math.max(0, e.w - dt / (MOVES[this.act] ? 0.07 : 0.16)); }
+    for (let i = 0; i < n; i++) { const e = this.full[i], top = topClip && i === n - 1; e.w = top ? Math.min(1, e.w + dt / fade) : Math.max(0, e.w - dt / (MOVES[this.act] ? fade : 0.16)); }   // same rate out as in: a true crossfade
     this.full = this.full.filter(e => { if (e.w <= 0.001) { e.a.setEffectiveWeight(0); return false; } return true; });
-    let fullW = 0; for (const e of this.full) fullW += e.w;
-    const k = fullW > 1 ? 1 / fullW : 1; for (const e of this.full) e.a.setEffectiveWeight(e.w * k); fullW = Math.min(1, fullW);
+    const sm = w => w * w * (3 - 2 * w);   // smoothstep: blend weights ease in and out
+    let fullW = 0; for (const e of this.full) fullW += sm(e.w);
+    const k = fullW > 1 ? 1 / fullW : 1; for (const e of this.full) e.a.setEffectiveWeight(sm(e.w) * k); fullW = Math.min(1, fullW);
     const baseW = 1 - fullW;
     // ---- locomotion (lower body) ----
     const v = this.locoV, f = this.fwd, r = new V3(f.z, 0, -f.x);   // r = character left
@@ -541,7 +593,7 @@ export class Fighter {
   armIK(target, dir, w, side = 'r') {
     if (w <= 0.001) return;
     const L = side === 'l', ua = L ? this.b.uarmL : this.b.uarm, la = L ? this.b.farmL : this.b.farm, h = L ? this.b.handL : this.b.hand;
-    this.model.updateMatrixWorld(true);
+    ua.updateWorldMatrix(true, false);   // only the chain up to the shoulder needs fresh matrices (getWorld* refresh their parents)
     const orig = [ua.quaternion.clone(), la.quaternion.clone(), h.quaternion.clone()];
     const wp = o => o.getWorldPosition(new V3());
     const S = wp(ua), l1 = S.distanceTo(wp(la)), l2 = wp(la).distanceTo(wp(h));
@@ -555,12 +607,12 @@ export class Fighter {
     const aim = (bone, child, to) => { const bp = wp(bone), cp = wp(child); const q = new Q().setFromUnitVectors(cp.sub(bp).normalize(), to.clone().sub(bp).normalize());
       const bw = bone.getWorldQuaternion(new Q()), pw = bone.parent.getWorldQuaternion(new Q()); bone.quaternion.copy(pw.invert().multiply(q.multiply(bw))); bone.updateMatrixWorld(true); };
     aim(ua, la, E); aim(la, h, Tc);
-    if (dir) { const hq = h.getWorldQuaternion(new Q()), z = new V3(0, 0, 1).applyQuaternion(hq);
+    if (dir) { const hq = h.getWorldQuaternion(new Q()), z = (L || !this.bladeLocal ? new V3(0, 0, 1) : this.bladeLocal.clone()).applyQuaternion(hq);
       const nq = new Q().setFromUnitVectors(z, dir.clone().normalize()).multiply(hq), pw = h.parent.getWorldQuaternion(new Q());
       h.quaternion.copy(pw.invert().multiply(nq)); }
     else h.quaternion.copy(h.parent.getWorldQuaternion(new Q()).invert().multiply(keepQ));
     if (w < 0.999) [ua, la, h].forEach((b, i) => { const q = b.quaternion.clone(); b.quaternion.copy(orig[i]).slerp(q, w); });
-    this.model.updateMatrixWorld(true);
+    ua.updateMatrixWorld(true);   // arm subtree (forearm, hand, fingers) instead of the whole character
   }
   thrustIK() {
     const A = this.act; if (A !== 'thrust' && A !== 'deathblow' && A !== 'ambush' && A !== 'jab') return;
@@ -573,13 +625,62 @@ export class Fighter {
     if (A === 'deathblow' && o) aimP.y = o.chest.y - 0.05;
     const dir = aimP.clone().sub(sh); dir.y = clamp(dir.y, -0.4, 0.15); dir.normalize();
     let hand;
-    if (A === 'deathblow' && o) hand = aimP.clone().addScaledVector(dir, -0.5);
+    if (A === 'deathblow' && o) hand = sh.clone().addScaledVector(dir, Math.max(THRUST_MIN_REACH, aimP.distanceTo(sh) - 0.5));   // never pull the hand into the shoulder (the elbow flipped through it)
     else hand = sh.clone().addScaledVector(dir, 0.62).add(new V3(0, -0.04, 0));
-    this.armIK(hand, dir, w);
+    // follow the target smoothly: the victim's own reaction moves its chest every frame, a raw target made the elbow jump
+    const k = this.tikSeq === this.seq ? 1 - Math.exp(-18 * this.dtLast) : 1; this.tikSeq = this.seq;
+    this.tikH = k < 1 ? this.tikH.lerp(hand, k) : hand.clone(); this.tikD = k < 1 ? this.tikD.lerp(dir, k).normalize() : dir.clone();
+    this.armIK(this.tikH, this.tikD, w);
   }
 
   // Two-handed grip: where the clip already brings the left hand near the hilt (Mixamo great-sword moves), seat the
   // palm on the wrap just below the sword hand. One-handed frames (hand far away) are left alone.
+  // ---- hilt frame from the real hand bones (rest pose) ----
+  // The fist is formed procedurally (FIST angles) and the hilt axis runs through the middle of the finger loop:
+  // blade out of the thumb / index side (pinky -> index), edge toward the knuckles. Stored relative to hand_r.
+  setupGrip() {
+    const B = n => this.model.getObjectByName(n), W = o => o.getWorldPosition(new V3());
+    const sides = { r: [], l: [] };
+    for (const t of ['r', 'l']) for (const f of ['index', 'middle', 'ring', 'pinky', 'thumb']) for (let i = 1; i <= 3; i++) { const b = B(`${f}_0${i}_${t}`); if (b) sides[t].push({ b, f, i, rest: b.quaternion.clone() }); }
+    this.fingers = sides; this.model.updateMatrixWorld(true);
+    for (const t of ['r', 'l']) {
+      const hand = B('hand_' + t), idx = B('index_01_' + t), pk = B('pinky_01_' + t), mid = B('middle_01_' + t); if (!hand || !idx || !pk || !mid) continue;
+      const lat = W(idx).sub(W(pk)).normalize(), fdir = W(mid).sub(W(hand)).normalize(), thumbAx = fdir.clone();
+      for (const e of sides[t]) {   // curl axis in bone space; the sign is picked so the finger closes toward the palm
+        const ax = (e.f === 'thumb' ? thumbAx : lat).clone().applyQuaternion(e.b.getWorldQuaternion(new Q()).invert()).normalize(); e.ax = ax; e.sign = 1;
+      }
+      // pick the closing direction numerically: curl the middle finger both ways, keep the one that brings its tip nearer the wrist
+      // palm normal: toward the thumb side, perpendicular to the finger direction and the knuckle line
+      const th = B('thumb_01_' + t), pn = th ? W(th).sub(W(hand)) : new V3(0, -1, 0); pn.addScaledVector(fdir, -pn.dot(fdir)).addScaledVector(lat, -pn.dot(lat)).normalize();
+      const tip = B('middle_03_' + t), chain = sides[t].filter(e => e.f === 'middle'), t0 = W(tip);
+      const tryCurl = sg => { for (const e of chain) e.b.quaternion.copy(e.rest).multiply(new Q().setFromAxisAngle(e.ax, sg * 0.8)); this.model.updateMatrixWorld(true); const d = W(tip).sub(t0).dot(pn); for (const e of chain) e.b.quaternion.copy(e.rest); return d; };
+      const sg = tryCurl(1) > tryCurl(-1) ? 1 : -1;   // the side that moves the fingertip into the palm
+      const tb = B('thumb_03_' + t), tchain = sides[t].filter(e => e.f === 'thumb');
+      const tryThumb = q => { for (const e of tchain) e.b.quaternion.copy(e.rest).multiply(new Q().setFromAxisAngle(e.ax, q * 0.6)); this.model.updateMatrixWorld(true); const d = W(tb).distanceTo(W(B('middle_02_' + t))); for (const e of tchain) e.b.quaternion.copy(e.rest); return d; };
+      const tsg = tb && tchain.length ? (tryThumb(1) < tryThumb(-1) ? 1 : -1) : 1;
+      for (const e of sides[t]) e.sign = e.f === 'thumb' ? tsg : sg;
+      if (t !== 'r') continue;
+      // hilt through the closed fist
+      this.fist('r', 1); this.model.updateMatrixWorld(true);
+      const G = ['middle_01_r', 'middle_03_r', 'index_02_r', 'ring_02_r'].map(n => W(B(n))).reduce((a, b) => a.add(b), new V3()).multiplyScalar(0.25);
+      const Z = lat.clone(), Y = W(mid).sub(G); Y.addScaledVector(Z, -Y.dot(Z)).normalize(); const X = Y.clone().cross(Z).normalize();
+      const qW = new Q().setFromRotationMatrix(new THREE.Matrix4().makeBasis(X, Y, Z));
+      const pW = G.clone().addScaledVector(Z, GRIP.handZ);
+      this.gripLocalPos = hand.worldToLocal(pW.clone()); this.gripLocalQ = hand.getWorldQuaternion(new Q()).invert().multiply(qW);
+      this.bladeLocal = new V3(0, 0, 1).applyQuaternion(this.gripLocalQ);   // blade axis in hand space (for arm IK)
+      for (const e of sides.r) e.b.quaternion.copy(e.rest); this.model.updateMatrixWorld(true);
+    }
+  }
+  // close the fingers of one hand around the hilt (w: 0 = keep the clip, 1 = full fist)
+  fist(t, w) {
+    if (!this.fingers || w <= 0.001) return;
+    for (const e of this.fingers[t]) { const a = FIST[e.f === 'thumb' ? 'thumb' : 'finger'][e.i - 1] * e.sign;
+      const q = e.rest.clone().multiply(new Q().setFromAxisAngle(e.ax, a)); if (w >= 0.999) e.b.quaternion.copy(q); else e.b.quaternion.slerp(q, w); }
+  }
+  // world pose of the katana for the current hand pose
+  hiltWorld() {
+    const h = this.b.hand; return { p: h.localToWorld(this.gripLocalPos.clone()), q: h.getWorldQuaternion(new Q()).multiply(this.gripLocalQ).multiply(_rollQ.setFromAxisAngle(_Z, GRIP.roll)) };
+  }
   // blade-on-blade: called by the game at the exact moment a deflect / block / clash is resolved
   meetBlade(p, other, attacker, res) {
     const od = other.bladeTip && other.bladeBase ? other.bladeTip.clone().sub(other.bladeBase).normalize() : new V3(0, 1, 0);
@@ -609,24 +710,24 @@ export class Fighter {
     const pd = P.p.clone().sub(H); if (pd.length() > 0.05) d = pd.normalize();
     this.armIK(H, d, w);
     // second pass: measure where the blade really is (the hilt sits off the hand bone) and correct the miss
-    if (w > 0.5) { const hq = this.b.hand.getWorldQuaternion(new Q()), hp = this.b.hand.getWorldPosition(new V3()), s = this.scaleF;
-      const base = hp.clone().addScaledVector(new V3(this.edgeSign, 0, 0).applyQuaternion(hq), 0.085 * s).addScaledVector(new V3(0, 1, 0).applyQuaternion(hq), -0.012 * s).addScaledVector(new V3(0, 0, 1).applyQuaternion(hq), 0.07 * s);
-      const bd = new V3(0, 0, 1).applyQuaternion(hq.clone().multiply(this.gripQ)), u = Math.max(0, P.p.clone().sub(base).dot(bd));
+    // (weighted by the envelope, not switched at a threshold: a switch made the forearm jump as the parry let go)
+    if (w > 0.02) { this.model.updateMatrixWorld(true); const hw = this.hiltWorld(), base = hw.p;
+      const bd = new V3(0, 0, 1).applyQuaternion(hw.q), u = Math.max(0, P.p.clone().sub(base).dot(bd));
       const miss = P.p.clone().sub(base.clone().addScaledVector(bd, u));
-      if (miss.length() > 0.01) this.armIK(this.b.hand.getWorldPosition(new V3()).add(miss), bd, 1); }
+      if (miss.length() > 0.01) this.armIK(this.b.hand.getWorldPosition(new V3()).add(miss), bd, w); }
   }
   leftGripIK(dt) {
     const K = this.katana; let w = 0, tgt = null, palmOff = null;
     if (!this.sheathed && !this.dead && K && !K.userData.spear && this.b.palmL) {
-      const h = this.b.hand, hp = h.getWorldPosition(new V3()), hq = h.getWorldQuaternion(new Q()), s = this.scaleF;
-      const kq = hq.clone().multiply(this.gripQ);
-      const kp = hp.clone().addScaledVector(new V3(this.edgeSign, 0, 0).applyQuaternion(hq), 0.085 * s).addScaledVector(new V3(0, 1, 0).applyQuaternion(hq), -0.012 * s).addScaledVector(new V3(0, 0, 1).applyQuaternion(hq), 0.07 * s);
+      const s = this.scaleF, hw = this.hiltWorld(), kq = hw.q, kp = hw.p;
       const wrist = this.b.handL.getWorldPosition(new V3()), palm = this.b.palmL.getWorldPosition(new V3()).lerp(wrist, 0.35);
       palmOff = palm.clone().sub(wrist);
       // distance of the animated palm from the hilt axis (z -0.25..-0.04 in katana space)
       const loc = palm.clone().sub(kp).applyQuaternion(kq.clone().invert()).divideScalar(s);
       const zc = clamp(loc.z, -0.25, -0.04), d = Math.hypot(loc.x, loc.y, loc.z - zc);
       w = 1 - smooth(clamp((d - GRIP.near) / (GRIP.far - GRIP.near), 0, 1));
+      if (this.guard || this.act === 'deflect') w = 1;                       // block and parry: always both hands on the hilt
+      else if (MOVES[this.act]) w = Math.max(w, 1 - smooth(clamp((d - GRIP.near) / (GRIP.atkFar - GRIP.near), 0, 1)));   // swings: grab the hilt whenever it is within reach
       tgt = new V3(0, 0, GRIP.z * s).applyQuaternion(kq).add(kp).sub(palmOff);
     }
     this.gripW = (this.gripW || 0) + (w - (this.gripW || 0)) * (1 - Math.exp(-GRIP.rate * dt));
@@ -634,6 +735,7 @@ export class Fighter {
   }
 
   procedural(dt, baseW) {
+    this.dtLast = dt;
     this.thrustIK();
     // rotate a bone about a WORLD axis (the rig's local axes are not the character's pitch/yaw axes)
     const twW = (bone, worldAxis, ang) => { if (Math.abs(ang) < 1e-4) return; const ax = worldAxis.clone().applyQuaternion(bone.getWorldQuaternion(new Q()).invert()).normalize(); bone.quaternion.multiply(new Q().setFromAxisAngle(ax, ang)); };
@@ -642,8 +744,8 @@ export class Fighter {
     const br = Math.sin(this.time * 2.1) * BREATH * baseW;
     twW(this.b.sp2, RIGHT, br); twW(this.b.sp3, RIGHT, br * 0.6);
     // impact jolt: spine thrown back + twisted, head untouched
-    const j = smooth(Math.min(1, this.jolt));
-    if (j > 0) { twW(this.b.sp1, RIGHT, JOLT_BACK * 0.45 * j); twW(this.b.sp2, RIGHT, JOLT_BACK * 0.55 * j); twW(this.b.sp2, UP, JOLT_TWIST * j * this.joltDir); }
+    const j = Math.max(-0.6, Math.min(1.4, this.jX || 0));
+    if (j) { twW(this.b.sp1, RIGHT, JOLT_BACK * 0.4 * j); twW(this.b.sp2, RIGHT, JOLT_BACK * 0.35 * j); twW(this.b.sp3, RIGHT, JOLT_BACK * 0.25 * j); twW(this.b.sp2, UP, JOLT_TWIST * j * (this.jDir || 1)); }
     // movement response from the actual ground velocity (works for remote fighters too): accelerate -> lean in,
     // brake -> lean back, turn while moving -> bank. Smoothed so it reads as weight, not as jitter.
     if (dt > 0 && !this.dead) {
@@ -676,6 +778,18 @@ export class Fighter {
       const lean = -(sm.heavy ? STRIKE_LEAN.heavy : STRIKE_LEAN.light) * e;   // negative = forward
       if (e > 0) { twW(this.b.sp1, RIGHT, lean * 0.4); twW(this.b.sp2, RIGHT, lean * 0.6); }
     }
+    // body drive: coil against the cut in the wind-up, unwind through it (the hips and chest pull the sword round)
+    { let yawT = 0, backT = 0;
+      if (sm && sm.swing && sm.kind !== 'deathblow') {
+        const h0 = Math.max(0.05, sm.hit[0]), h1 = sm.hit[1], t = this.t, k = sm.heavy ? COIL.heavyK : 1;
+        const coil = t < h0 ? smooth(t / h0) : 0, rel = t < h0 ? 0 : t < h1 ? 1 - (1 - (t - h0) / (h1 - h0)) ** 2 : 1, fade = t < h1 ? 1 : Math.max(0, 1 - (t - h1) / COIL.post);
+        if (sm.swing === 'down') backT = COIL.back * k * (t < h0 ? coil : 0);
+        else yawT = sm.swing * k * (t < h0 ? -COIL.yaw * coil : (-COIL.yaw + (COIL.yaw + COIL.release) * rel) * smooth(fade));
+      }
+      const a = 1 - Math.exp(-COIL.rate * dt); this.coilY = (this.coilY || 0) + (yawT - (this.coilY || 0)) * a; this.coilB = (this.coilB || 0) + (backT - (this.coilB || 0)) * a;
+      if (Math.abs(this.coilY) > 1e-3) { twW(this.b.sp1, UP, this.coilY * 0.3); twW(this.b.sp2, UP, this.coilY * 0.35); twW(this.b.sp3, UP, this.coilY * 0.35); }
+      if (this.coilB > 1e-3) { twW(this.b.sp2, RIGHT, this.coilB * 0.5); twW(this.b.sp3, RIGHT, this.coilB * 0.5); }
+    }
     // head + neck: turn only by the difference between the chest's real facing (after animation) and the opponent
     let want = 0;
     if (this.opp && !this.dead && !HEAD_OFF.has(this.act) && !MOVES[this.act]) {
@@ -689,8 +803,10 @@ export class Fighter {
       const axis = UP.clone().applyQuaternion(bone.getWorldQuaternion(new Q()).invert());
       bone.quaternion.multiply(new Q().setFromAxisAngle(axis, this.headYaw * share));
     }
+    this.fist('r', this.sheathed ? FIST_RELAX : 1);
     this.parryIK(dt);
     this.leftGripIK(dt);
+    this.fist('l', this.gripW || 0);
     // neck limiter: whatever the clip + look-at did, the head never twists more than NECK_MAX off the chest
     if (!this.neckRest) { const B0 = n => this.base.scene.getObjectByName(n); this.base.scene.updateMatrixWorld(true);
       this.neckRest = B0('spine_03').getWorldQuaternion(new Q()).invert().multiply(B0('Head').getWorldQuaternion(new Q())); }
@@ -704,7 +820,7 @@ export class Fighter {
     if (this.flashT > 0 || this.flashOn) {
       if (!this.flashMats) { this.flashMats = []; this.model.traverse(o => { if (o.isMesh && o.material && o.material.emissive) for (const m of [].concat(o.material)) if (!this.flashMats.includes(m)) this.flashMats.push({ m, c: m.emissive.clone(), i: m.emissiveIntensity }); }); }
       this.flashT = Math.max(0, this.flashT - dt); const k = this.flashT / HIT_FLASH;
-      for (const f of this.flashMats) { if (k > 0) { f.m.emissive.setRGB(1, 0.82, 0.75); f.m.emissiveIntensity = 0.9 * k; } else { f.m.emissive.copy(f.c); f.m.emissiveIntensity = f.i; } }
+      for (const f of this.flashMats) { if (k > 0) { f.m.emissive.setRGB(1, 0.12, 0.08); f.m.emissiveIntensity = 0.22 * k; } else { f.m.emissive.copy(f.c); f.m.emissiveIntensity = f.i; } }   // a hot red pulse, not a white-out: the cut line and blood carry the hit
       this.flashOn = k > 0;
     }
   }
@@ -717,15 +833,20 @@ export class Fighter {
       if (this.act === 'draw' && this.sheathed && this.t > 0.25 && (hd < 0.2 || this.t > 0.7)) { this.sheathed = false; sfx.draw(); }
       if (this.act === 'sheathe' && !this.sheathed && this.t > 0.55 && (hd < 0.2 || this.t > 1.05)) { this.sheathed = true; sfx.sheathe(); }
     }
+    const fall = this.act === 'die' || this.act === 'dieFwd' ? 0.6 : this.act === 'knockdown' ? 0.35 : 0;   // body hits the ground
+    if (fall && this.fellAct !== this.actStart && this.t > fall) { this.fellAct = this.actStart; this.emit('fall', { k: this.act === 'knockdown' ? 0.7 : 1 }); }
     if (this.sheathed) { this.saya.updateMatrixWorld(true); this.saya.matrixWorld.decompose(K.position, K.quaternion, new V3()); K.scale.setScalar(this.scaleF); }
     else {
-      const h = this.b.hand, hp = h.getWorldPosition(new V3()), hq = h.getWorldQuaternion(new Q());
-      const ax = new V3(this.edgeSign, 0, 0).applyQuaternion(hq), az = new V3(0, 0, 1).applyQuaternion(hq), ay = new V3(0, 1, 0).applyQuaternion(hq);
-      K.quaternion.copy(hq).multiply(this.gripQ);
-      K.position.copy(hp).addScaledVector(ax, 0.085 * this.scaleF).addScaledVector(ay, -0.012 * this.scaleF).addScaledVector(az, 0.07 * this.scaleF);
+      // edge alignment: during an attack the wrist turns the blade about its axis so the edge leads (MOVES[].edge)
+      const em = MOVES[this.act], tgt = em && em.edge ? em.edge : 0; let dr = tgt - (this.edgeRoll || 0); dr = Math.atan2(Math.sin(dr), Math.cos(dr));
+      this.edgeRoll = Math.atan2(Math.sin((this.edgeRoll || 0) + dr * (1 - Math.exp(-GRIP.edgeRate * dt))), Math.cos((this.edgeRoll || 0) + dr * (1 - Math.exp(-GRIP.edgeRate * dt))));
+      const hw = this.hiltWorld(); K.quaternion.copy(hw.q).multiply(_rollQ.setFromAxisAngle(_Z, this.edgeRoll)); K.position.copy(hw.p);
       K.scale.setScalar(this.scaleF);
     }
     K.updateMatrixWorld(true);
+    // grip cutaway (gear.js): open around the fist and hilt in the stance poses, closed while swinging or sheathed
+    const cut = this.gear.cut; if (cut) { const open = !this.sheathed && !this.dead && !MOVES[this.act]; cut.cutR.value += ((open ? 0.085 * this.scaleF : 0) - cut.cutR.value) * 0.35;
+      if (cut.cutR.value > 0.002) { K.localToWorld(cut.cutA.value.set(0, 0, 0.03)); K.localToWorld(cut.cutB.value.set(0, 0, -0.42)); } }
     const ud = K.userData, base = new V3(0, 0, ud.baseZ ?? 0.12).applyMatrix4(K.matrixWorld), tip = new V3(0, -0.02, ud.tipZ ?? 0.76).applyMatrix4(K.matrixWorld);
     this.bladeBase = base; this.bladeTip = tip;
     // slash trail during the active swing (sub-sampled between frames for a smooth arc)

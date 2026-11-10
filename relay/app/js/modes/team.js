@@ -109,10 +109,9 @@ export class Team {
     const c = this.c, G = c.G, me = G.me;
     this.phaseT += rawDt;
     const fight = this.phase === 'fight' && !this.over;
-    // my target: a broken enemy in reach (deathblow), the locked one, or the nearest
+    // my target: chosen by the player via lock-on
     const foes = this.enemiesOf(this.my);
-    let tgt = foes.find(f => f.broken && f.pos.distanceTo(me.pos) < 3.4);
-    if (!tgt) tgt = foes.includes(this.lockF) && this.lockF.pos.distanceTo(me.pos) < 16 ? this.lockF : foes.sort((a, b) => a.pos.distanceTo(me.pos) - b.pos.distanceTo(me.pos))[0];
+    G.targets = foes; const tgt = c.pickTarget(foes);   // the player picks (main.js: mouse sweep while locked)
     this.lockF = tgt || null; G.opp = this.lockF || G.dummy; G.targets = foes; c.inp.lock = G.lock && !!this.lockF;
     // fighters
     for (let s = 0; s < 4; s++) {

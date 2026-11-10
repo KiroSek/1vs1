@@ -18,13 +18,13 @@ import { Weather, setWorldQuality } from './world.js';
 import { Hunt } from './modes/hunt.js';
 import { Survival } from './modes/survival.js';
 import { Team } from './modes/team.js';
-import { foliageTick, setFoliageQuality } from './foliage.js';
+import { foliageTick, setFoliageQuality, foliageCull } from './foliage.js';
 import './tune.js';   // F9: live tuning panel
 const { sfx } = audio;
 
 const $ = id => document.getElementById(id);
 const V3 = THREE.Vector3;
-const defaults = { quality: 'auto', diff: 1, sens: 1, vol: 0.7, invert: false, pvpPeril: false, serverUrl: '', fps: false, map: 'dojo', autoCam: true };
+const defaults = { quality: 'auto', diff: 1, sens: 1, vol: 0.7, mvol: 0.5, invert: false, pvpPeril: false, serverUrl: '', fps: false, map: 'dojo', autoCam: true };
 let S = { ...defaults };
 try { Object.assign(S, JSON.parse(localStorage.getItem('kd-settings') || '{}')); } catch (e) { }
 const save = () => { try { localStorage.setItem('kd-settings', JSON.stringify(S)); } catch (e) { } };
@@ -41,7 +41,7 @@ const camFill = new THREE.DirectionalLight(0xffd8b0, 0.55);   // per-map intensi
 const arena = buildArena(scene, renderer);
 const fx = new FX(scene);
 const MAP_KEYS = Object.keys(MAPS);
-function useMap(name) { if (name === 'random') name = MAP_KEYS[Math.random() * MAP_KEYS.length | 0]; G.mapName = name; arena.setMap(name); fx.amb.visible = arena.amb === 'embers'; arena.setQuality(G.q || 'high'); const c = arena.cfg; camFill.intensity = c.camFill ?? 0.55; post.setBloom(c.bloom); }
+function useMap(name) { if (name === 'random') name = MAP_KEYS[Math.random() * MAP_KEYS.length | 0]; G.mapName = name; arena.setMap(name); fx.amb.visible = arena.amb === 'embers'; arena.setQuality(G.q || 'high'); const c = arena.cfg; camFill.intensity = c.camFill ?? 0.55; post.setBloom(c.bloom); if (G.applyWx) G.applyWx(); }
 const rig = new CameraRig(camera);
 const post = new Post(renderer, scene, camera);
 function gpuTier() {   // discrete NVIDIA/AMD (e.g. Lenovo LOQ RTX) -> high, Apple Silicon -> medium, others -> low
@@ -56,12 +56,20 @@ function applyQuality() {
   arena.setQuality(q); post.setQuality(q); fx.density = q === 'low' ? 0.55 : 1; renderer.shadowMap.type = q === 'low' ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
   resize();
 }
+const _sv = new V3(), _cd = new V3();
+function sunHaze() {   // where the key light sits on screen + how much the camera faces it (Grade pass: halo and god rays)
+  const c = arena.cfg, L = c.sunL; if (!L || !c.haze) { post.sun(null); return; }
+  _sv.copy(L.position).sub(L.target.position).normalize(); camera.getWorldDirection(_cd); const face = _cd.dot(_sv);
+  if (face <= 0.05) { post.sun(null); return; }
+  const p = _sv.clone().multiplyScalar(400).add(camera.position).project(camera);
+  post.sun((p.x + 1) / 2, (p.y + 1) / 2, c.haze * Math.min(1, (face - 0.05) / 0.5), L.color);
+}
 function resize() { renderer.setPixelRatio(G.pr); renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); post.setSize(innerWidth, innerHeight, G.pr); }
 addEventListener('resize', resize);
 
 // ---------- game state ----------
 const G = { mode: 'menu', me: null, opp: null, ai: null, net: new Net(), over: true, lock: true, hs: 0, t: 0, started: false, rematch: [false, false], phase: 'menu', phaseT: 0, slow: 1, slowT: 0, q: 'high', pr: 1, prMax: 1 };
-window.__dbg = { renderer, scene, camera, post, rig, fx, AI, MOVES, arena, startMode: (k, o) => startMode(k, o), CTX: () => CTX, setLook: (...a) => setLook(...a), REC: () => REC, useMap: n => useMap(n) }; window.__G = G; window.__step = dt => step(dt); window.__cam = () => camera;
+window.__dbg = { renderer, scene, camera, post, rig, fx, AI, MOVES, arena, startMode: (k, o) => startMode(k, o), CTX: () => CTX, setLook: (...a) => setLook(...a), REC: () => REC, useMap: n => useMap(n), lockSweep: dx => lockSweep(dx), toggleLock: () => toggleLock(), camAngle: f => camAngle(f) }; window.__G = G; window.__step = dt => step(dt); window.__cam = () => camera;
 const inp = { move: new V3(), walk: false, guard: false, light: 0, heavy: 0, dodge: 0, finisher: 0, lock: true, aim: new V3(0, 0, 1), sprint: false };
 const keys = {}; window.__inp = inp;
 
@@ -122,15 +130,15 @@ function showResult(r, att, vic, quiet = false) {
     case 'block': { const p = meet; fx.block(p, r.heavy, dir.clone().negate().add(new V3(0, .5, 0)).normalize()); sfx.block(r.heavy); HS(r.heavy ? 0.07 : 0.045); rig.shake(r.heavy ? 0.28 : 0.14); rig.punch(r.heavy ? 2.5 : 1); break; }
     case 'hit': {
       let p = bladeContact(att, vic); if (!p) { p = vic.hitPoint.clone(); p.y = 1.2 + Math.random() * 0.3; }
-      fx.hit(p, dir.clone().add(new V3(0, 0.3, 0)).normalize(), r.heavy); fx.spark(p, r.heavy ? 26 : 14, 6, 0xffc080, 0.25, dir, 0.7); sfx.hit(r.heavy);
+      fx.hit(p, dir.clone().add(new V3(0, 0.3, 0)).normalize(), r.heavy); fx.spark(p, r.heavy ? 26 : 14, 6, 0xffc080, 0.25, dir, 0.7); sfx.hit(r.heavy, vic.armored); if (att.trail && att.trail.cutFlash) att.trail.cutFlash();
       vic.flashT = 0.08; HS(r.heavy ? HITSTOP.heavy : HITSTOP.light); rig.shake(r.heavy ? 0.4 : 0.22); rig.punch(r.heavy ? 3 : 1.5); if (vic === G.me) { screenFlash('#a00000', 0.22, 350); rig.kick(camDir, 1.5); post.impact({ aberr: 0.02 }); }
       break;
     }
     case 'dodge': break;
     case 'grabbed': {   // grab scene: knee (impact now) + kick (impact later)
-      const p = vic.hitPoint.clone(); fx.hit(p, dir.clone().add(new V3(0, 0.4, 0)).normalize(), true); sfx.hit(true); HS(0.12); rig.shake(0.35); rig.punch(3); vic.flashT = 0.08;
+      const p = vic.hitPoint.clone(); fx.hit(p, dir.clone().add(new V3(0, 0.4, 0)).normalize(), true); sfx.hit(true, vic.armored); HS(0.12); rig.shake(0.35); rig.punch(3); vic.flashT = 0.08;
       if (att === G.me) banner('掴', '#ffd0a0'); if (vic === G.me) screenFlash('#a00000', 0.25, 400);
-      setTimeout(() => { if (!vic.pos) return; const q = vic.hitPoint.clone(); fx.hit(q, dir, true); fx.dust(vic.pos, 14); sfx.hit(true); if (!quiet) { G.hs = 0.1; rig.shake(0.45); } }, 1050);
+      setTimeout(() => { if (!vic.pos) return; const q = vic.hitPoint.clone(); fx.hit(q, dir, true); fx.dust(vic.pos, 14); sfx.hit(true, vic.armored); if (!quiet) { G.hs = 0.1; rig.shake(0.45); } }, 1050);
       break;
     }
     case 'vaulted': { fx.dust(vic.pos, 14); fx.spark(vic.hitPoint, 24, 5, 0xffd090, 0.3); sfx.block(true); HS(0.1); rig.shake(0.3); if (att === G.me) banner('跳', '#fff4dc'); break; }
@@ -152,13 +160,14 @@ function onStrike(att, kind) {
 }
 const ARENA_SURF = { dojo: 'wood', sakura: 'wood', snow: 'snow', bamboo: 'stone' };   // duel arenas: what the fighting floor is made of
 // leaves / petals where there is foliage: sakura arena (petals), open maps (dry leaves)
-function kickLeaves(pos, n) { if (arena.amb === 'petals') fx.leaves(pos, n, 0xf4a8c0); else if (G.ctl && G.ctl.W) fx.leaves(pos, n, Math.random() < 0.5 ? 0xa0682a : 0x6a7a34); }
+function kickLeaves(pos, n) { if (arena.amb === 'petals') fx.leaves(pos, n, 0xa8242a); else if (G.ctl && G.ctl.W) fx.leaves(pos, n, Math.random() < 0.5 ? 0xa0682a : 0x6a7a34); }
 function fighterEvents(f) {
   for (const e of f.events) {
     if (e.type === 'perilous') { fx.perilous(f); sfx.perilous(); }
     else if (e.type === 'broken') { if (f !== G.me || G.mode === 'online') {} }
     else if (e.type === 'revive') { fx.revive(new V3(f.pos.x, 1, f.pos.z)); sfx.revive(); }
     else if (e.type === 'dodge') { fx.dust(f.pos, 8); kickLeaves(f.pos, 7); }
+    else if (e.type === 'land' || e.type === 'fall') { const d = camera.position.distanceTo(f.pos), k = Math.max(0, 1 - d / 22) * (e.data && e.data.k || 1); if (k > 0.02) { e.type === 'land' ? sfx.land() : sfx.bodyfall(); const surf = G.ctl && G.ctl.W ? G.ctl.W.surfaceAt(f.pos.x, f.pos.z) : ARENA_SURF[G.mapName] || 'stone'; sfx.step(1.3 * k, surf); } }
     else if (e.type === 'step') { const d = camera.position.distanceTo(f.pos); if (d < 14) sfx.step((e.data && e.data.sprint ? 1.6 : 1) * (1 - d / 14), G.ctl && G.ctl.W ? G.ctl.W.surfaceAt(f.pos.x, f.pos.z) : ARENA_SURF[G.mapName] || 'stone'); if (e.data && e.data.sprint) fx.dust(f.pos, 3); }
     else if (e.type === 'slam') { fx.dust(f.pos, 34); kickLeaves(f.pos, 16); fx.ring(new V3(f.pos.x, 0.06, f.pos.z), 1.4, 0.35, 0xc8b49a); sfx.slam(); const near = G.me && Math.hypot(G.me.pos.x - f.pos.x, G.me.pos.z - f.pos.z); rig.shake(f === G.me ? 0.45 : near < 6 ? 0.25 : 0.1); if (f === G.me) rig.punch(2.5); }
   }
@@ -203,7 +212,7 @@ function startMatch(mode) {
   me.onStrike = onStrike; opp.onStrike = mode === 'online' ? null : onStrike;
   G.ai = mode === 'online' ? null : new AI(opp, gaunt ? G.boss.level : +S.diff, gaunt ? G.boss.ai : null);
   if (mode === 'training') G.ai.mode = 'dummy-idle';
-  G.lock = true; inp.lock = true;
+  G.lock = true; inp.lock = true; G.lockPick = null;
   $('oppName').textContent = gaunt ? G.boss.name.toUpperCase() : mode === 'online' ? 'OPPONENT' : mode === 'training' ? 'TRAINING DUMMY' : ['ASHIKAGA RONIN', 'KURO THE BLADE', 'ISSHIN, SWORD SAINT'][+S.diff];
   renderHelp(mode);
   showHud(); sfx.ui();
@@ -283,7 +292,7 @@ const BOSSES = [
   { name: 'Kuro the Quickdraw', line: 'Closes ten paces in a heartbeat. Deflect the dash.', look: ['shinobi', 'kuro'], hp: 100, dmg: 1.05, tempo: 1.15, level: 1, ai: { aggr: 0.66, mobility: 0.6, moves: { slash: 4, dash: 4, uppercut: 1.5, thrust: 0.8, sweep: 1 } } },
   { name: 'Tessen the Brute', line: 'Every swing can end you. Read the wind-up.', look: ['oni', 'crimson'], hp: 150, dmg: 1.5, tempo: 0.9, scale: 1.12, level: 1, ai: { react: 0.4, moves: { slash: 2, heavy: 4, heavyB: 2.5, leap: 2.5, kick: 2, sweep: 2 } } },
   { name: 'Akane, Mirror Blade', line: 'She deflects everything. Break her rhythm.', look: ['ashina', 'frost'], tint: 0x6a2a7a, hp: 110, dmg: 1.1, tempo: 1.1, level: 2, ai: { react: 0.95, deflect: 0.85, aggr: 0.45, mobility: 0.5, moves: { slash: 5, thrust: 2.5, uppercut: 1.5 } } },
-  { name: 'Isshin, Sword Saint', line: 'The strongest blade in the land.', look: ['kage', 'mortal'], hp: 160, dmg: 1.3, tempo: 1.15, scale: 1.06, level: 2, ai: { mobility: 0.6, moves: { sweep: 1.6 } } },
+  { name: 'Isshin, Sword Saint', line: 'The strongest blade in the land.', look: ['kensei', 'mortal'], hp: 160, dmg: 1.3, tempo: 1.15, scale: 1.06, level: 2, ai: { mobility: 0.6, moves: { sweep: 1.6 } } },
 ];
 const PERKS = [
   { id: 'vit', name: 'Iron Body', d: m => `+${Math.round(25 * m)} max health`, max: 3 }, { id: 'wrist', name: 'Mirror Wrist', d: m => `Deflect window +${(0.05 * m).toFixed(3)} s`, max: 2 },
@@ -403,10 +412,10 @@ document.addEventListener('click', e => {
 });
 const bind = (id, key, fmt) => {
   const el = $(id); if (el.type === 'checkbox') el.checked = S[key]; else el.value = S[key];
-  el.oninput = el.onchange = () => { S[key] = el.type === 'checkbox' ? el.checked : el.value; save(); if (key === 'quality') applyQuality(); if (key === 'vol') audio.setVolume(+S.vol); if (fmt) $(fmt).textContent = (+S[key]).toFixed(2); };
+  el.oninput = el.onchange = () => { S[key] = el.type === 'checkbox' ? el.checked : el.value; save(); if (key === 'quality') applyQuality(); if (key === 'vol') audio.setVolume(+S.vol); if (key === 'mvol') audio.music.setVolume(+S.mvol); if (fmt) $(fmt).textContent = (+S[key]).toFixed(2); };
   if (fmt) $(fmt).textContent = (+S[key]).toFixed(2);
 };
-bind('sQuality', 'quality'); bind('sDiff', 'diff'); bind('sSens', 'sens', 'vSens'); bind('sVol', 'vol', 'vVol'); bind('sInvert', 'invert'); bind('sPvpPeril', 'pvpPeril'); bind('sFps', 'fps'); bind('sAutoCam', 'autoCam'); $('sAutoCam').addEventListener('change', () => { rig.autoFollow = !!S.autoCam; }); rig.autoFollow = !!S.autoCam;
+bind('sQuality', 'quality'); bind('sDiff', 'diff'); bind('sSens', 'sens', 'vSens'); bind('sVol', 'vol', 'vVol'); bind('sMvol', 'mvol', 'vMvol'); audio.music.setVolume(+S.mvol); bind('sInvert', 'invert'); bind('sFps', 'fps'); bind('sAutoCam', 'autoCam'); $('sAutoCam').addEventListener('change', () => { rig.autoFollow = !!S.autoCam; }); rig.autoFollow = !!S.autoCam;
 { const sl = $('sLang'); for (const [k, n] of Object.entries(LANGS)) { const o = document.createElement('option'); o.value = k; o.textContent = n; sl.appendChild(o); } sl.value = getLang(); sl.onchange = () => { setLang(sl.value); refreshTexts(); }; } $('sFps').addEventListener('change', () => { $('fps').style.display = S.fps ? 'block' : 'none'; }); $('fps').style.display = S.fps ? 'block' : 'none'; showRec();
 $('bResume').onclick = () => { $('pause').classList.add('hidden'); tryLock(); };
 $('bQuitMatch').onclick = () => { $('pause').classList.add('hidden'); toMenu(); };
@@ -432,8 +441,47 @@ function renderHelp(mode) {
     + (mode === 'hunt' ? `<div>${k('crouch')} ${t('h.crouch')} · ${k('lure')} ${t('h.lure')}</div><div class="dim">${t('h.ambush')}</div>` : '')
     + (mode === 'survival' ? `<div>${k('interact')} ${t('h.interact')}</div><div class="dim">${t('h.coop')}</div>` : '');
 }
-// lock-on target switching by a sharp mouse flick (only meaningful when several enemies exist)
-function cycleTarget(dir) { const list = (G.targets || [G.opp]).filter(f => f && !f.dead); if (list.length < 2) return; const i = list.indexOf(G.opp); G.opp = list[(i + dir + list.length) % list.length]; }
+// ---------- lock-on (Sekiro-style) ----------
+// The player owns the target: it changes only when they sweep the mouse left/right while locked (moves to the nearest
+// enemy on that side of the screen), when it dies / walks out of range (lock passes to the enemy nearest the screen
+// centre), or when they press deathblow next to another broken enemy. Modes ask pickTarget(foes) every frame.
+let swAcc = 0, swT = 0, swCd = 0;
+const _cf = new V3(), _cr = new V3(), _cv = new V3();
+function camAngle(f) {   // horizontal angle of an enemy from the camera's view direction (+ = right of centre)
+  camera.getWorldDirection(_cf); _cf.y = 0; _cf.normalize(); _cr.set(-_cf.z, 0, _cf.x);
+  _cv.set(f.pos.x - camera.position.x, 0, f.pos.z - camera.position.z); return Math.atan2(_cv.dot(_cr), _cv.dot(_cf));
+}
+const inReach = f => f && !f.dead && G.me && f.pos.distanceTo(G.me.pos) < CAM.lockDist;
+function centreTarget(list) {   // closest to where the camera looks, distance as a tie-break
+  let best = null, bs = Infinity;
+  for (const f of list) { if (!inReach(f)) continue; const sc = Math.abs(camAngle(f)) + f.pos.distanceTo(G.me.pos) * 0.03; if (sc < bs) { bs = sc; best = f; } }
+  return best;
+}
+function switchTarget(dir) {
+  const cur = G.opp, list = (G.targets || []).filter(f => f !== cur && inReach(f) && Math.abs(camAngle(f)) < 1.9); if (!cur || !list.length) return false;
+  const a0 = camAngle(cur); let best = null, bd = Infinity;
+  for (const f of list) { const d = (camAngle(f) - a0) * dir; if (d > 0.03 && d < bd) { bd = d; best = f; } }
+  if (!best) return false; G.lockPick = G.opp = best; return true;
+}
+function lockSweep(dx) {
+  const now = performance.now() / 1000; swAcc = swAcc * Math.exp(-(now - swT) * CAM.switchDecay) + dx; swT = now;
+  if (now < swCd || Math.abs(swAcc) < CAM.switchPx) return;
+  if (switchTarget(Math.sign(swAcc))) swCd = now + CAM.switchCd; swAcc = 0;
+}
+function pickTarget(foes) {
+  const me = G.me; if (!me) return null;
+  if (!G.lock) return G.lockPick = foes.filter(f => !f.dead).sort((a, b) => a.pos.distanceTo(me.pos) - b.pos.distanceTo(me.pos))[0] || null;   // free camera: nearest (attack tracking only, the camera does not follow)
+  if (inp.finisher > 0 && !(G.lockPick && G.lockPick.broken && G.lockPick.pos.distanceTo(me.pos) < 3.4)) {   // deathblow pressed beside another broken enemy
+    const b = foes.find(f => !f.dead && f.broken && f.pos.distanceTo(me.pos) < 3.4); if (b) G.lockPick = b;
+  }
+  if (!(foes.includes(G.lockPick) && inReach(G.lockPick))) G.lockPick = centreTarget(foes);
+  return G.lockPick;
+}
+function toggleLock() {
+  G.lock = !G.lock; inp.lock = G.lock; swAcc = 0;
+  if (!G.lock) { rig.userT = 0; return; }
+  if (G.targets && G.targets.length) G.lockPick = centreTarget(G.targets);   // lock onto whoever is in front of the camera
+}
 function refreshTexts() { applyI18n(); renderBinds($('bindList')); renderMapSel(); showCoins(); if (G.mode !== 'menu') renderHelp(G.mode); }
 
 // ---------- gauntlet difficulty, armory, arena picker ----------
@@ -478,9 +526,8 @@ function press(code, e) {
   if (G.mode === 'menu' || G.over) return;
   for (const a of actionsOf(code)) {
     if (a === 'light') inp.light = 0.3; else if (a === 'heavy') inp.heavy = 0.3; else if (a === 'guard') inp.guard = true;
-    else if (a === 'grab' && S.pvpPeril) inp.grab = 0.3;   // perilous grab for players: off unless enabled in settings
     else if (a === 'dodge') inp.dodge = 0.25; else if (a === 'jump') inp.jump = 0.25; else if (a === 'finisher') inp.finisher = 0.4;
-    else if (a === 'lock') { G.lock = !G.lock; inp.lock = G.lock; if (!G.lock) rig.userT = 0; }
+    else if (a === 'lock') toggleLock();
     else if (a === 'lure') CTX.wantLure = true;
   }
   if (e && (code === 'Space' || /^Alt|^Control/.test(code) || code === 'Mouse1')) e.preventDefault();
@@ -509,26 +556,30 @@ addEventListener('mousedown', e => {
 addEventListener('mouseup', e => release(mouseCode(e.button)));addEventListener('contextmenu', e => e.preventDefault());
 addEventListener('mousemove', e => {
   if (!document.pointerLockElement || G.mode === 'menu') return;
-  if (G.lock && G.opp && !G.opp.dead) { if (Math.abs(e.movementX) > CAM.flick) cycleTarget(Math.sign(e.movementX)); return; }
+  if (G.lock && G.opp && !G.opp.dead) { lockSweep(e.movementX * S.sens); return; }
   rig.mouse(e.movementX, e.movementY, S.sens, S.invert);
 });
 
 // ---------- HUD ----------
+// HUD writes go through css(): a DOM style is touched only when its value really changes (no per-frame style churn)
+const css = (el, prop, v) => { const k = '_' + prop; if (el[k] !== v) { el[k] = v; el.style[prop] = v; } };
+const cls = (el, v) => { if (el._cls !== v) { el._cls = v; el.className = v; } };
 function updateHud() {
   const set = (hp, tr, po, f) => {
-    const pc = Math.max(0, f.hp) / f.maxHp * 100 + '%'; $(hp).style.width = pc; $(tr).style.width = pc;
-    const pe = $(po); pe.style.transform = `translateX(-50%) scaleX(${Math.min(1, f.posture / 100)})`;
-    pe.parentElement.className = 'posture' + (f.act === 'guardBreak' ? ' broken' : f.posture > 66 ? ' warn' : '');
+    const pc = (Math.max(0, f.hp) / f.maxHp * 100).toFixed(1) + '%'; css($(hp), 'width', pc); css($(tr), 'width', pc);
+    const pe = $(po); css(pe, 'transform', `translateX(-50%) scaleX(${Math.min(1, f.posture / 100).toFixed(3)})`);
+    cls(pe.parentElement, 'posture' + (f.act === 'guardBreak' ? ' broken' : f.posture > 66 ? ' warn' : ''));
   };
   set('meHp', 'meHpTrail', 'mePost', G.me); set('oppHp', 'oppHpTrail', 'oppPost', G.opp);
-  for (const [id, f] of [['meLives', G.me], ['oppLives', G.opp]]) { const el = $(id); if (G.mode === 'training' || G.ctl) { el.style.visibility = 'hidden'; continue; } el.style.visibility = 'visible'; [...el.children].forEach((c, i) => c.classList.toggle('lost', i >= f.lives)); }
+  for (const [id, f] of [['meLives', G.me], ['oppLives', G.opp]]) { const el = $(id); if (G.mode === 'training' || G.ctl) { css(el, 'visibility', 'hidden'); continue; } css(el, 'visibility', 'visible'); if (el._lives !== f.lives) { el._lives = f.lives; [...el.children].forEach((c, i) => c.classList.toggle('lost', i >= f.lives)); } }
   // deathblow prompt only while the opponent is broken and in reach
   const { me, opp } = G, fin = $('fin');
   const canFin = opp && !opp.dead && opp.broken && opp.brokenLeft > 0.2 && Math.hypot(opp.pos.x - me.pos.x, opp.pos.z - me.pos.z) < 3.6 && G.phase === 'fight' && me.act !== 'deathblow';
-  if (canFin) { const p = new V3(opp.pos.x, 1.55 * opp.scaleF, opp.pos.z).project(camera); if (p.z < 1) { fin.style.display = 'block'; fin.style.left = (p.x * .5 + .5) * innerWidth + 'px'; fin.style.top = (-p.y * .5 + .5) * innerHeight + 'px'; fin.classList.toggle('late', opp.brokenLeft < 1); } else fin.style.display = 'none'; } else fin.style.display = 'none';
+  if (canFin) { const p = _hv.set(opp.pos.x, 1.55 * opp.scaleF, opp.pos.z).project(camera); if (p.z < 1) { css(fin, 'display', 'block'); css(fin, 'left', ((p.x * .5 + .5) * innerWidth).toFixed(0) + 'px'); css(fin, 'top', ((-p.y * .5 + .5) * innerHeight).toFixed(0) + 'px'); fin.classList.toggle('late', opp.brokenLeft < 1); } else css(fin, 'display', 'none'); } else css(fin, 'display', 'none');
   const lk = $('lock'), locked = G.lock && opp && !opp.dead && G.phase === 'fight';
-  if (locked) { const p = new V3(opp.pos.x, 1.3 * opp.scaleF, opp.pos.z).project(camera); if (p.z < 1) { lk.style.display = 'block'; lk.style.left = (p.x * .5 + .5) * innerWidth + 'px'; lk.style.top = (-p.y * .5 + .5) * innerHeight + 'px'; } else lk.style.display = 'none'; } else lk.style.display = 'none';
+  if (locked) { const p = _hv.set(opp.pos.x, 1.3 * opp.scaleF, opp.pos.z).project(camera); if (p.z < 1) { css(lk, 'display', 'block'); css(lk, 'left', ((p.x * .5 + .5) * innerWidth).toFixed(0) + 'px'); css(lk, 'top', ((-p.y * .5 + .5) * innerHeight).toFixed(0) + 'px'); } else css(lk, 'display', 'none'); } else css(lk, 'display', 'none');
 }
+const _hv = new V3();
 
 // ---------- loop ----------
 let netT = 0, last = performance.now();
@@ -551,8 +602,16 @@ function readInput(live) {
   inp.back = live && isDown('back', keys); inp.fwd = live && isDown('forward', keys);   // S + LMB / S + E / W + LMB + E
   inp.sprint = isDown('sprint', keys) && !inp.walk && !inp.crouch;
 }
+// soundtrack: theme follows the map; in duels/team fights the intensity follows the phase (calm intro sweep -> drums -> full combat)
+function music() {
+  const M = audio.music, th = audio.themeFor(arena.name); M.theme(th); audio.setSpace(th); audio.amb.set(th); audio.amb.weather(weather.kind);
+  if (G.ctl && G.ctlKind !== 'team') return;
+  const ph = G.phase, fight = ph === 'fight' || ph === 'downed' || ph === 'revive';
+  M.set(G.mode === 'menu' || !G.started || G.over ? 'explore' : G.ctlKind === 'team' && G.ctl ? 'combat' : ph === 'intro' || G.mode === 'training' ? 'tension' : fight ? (G.mode === 'gauntlet' && G.boss && G.boss.level >= 2 ? 'boss' : 'combat') : 'explore');
+}
 function step(rawDt) {
   G.t += rawDt; G.phaseT += rawDt;
+  music();
   let dt = rawDt;
   if (G.hs > 0) { G.hs -= rawDt; dt *= 0.06; }
   if (G.slowT > 0) { G.slowT -= rawDt; dt *= G.slow; }
@@ -599,7 +658,9 @@ function step(rawDt) {
       }
     }
   }
-  arena.update(rawDt); foliageTick(rawDt, G.ctl && G.ctl.W && G.ctl.W.wind ? 0.6 + G.ctl.W.wind.length() * 0.6 : 1); fx.update(dt, camera);
+  foliageCull(camera); arena.update(rawDt); if (!arena.world && weather.kind !== 'clear') weather.update(rawDt, WX_WIND);
+  if (arena.cfg.flashNow) { arena.cfg.flashNow = false; post.impact({ flash: 0.22, flashCol: 0xc8d6ff }); }
+  if (!G.noRender) sunHaze(); foliageTick(rawDt, G.ctl && G.ctl.W && G.ctl.W.wind ? 0.6 + G.ctl.W.wind.length() * 0.6 : 1); fx.update(dt, camera);
   const crowd = !!(G.me && G.targets && G.targets.filter(f => f !== G.opp && !f.dead && f.pos.distanceTo(G.me.pos) < 5.5).length);   // another enemy close by
   rig.update(rawDt, { me: G.me, opp: G.opp, locked: G.lock && G.mode !== 'menu' && (!G.ctl || inp.lock), mode: G.mode, crowd });
   const mono = rig.cine && rig.cine.type === 'deathblow' && dbA && dbA.t > 0.55 && dbA.t < 0.85 ? 0.85 : 0;
@@ -608,9 +669,12 @@ function step(rawDt) {
 }
 // ---------- Samurai Hunt / Survival ----------
 const weather = new Weather(scene, camera);
+// duel arenas roll their own weather (open maps: the mode decides). Cosmetic only, so online peers may see different skies
+G.applyWx = () => { if (arena.world) return; const list = arena.cfg.weathers || ['clear'], k = list[Math.random() * list.length | 0]; weather.set(k); arena.setWeather(k); weather.leaves.material.color.set(G.mapName === 'sakura' ? 0x9a1c1e : 0xb06a2a); };
+const WX_WIND = new V3(0.8, 0, 0.35);
 const CTX = { G, scene, camera, rig, fx, post, arena, net, inp, keys, S, REC, $, t, banner, toast, showResult, screenFlash, fighterEvents, noInput, weather, wantLure: false,
   setLook: (...a) => setLook(...a), newFighter: (style, weapon, name) => new Fighter(scene, G.base, style, name, weapon), showHud, showScreen, saveRec: () => saveRec(), addCoins: n => addCoins(n),
-  tryLock, hint: m => renderHelp(m), useMap: m => useMap(m), isDown: a => isDown(a, keys), keyOf, restartMode: () => restartMode() };
+  tryLock, pickTarget: foes => pickTarget(foes), hint: m => renderHelp(m), useMap: m => useMap(m), isDown: a => isDown(a, keys), keyOf, restartMode: () => restartMode() };
 function startMode(kind, opts) {
   stopMode(); $('result').classList.add('hidden'); $('pause').classList.add('hidden'); for (const l of ['hLobby', 'sLobby']) $(l).classList.add('hidden');
   G.started = true; G.over = false; G.ai = null; G.auto = null; rig.endCine();

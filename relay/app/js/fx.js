@@ -67,7 +67,7 @@ export class FX {
       let vx = rnd(-1, 1), vy = rnd(-0.4, 1.2), vz = rnd(-1, 1); const l = Math.hypot(vx, vy, vz) || 1; vx /= l; vy /= l; vz /= l;
       if (dir) { vx = vx * spread + dir.x * (1 - spread); vy = vy * spread + dir.y * (1 - spread); vz = vz * spread + dir.z * (1 - spread); }
       const s = speed * rnd(0.3, 1.25); this.vel[i * 3] = vx * s; this.vel[i * 3 + 1] = vy * s + 1.2; this.vel[i * 3 + 2] = vz * s;
-      this.life[i] = this.life0[i] = life * rnd(0.4, 1.2); this.grav[i] = grav;
+      this.life[i] = this.life0[i] = life * rnd(0.4, 1.2); this.grav[i] = grav; this.sparkUntil = Math.max(this.sparkUntil || 0, this.t + life * 1.25);
       const w = Math.random() * 0.5; this.col[i * 3] = Math.min(1.6, c.r + w); this.col[i * 3 + 1] = Math.min(1.5, c.g + w * .8); this.col[i * 3 + 2] = Math.min(1.4, c.b + w * .5);
     }
   }
@@ -77,6 +77,7 @@ export class FX {
       const i = this.mHead; this.mHead = (this.mHead + 1) % this.M;
       P.setXYZ(i, pos.x + rnd(-.1, .1) * spread, pos.y + rnd(-.1, .1) * spread, pos.z + rnd(-.1, .1) * spread);
       const a = rnd(0, 6.283), s = speed * rnd(0.2, 1); this.mVel[i * 3] = Math.cos(a) * s; this.mVel[i * 3 + 1] = rnd(-.2, 1) * s * up + up; this.mVel[i * 3 + 2] = Math.sin(a) * s;
+      this.mistUntil = Math.max(this.mistUntil || 0, this.t + life * 1.25);
       this.mLife[i] = this.mLife0[i] = life * rnd(0.6, 1.2); this.mG[i] = grav; this.mCol[i * 3] = c.r; this.mCol[i * 3 + 1] = c.g; this.mCol[i * 3 + 2] = c.b;
     }
   }
@@ -87,15 +88,15 @@ export class FX {
 
   // ---------- combat events ----------
   block(pos, heavy, dir) {            // guarded hit: orange sparks, short flash
-    this.spark(pos, heavy ? 90 : 55, heavy ? 9 : 7, 0xff9a3a, 0.4, dir, 0.75);
-    this.flare(pos, heavy ? 0.55 : 0.4, 0.1, 0xffb060); this.light(pos, 0xff9a40, heavy ? 14 : 9, 0.1);
+    this.spark(pos, heavy ? 110 : 70, heavy ? 9 : 7, 0xff9a3a, 0.6, dir, 0.8);   // sparks live long enough to arc and fall
+    this.flare(pos, heavy ? 0.6 : 0.45, 0.1, 0xffb060); this.light(pos, 0xff9a40, heavy ? 26 : 17, 0.16);
   }
   deflect(pos, dir, heavy) {          // perfect deflect: white-gold burst, lens streak, shockwave, spark fountain
     this.spark(pos, 260, 15, 0xffd27a, 0.6, dir, 0.85); this.spark(pos, 90, 6, 0xffffff, 0.3, null, 1, 4);
     this.spark(pos, 50, 22, 0xffe7b0, 0.25, dir, 0.4, 2);
     this.flare(pos, heavy ? 0.8 : 0.65, 0.18, 0xffffff); this.flare(pos, 0.35, 0.3, 0xffd890);
     this.lensStreak(pos, heavy ? 3.6 : 3, 0.26); this.ring(pos, 1.0, 0.24, 0xfff0c8);
-    this.light(pos, 0xfff0d0, 45, 0.25);
+    this.light(pos, 0xffe0b0, 60, 0.3);
   }
   clash(pos, dir) { this.spark(pos, 160, 12, 0xffc060, 0.5, dir, 0.9); this.flare(pos, 0.9, 0.2, 0xffe0a0); this.lensStreak(pos, 2.6, 0.2); this.ring(pos, 0.9, 0.2); this.light(pos, 0xffd090, 35, 0.2); }
   hit(pos, dir, heavy) {               // flesh: dark blood spray along the cut + mist
@@ -117,9 +118,12 @@ export class FX {
 
   update(dt, cam) {
     this.t += dt;
+    // particle pools are only walked (and re-uploaded to the GPU) while something in them is alive; one extra pass parks the dead
     const P = this.sparks.geometry.attributes.position, C = this.sparks.geometry.attributes.color, LP = this.streaks.geometry.attributes.position, LC = this.streaks.geometry.attributes.color;
-    for (let i = 0; i < this.N; i++) {
-      if (this.life[i] <= 0) continue;
+    const sparksOn = this.sparkAlive || this.t <= (this.sparkUntil || 0), mistOn = this.mistAlive || this.t <= (this.mistUntil || 0);
+    let sa = 0, ma = 0;
+    if (sparksOn) for (let i = 0; i < this.N; i++) {
+      if (this.life[i] <= 0) continue; sa++;
       this.life[i] -= dt;
       if (this.life[i] <= 0) { P.setXYZ(i, 0, -999, 0); LP.setXYZ(i * 2, 0, -999, 0); LP.setXYZ(i * 2 + 1, 0, -999, 0); continue; }
       const drag = Math.exp(-1.8 * dt); this.vel[i * 3] *= drag; this.vel[i * 3 + 2] *= drag;
@@ -131,16 +135,18 @@ export class FX {
       C.setXYZ(i, r, g, b); const k = 0.035;
       LP.setXYZ(i * 2, x, y, z); LP.setXYZ(i * 2 + 1, x - vx * k, y - vy * k, z - vz * k); LC.setXYZ(i * 2, r, g, b); LC.setXYZ(i * 2 + 1, r * 0.2, g * 0.1, 0);
     }
-    P.needsUpdate = C.needsUpdate = LP.needsUpdate = LC.needsUpdate = true;
+    this.sparkAlive = sa > 0;
+    if (sparksOn) P.needsUpdate = C.needsUpdate = LP.needsUpdate = LC.needsUpdate = true;
     const MP = this.mist.geometry.attributes.position, MC = this.mist.geometry.attributes.color;
-    for (let i = 0; i < this.M; i++) {
-      if (this.mLife[i] <= 0) continue; this.mLife[i] -= dt;
+    if (mistOn) for (let i = 0; i < this.M; i++) {
+      if (this.mLife[i] <= 0) continue; ma++; this.mLife[i] -= dt;
       if (this.mLife[i] <= 0) { MP.setXYZ(i, 0, -999, 0); continue; }
       const d = Math.exp(-2.5 * dt); this.mVel[i * 3] *= d; this.mVel[i * 3 + 2] *= d; this.mVel[i * 3 + 1] = this.mVel[i * 3 + 1] * d - this.mG[i] * dt;
       MP.setXYZ(i, MP.getX(i) + this.mVel[i * 3] * dt, Math.max(0.02, MP.getY(i) + this.mVel[i * 3 + 1] * dt), MP.getZ(i) + this.mVel[i * 3 + 2] * dt);
       const f = this.mLife[i] / this.mLife0[i]; MC.setXYZ(i, this.mCol[i * 3] * f, this.mCol[i * 3 + 1] * f, this.mCol[i * 3 + 2] * f);
     }
-    MP.needsUpdate = MC.needsUpdate = true;
+    this.mistAlive = ma > 0;
+    if (mistOn) MP.needsUpdate = MC.needsUpdate = true;
     if (this.flashT > 0) { this.flashT -= dt; this.flash.intensity = this.flashI * Math.max(0, this.flashT / this.flashD) ** 1.5; }
     for (const f of this.flares) if (f.o.visible) { f.t += dt; const u = f.t / f.d; if (u >= 1) { f.o.visible = false; continue; } const s = f.s0 + (f.s1 - f.s0) * Math.min(1, u * 5); f.o.scale.set(s, s, 1); f.o.material.opacity = 1 - u * u; }
     for (const f of this.lens) if (f.o.visible) { f.t += dt; const u = f.t / f.d; if (u >= 1) { f.o.visible = false; continue; } const s = f.s0 + (f.s1 - f.s0) * Math.min(1, u * 3); f.o.scale.set(s, s * 0.09 * (1 - u * 0.5), 1); f.o.material.opacity = (1 - u) ** 1.5; }
@@ -160,6 +166,7 @@ export class FX {
 }
 
 // ---------- sword trail: additive ribbon, bright at the edge, fading with age ----------
+const TRAIL_CUT = { dur: 0.2, boost: 2.2, color: 0xff2a2a };
 export class SlashTrail {
   constructor(scene, n = 28) {
     this.n = n; this.pts = []; this.scene = scene; this.power = 1; this.red = false; this.fadeOut = 0;
@@ -168,23 +175,27 @@ export class SlashTrail {
     g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(n * 2 * 2), 2));
     const idx = []; for (let i = 0; i < n - 1; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); } g.setIndex(idx);
     this.mat = new THREE.ShaderMaterial({
-      uniforms: { power: { value: 1 }, tint: { value: new THREE.Color(0xdfe8ff) }, fade: { value: 1 } },
+      uniforms: { power: { value: 1 }, tint: { value: new THREE.Color(0xdfe8ff) }, fade: { value: 1 }, cut: { value: 0 } },
       vertexShader: 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }',
-      fragmentShader: `varying vec2 vUv; uniform float power; uniform vec3 tint; uniform float fade;
+      fragmentShader: `varying vec2 vUv; uniform float power; uniform vec3 tint; uniform float fade; uniform float cut;
         void main(){ float age=vUv.x; float across=vUv.y;
-          float edge=smoothstep(0.35,1.0,across)*(1.0-smoothstep(0.97,1.0,across)*0.6);
+          float body=smoothstep(0.0,0.6,across)*0.32;                          // the swept fan: the whole blade's path, faint
+          float edge=smoothstep(0.45,1.0,across)*(1.0-smoothstep(0.97,1.0,across)*0.6);
           float core=pow(smoothstep(0.75,0.99,across),3.0);
-          float a=(edge*0.55+core*1.2)*pow(1.0-age,1.8)*power*fade;
-          gl_FragColor=vec4(mix(tint,vec3(1.0),core)*a,a); }`,
+          float a=(body+edge*0.6+core*1.25)*pow(1.0-age,1.6)*power*fade;
+          gl_FragColor=vec4(mix(tint,vec3(1.0),core*(1.0-cut*0.6))*a,a); }`,
       transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
     });
     this.mesh = new THREE.Mesh(g, this.mat); this.mesh.frustumCulled = false; this.mesh.renderOrder = 5; scene.add(this.mesh);
   }
   push(a, b) { this.pts.unshift([a.clone(), b.clone()]); if (this.pts.length > this.n) this.pts.pop(); this.fadeOut = 1; }
+  cutFlash(d = TRAIL_CUT.dur) { this.cutT = this.cutD = d; }   // clean hit: the swing path flares red for a moment (the cut line)
   clear() { this.pts.length = 0; }
   update(dt, on) {
-    if (!on) { this.fadeOut = Math.max(0, this.fadeOut - dt * 7); if (this.fadeOut <= 0) this.pts.length = 0; else if (this.pts.length > 2) { this.pts.pop(); } }
-    this.mat.uniforms.power.value = this.power; this.mat.uniforms.fade.value = on ? 1 : this.fadeOut; this.mat.uniforms.tint.value.setHex(this.red ? 0xff6050 : (this.baseTint ?? 0xdfe8ff));
+    const c = this.cutT > 0 ? (this.cutT -= dt, Math.max(0, this.cutT / this.cutD)) : 0;
+    if (!on && !c) { this.fadeOut = Math.max(0, this.fadeOut - dt * 7); if (this.fadeOut <= 0) this.pts.length = 0; else if (this.pts.length > 2) { this.pts.pop(); } }
+    this.mat.uniforms.power.value = this.power * (1 + TRAIL_CUT.boost * c); this.mat.uniforms.fade.value = on || c ? 1 : this.fadeOut; this.mat.uniforms.cut.value = c;
+    this.mat.uniforms.tint.value.setHex(c > 0.05 ? TRAIL_CUT.color : this.red ? 0xff6050 : (this.baseTint ?? 0xdfe8ff));
     const P = this.mesh.geometry.attributes.position, U = this.mesh.geometry.attributes.uv, m = this.pts.length;
     for (let i = 0; i < this.n; i++) {
       const p = this.pts[Math.min(i, m - 1)];

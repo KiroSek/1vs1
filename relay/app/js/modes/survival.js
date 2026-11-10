@@ -244,11 +244,10 @@ export class Survival {
     const c = this.c, G = c.G, me = G.me;
     this.t += dt; this.phaseT += rawDt; this.stats.time += rawDt;
     if (this.titleT > 0 && (this.titleT -= rawDt) <= 0) c.$('title').classList.remove('show');
-    // pick a target: a broken enemy in reach (deathblow), otherwise the locked / nearest one
+    // target: chosen by the player via lock-on
     const alive = [...this.enemies.values()].filter(e => !e.f.dead);
-    let tgt = alive.find(e => e.f.broken && e.f.pos.distanceTo(me.pos) < 3.4);
-    if (!tgt) { const cur = alive.find(e => e.f === this.lockF); tgt = cur && cur.f.pos.distanceTo(me.pos) < 16 ? cur : alive.sort((a, b) => a.f.pos.distanceTo(me.pos) - b.f.pos.distanceTo(me.pos))[0]; }
-    this.lockF = tgt ? tgt.f : null; G.opp = this.lockF || G.dummy; G.targets = alive.map(e => e.f);
+    G.targets = alive.map(e => e.f); const tgt = c.pickTarget(G.targets);   // the player picks (main.js: mouse sweep while locked)
+    this.lockF = tgt || null; G.opp = this.lockF || G.dummy; G.targets = alive.map(e => e.f);
     c.inp.lock = G.lock && !!this.lockF;
     this.buffs.lust = Math.max(0, this.buffs.lust - rawDt); this.buffs.guardian = Math.max(0, this.buffs.guardian - rawDt); this.applyBuffs();
     // local player
