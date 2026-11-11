@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { registerMap, gradSky, skyAndEnv, particles } from './arena.js';
 import { World, rng } from './world.js';
+import * as SP from './svprops.js';
 
 const V3 = THREE.Vector3;
 // time of day presets: sky colours, sun/moon, ambient, fog distance, exposure
@@ -134,89 +135,191 @@ registerMap('hunt_valley', 'Kirigakure Valley', buildHunt);
 
 // =====================================================================================  SURVIVAL ARENAS
 // common: a walled / wooded ring of radius ~24 with gates where waves enter
-function arenaBase(g, cfg, opts, tod, surfaceBase) {
+function arenaBase(g, cfg, opts, tod, flat = true) {
   const W = new World(g, { half: 30 }); cfg.world = W; cfg.amb = null;
   const lit = lighting(g, cfg, opts.tod || tod, 30);
-  W.flat(0, 0, 18, 18, 0);
+  if (flat) W.flat(0, 0, 18, 18, 0);   // a level court (maps with their own relief skip it)
   return { W, lit };
+}
+// low bushes in a band around the arena, leaving the gates clear
+function shrubRing(W, R, r0, r1, n, gates) {
+  const pts = [];
+  for (let i = 0; i < n; i++) { const a = R() * 6.283, r = r0 + R() * (r1 - r0); if (gates.some(gt => Math.abs(Math.atan2(Math.sin(a - gt), Math.cos(a - gt))) < 0.3)) continue; const x = Math.cos(a) * r, z = Math.sin(a) * r; if (W.solidAt(x, W.ground(x, z) + 0.6, z)) continue; pts.push([x, z, 0.8 + R() * 0.4]); }
+  W.shrubs(pts);
 }
 function ringOfPines(W, R, r0, r1, n, gates) {
   const pts = [];
   for (let i = 0; i < n; i++) { const a = R() * 6.283, r = r0 + R() * (r1 - r0); if (gates.some(gt => Math.abs(Math.atan2(Math.sin(a - gt), Math.cos(a - gt))) < 0.18)) continue; pts.push([Math.cos(a) * r, Math.sin(a) * r, 0.9 + R() * 0.6]); }
   W.pines(pts);
 }
-// temple courtyard: shrine (N), torii gate (S), side gates, sakura
-function svTemple(g, renderer, cfg, opts) {
-  const { W, lit } = arenaBase(g, cfg, opts, 'dusk'); const R = rng(201);
-  W.region(0, 0, 16, 16, 'stone');
-  W.house(0, -20, 0, 10, 6, { lit: true }); W.torii(0, 15, 0, 1.2); W.torii(0, 22, 0, 1.05);
-  for (const [x, z, len, rot] of [[-12, -24, 14, 0], [12, -24, 14, 0], [-24, -12, 18, Math.PI / 2], [24, -12, 18, Math.PI / 2], [-24, 13, 14, Math.PI / 2], [24, 13, 14, Math.PI / 2], [-14, 24, 12, 0], [14, 24, 12, 0]]) W.wall(x, z, len, rot, 3);
-  for (const [x, z] of [[-6, -12], [6, -12], [-10, 6], [10, 6], [-6, 14], [6, 14]]) W.stoneLantern(x, z);
-  W.broadleaf([[-16, -8, 1.1], [16, -8, 1], [-15, 12, 1], [16, 14, 1.1]], 'sakura');
-  W.terrainMesh(70, 70, groundColor(W, [0.35, 0.38, 0.25]));
+// sand / rock / earth tints for the arena ground (on top of the surface colours)
+const tintGround = (W, fn) => (x, z, c) => { groundColor(W)(x, z, c); const t = fn(x, z, W.surfaceAt(x, z)); if (t) { c.setRGB(t[0], t[1], t[2]); c.convertSRGBToLinear(); } };
+const ring = (R, r, a0, a1) => [Math.cos(a0) * r, Math.sin(a0) * r, Math.cos(a1) * r, Math.sin(a1) * r];
+// ---------------------------------------------------------------- Dojo Court
+// a walled dojo yard: the hall on its plinth (N), covered galleries down both sides, a polished slab court with
+// training posts, low fences and racks to fight around; gates S, E, W
+function svDojo(g, renderer, cfg, opts) {
+  const { W, lit } = arenaBase(g, cfg, opts, 'day'); const R = rng(211);
+  SP.slabFloor(W, 0, 1, 11.4, 11.8);
+  W.house(0, -17, 0, 14, 7, { lit: true });
+  SP.gallery(W, -15, -1, 22, Math.PI / 2); SP.gallery(W, 15, -1, 22, Math.PI / 2);
+  for (const [x, z, len, rot] of [[-11, 18, 14, 0], [11, 18, 14, 0], [-13, -22, 10, 0], [13, -22, 10, 0], [-18.6, -12, 16, Math.PI / 2], [18.6, -12, 16, Math.PI / 2], [-18.6, 14.5, 7, Math.PI / 2], [18.6, 14.5, 7, Math.PI / 2]]) W.wall(x, z, len, rot, 3.2);
+  W.torii(0, 19, 0, 0.85);
+  for (const [x, z] of [[-8, -8], [-5, -8.6], [5, -8.6], [8, -8]]) SP.makiwara(W, x, z);
+  SP.fence(W, -7, 9, 5, 0.25); SP.fence(W, 7, 9, 5, -0.25); SP.fence(W, 0, 13.5, 4, 0);
+  W.prop('rack', -11, 2, Math.PI / 2); W.prop('rack', 11, -3, Math.PI / 2); W.prop('barrel', -11, 7); W.prop('barrel', -11.2, 8.1); W.prop('crate', 11, 6, 0.3);
+  for (const [x, z] of [[-11.5, -12], [11.5, -12], [-11.5, 15], [11.5, 15]]) W.stoneLantern(x, z);
+  for (const [x, z, c] of [[-13, -15, 0xb02a20], [13, -15, 0xb02a20], [-4, 16.5, 0x1c2a4a], [4, 16.5, 0x1c2a4a]]) SP.banner(W, x, z, c);
+  W.broadleaf([[-24, -18, 1.2], [24, -18, 1.1], [-25, 8, 1.1], [25, 10, 1], [-8, -26, 1], [9, -26, 1.1]], 'sakura');
+  for (let i = 0; i < 6; i++) W.bump(R() * 50 - 25, -27 - R() * 3, 6, 2 + R() * 2);
+  for (const [x, z] of [[-26, -2], [26, -4], [-22, 24], [22, 24]]) W.bump(x, z, 7, 2.2);
+  W.mist([[-24, 6, 8], [24, 6, 8], [0, 26, 9]]); W.mistK = 0.4;
+  W.terrainMesh(70, 70, groundColor(W, [0.34, 0.4, 0.24]));
   ringOfPines(W, R, 27, 34, 60, [Math.PI / 2, 0, Math.PI]);
-  W.spawns = [[0, 27], [27, 4], [-27, 4]]; cfg.weathers = ['clear', 'rain', 'wind', 'fog'];
-  return { setQuality: lit.setQuality, update: particles(g, 'petals', 160) };
+  W.spawns = [[0, 25], [25, 7.5], [-25, 7.5]]; cfg.weathers = ['clear', 'rain', 'wind'];
+  return { setQuality: lit.setQuality, update: particles(g, 'petals', 140) };
 }
-// abandoned village at night: plaza ringed by houses, alleys as entries
-function svVillage(g, renderer, cfg, opts) {
-  const { W, lit } = arenaBase(g, cfg, opts, 'night'); const R = rng(202);
-  W.region(0, 0, 10, 10, 'stone');
-  const hs = [[-14, -12, 0.6], [0, -17, 0], [14, -12, -0.6], [17, 3, Math.PI / 2], [12, 15, 0.7], [-12, 15, -0.7], [-17, 3, Math.PI / 2]];
-  hs.forEach(([x, z, r], i) => W.house(x, z, r, 7, 5, { lit: i % 2 === 0, ruined: i === 3 }));
-  for (const [x, z] of [[-6, -6], [6, -6], [-7, 7], [7, 7], [0, 10]]) W.prop('lantern', x, z, R() * 6);
-  for (const [x, z] of [[-4, 12], [-3, 13], [9, -2], [-9, 1], [3, -9]]) W.prop(R() < 0.5 ? 'crate' : 'barrel', x, z);
-  W.grassField(0, 0, 22, 22, 500, 31, (x, z) => Math.hypot(x, z) < 15);
-  W.terrainMesh(70, 70, groundColor(W, [0.25, 0.3, 0.2]));
-  ringOfPines(W, R, 24, 32, 70, [-Math.PI / 2 - 0.4, 0.15, Math.PI - 0.15, Math.PI / 2]);
-  W.spawns = [[-8, -24], [24, 2], [-24, 2], [0, 25]]; cfg.weathers = ['rain', 'fog', 'clear'];
-  return { setQuality: lit.setQuality, update: () => { } };
+// ---------------------------------------------------------------- Cave Grottos
+// a sunken cave basin under an open shaft: cliff walls of piled rock, a raised ledge with a row of Jizo (N), a candle-lit
+// grotto niche (E), stalagmites to fight around, three tunnels in under rock arches
+function svCave(g, renderer, cfg, opts) {
+  const { W, lit } = arenaBase(g, cfg, opts, 'night', false); const R = rng(212);
+  const gaps = [-Math.PI / 4, Math.PI / 2, Math.PI];   // tunnel mouths, ascending: the cliff runs from each to the next
+  for (let i = 0; i < 3; i++) { const a0 = gaps[i] + 0.36, a1 = (i < 2 ? gaps[i + 1] : gaps[0] + Math.PI * 2) - 0.36; const n = Math.ceil((a1 - a0) / 0.3);
+    for (let k = 0; k < n; k++) { const [x0, z0, x1, z1] = ring(R, 20.5, a0 + (a1 - a0) * k / n, a0 + (a1 - a0) * (k + 1) / n); SP.cliff(W, R, x0, z0, x1, z1, { s: [2.8, 4.4], step: 2.4, bump: 4 }); } }
+  for (const a of gaps) SP.rockArch(W, Math.cos(a) * 21.5, Math.sin(a) * 21.5, -a - Math.PI / 2, 7.5);
+  W.flat(0, -13, 8, 3.2, 1.7);   // the Jizo ledge, ramps at both ends
+  for (let i = 0; i < 7; i++) SP.jizo(W, -6 + i * 2, -15.2, 0, 1 + (i % 3) * 0.1);
+  SP.candles(W, -1, -14, true); SP.candles(W, 3, -14.2);
+  for (const [x, z] of [[17, -5], [17.6, -2.4], [17.4, 0.2]]) SP.jizo(W, x, z, -Math.PI / 2, 0.9); SP.candles(W, 15.8, -2.6, true);
+  SP.crag(W, R, 16.5, -8, 2.2); SP.crag(W, R, 16, 3, 2);   // the niche's sides
+  for (const [x, z, s] of [[-6, 2, 1.1], [6, 5, 1], [-2, 9, 0.8], [9, -6, 1.2], [-10, -5, 1.1], [-12, 8, 0.9], [3, -4, 0.7]]) SP.crag(W, R, x, z, s);   // stalagmites
+  for (let i = 0; i < 10; i++) W.bump(R() * 24 - 12, R() * 20 - 6, 3 + R() * 3, (R() - 0.5) * 0.7);   // uneven floor
+  SP.brazier(W, -8, -9); SP.brazier(W, 8, 11); SP.brazier(W, -13, 3); SP.brazier(W, 12, -12, false);
+  W.region(0, 0, 20, 20, 'stone');
+  W.mist([[-12, 10, 7], [10, -10, 7]]); W.mistK = 0.45;
+  W.terrainMesh(70, 70, tintGround(W, (x, z) => { const n = 0.85 + 0.15 * Math.sin(x * 0.5) * Math.cos(z * 0.43); return [0.34 * n, 0.31 * n, 0.27 * n]; }));
+  W.spawns = gaps.map(a => [Math.cos(a) * 25, Math.sin(a) * 25]); cfg.weathers = ['fog', 'clear'];
+  return { setQuality: lit.setQuality, update: particles(g, 'fireflies', 140) };
+}
+// ---------------------------------------------------------------- Trade Post
+// a crossroads market: two narrow streets meeting at a small plaza with a well, shop houses on both sides, stalls with
+// awnings, hand carts and stacked goods as cover, strings of lanterns over the streets
+function svTrade(g, renderer, cfg, opts) {
+  const { W, lit } = arenaBase(g, cfg, opts, 'dusk'); const R = rng(213);
+  W.region(0, 0, 3.6, 28, 'stone'); W.region(0, 0, 28, 3.6, 'stone');
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    W.house(sx * 9, sz * 9.5, sz < 0 ? 0 : Math.PI, 7, 5, { lit: (sx + sz) % 4 === 0 });
+    W.house(sx * 9, sz * 19, sz < 0 ? 0 : Math.PI, 7, 5, { lit: sx > 0 });
+    W.house(sx * 19, sz * 9, sx < 0 ? Math.PI / 2 : -Math.PI / 2, 7, 5, { lit: sz > 0 });
+  }
+  const cl = [0x2a4a7a, 0x7a2a22, 0x3a5a2a, 0x6a4a1a];
+  SP.stall(W, 4.6, -13.5, -Math.PI / 2, cl[0]); SP.stall(W, -4.6, -6.5, Math.PI / 2, cl[1]); SP.stall(W, 4.6, 7, -Math.PI / 2, cl[2]); SP.stall(W, -4.6, 14, Math.PI / 2, cl[3]);
+  SP.stall(W, 13.5, 4.6, Math.PI, cl[1]); SP.stall(W, -13.5, -4.6, 0, cl[2]);
+  SP.cart(W, -1.6, 17.5, 1.3); SP.cart(W, 16.5, -1.4, 0.25, 0.1); SP.cart(W, -18, 1.8, -0.2);
+  SP.well(W, 4.2, -4.2);
+  for (const [x, z, k] of [[-4.5, 4.6, 'barrel'], [-4.6, 5.6, 'barrel'], [4.8, 15.5, 'crate'], [4.6, 16.5, 'crate'], [-4.6, -15, 'crate'], [11, -4.6, 'barrel'], [-10, 4.7, 'crate'], [-4.7, -18, 'barrel']]) W.prop(k, x, z, R() * 3);
+  for (const [x, z] of [[-4, -3.5], [4, 3.6]]) W.prop('lantern', x, z, R() * 6);
+  SP.lanternString(W, -4.4, -11, 4.4, -11); SP.lanternString(W, -4.4, 11.5, 4.4, 11.5); SP.lanternString(W, 11.5, -4.4, 11.5, 4.4); SP.lanternString(W, -11.5, -4.4, -11.5, 4.4);
+  for (const [x, z, c] of [[-4.2, -9.4, 0x7a2a22], [4.2, 10, 0x2a4a7a], [10, 4.2, 0x3a5a2a]]) SP.banner(W, x, z, c);
+  W.broadleaf([[-14, -14, 1], [14, 14, 1.1], [-14, 14, 1], [14, -14, 0.9]], 'maple');
+  for (const [x, z] of [[-27, -26], [27, -26], [-27, 26], [27, 26]]) W.bump(x, z, 9, 3);
+  W.mist([[0, -26, 7], [0, 26, 7], [26, 0, 7], [-26, 0, 7]]); W.mistK = 0.5;
+  W.terrainMesh(70, 70, groundColor(W, [0.36, 0.33, 0.24]));
+  ringOfPines(W, R, 27, 34, 50, [Math.PI / 2, -Math.PI / 2, 0, Math.PI]);
+  W.spawns = [[0, 26], [0, -26], [26, 0], [-26, 0]]; cfg.weathers = ['clear', 'rain', 'fog'];
+  return { setQuality: lit.setQuality, update: particles(g, 'momiji', 120) };
+}
+// ---------------------------------------------------------------- Bamboo Crossing
+// a stream through a bamboo forest: an arched bridge, a plank bridge and a ford of stepping stones are the only ways
+// across; on the north bank an abandoned shrine on a terrace, on the south a fenced clearing with fallen logs
+function svBamboo(g, renderer, cfg, opts) {
+  const { W, lit } = arenaBase(g, cfg, opts, 'fog', false); const R = rng(214);
+  W.river(1.5, 1.4, 0.16, 4.6, 1.3, 30);
+  const rz = x => 1.5 + Math.sin(x * 0.16) * 1.4;
+  W.bridge(-9, rz(-9), Math.PI / 2, 7.5, 2.6, 1.1); W.bridge(11, rz(11), Math.PI / 2, 7, 2.2, 0.8);
+  SP.steppingStones(W, 1.5, rz(1.5), Math.PI / 2, 5.2, 6);
+  W.flat(0, -15, 7.5, 4, 1.2); W.house(0, -17.5, 0, 8, 5, { ruined: true }); W.torii(0, -10, 0, 0.9);
+  W.stoneLantern(-4.5, -10.5); W.stoneLantern(4.5, -10.5); SP.jizo(W, -7, -13, 0.4); SP.jizo(W, 7.5, -12.5, -0.4);
+  SP.fence(W, -9, 12, 6, 0.2); SP.fence(W, 8, 13, 5, -0.3); SP.log(W, -3, 9, 0.4, 3.4); SP.log(W, 5, 16, -0.7, 3);
+  for (const [x, z, s] of [[-14, -4, 1.2], [14, -6, 1.1], [-6, -5, 0.8], [13, 9, 1], [-15, 9, 0.9]]) W.rock(x, z, s);
+  W.path([[0, 27], [1, 18], [1.5, 8], [1.5, rz(1.5) + 3]], 2.2); W.path([[1.5, rz(1.5) - 3], [0, -7]], 2.2);
+  W.bambooGrove(-19, -14, 7, 230, 241); W.bambooGrove(19, -15, 7, 230, 242); W.bambooGrove(-20, 15, 7, 230, 243); W.bambooGrove(20, 16, 7, 220, 244);
+  W.bambooGrove(-9, -24, 6, 150, 245); W.bambooGrove(10, 24, 6, 150, 246); W.bambooGrove(-11, 23, 5, 120, 247);
+  W.grassField(0, 4, 20, 8, 500, 248, (x, z) => Math.abs(z - rz(x)) < 3.5 || Math.abs(x - 1.5) < 2);
+  W.mist([[-12, 2, 9], [12, 2, 9], [0, -20, 8], [0, 20, 8]]); W.mistK = 0.85;
+  W.terrainMesh(70, 70, groundColor(W, [0.3, 0.4, 0.22]));
+  ringOfPines(W, R, 27, 34, 70, [Math.PI / 2, 0, Math.PI]);
+  W.spawns = [[0, 26], [26, -6], [-26, -6]]; cfg.weathers = ['fog', 'rain', 'clear', 'wind'];
+  return { setQuality: lit.setQuality, update: particles(g, 'fireflies', 120) };
+}
+// ---------------------------------------------------------------- Sunken Ruins
+// a ruined fishing village on the shore: the sea along the south edge with a torii standing in the water, a broken pier,
+// boats pulled up on the sand, net racks and driftwood, fallen houses and foundation walls up the slope
+function svRuins(g, renderer, cfg, opts) {
+  const { W, lit } = arenaBase(g, cfg, opts, 'dusk', false); const R = rng(215);
+  W.river(27, 1.2, 0.12, 24, 1.8, 30);   // the sea: a band wide enough to run off the south edge
+  W.torii(-9, 19.5, 0, 1.1); SP.pier(W, 9, 11, 0, 12, 2.2, 3, -0.2);
+  W.house(-12, -6, 0.25, 6.5, 4.5, { ruined: true }); W.house(11, -8, -0.2, 6.5, 4.5, { ruined: true }); W.house(-1, -17, 0, 7, 5, { ruined: true });
+  for (const [x, z, s] of [[-14.5, -3, 0.7], [-9, -8.5, 0.6], [13.5, -5, 0.7], [8.5, -10.5, 0.5], [2.5, -15, 0.6], [-4, -19, 0.5]]) W.rock(x, z, s);   // rubble from the fallen houses
+  W.wall(-3, 2, 6, 0.2, 1.6, { broken: true }); W.wall(15, 4, 5, -0.5, 1.4, { broken: true }); W.wall(-16, 4, 5, 0.9, 1.5, { broken: true });
+  SP.boat(W, -3, 9, 0.35); SP.boat(W, 15, 9.5, -0.4, true); SP.boat(W, -16, 9, 0.9);
+  SP.netRack(W, -8, 3.5, 0.1); SP.netRack(W, 5, 0.5, -0.3); SP.log(W, -11, 12, 0.5, 3.2); SP.log(W, 3, 11, -0.3, 2.6);
+  for (const [x, z, s] of [[-20, 12, 1.6], [20, 13, 1.8], [-6, 13.5, 0.9], [6, -3, 0.8], [-7, -9, 1]]) W.rock(x, z, s);
+  SP.cliff(W, R, -24, -22, -25, 10, { s: [2.4, 3.8], tone: SP.CRAG.mid }); SP.cliff(W, R, 24, -22, 25, 10, { s: [2.4, 3.8], tone: SP.CRAG.mid });
+  for (let i = 0; i < 5; i++) W.bump(-18 + i * 9, -25, 7, 2.5 + R() * 1.5);
+  for (const [x, z] of [[-7, -2], [8, -1]]) W.prop('lantern', x, z, R() * 6);
+  W.mist([[-12, 16, 9], [10, 18, 9], [0, -10, 8]]); W.mistK = 0.65;
+  W.terrainMesh(70, 70, tintGround(W, (x, z, s) => s === 'stone' || s === 'wood' ? null : z > 5 ? [0.62, 0.55, 0.4] : z > 1 ? [0.5, 0.48, 0.32] : null));
+  { const pts = []; for (let i = 0; i < 46; i++) { const x = R() * 64 - 32, z = -32 + R() * 30; if (Math.abs(x) < 24 && z > -26) continue; pts.push([x, z, 0.9 + R() * 0.6]); } W.pines(pts); }   // pines on the hills only, never in the sea
+  W.spawns = [[0, -26], [-24, -10], [24, -10]]; cfg.weathers = ['fog', 'rain', 'wind', 'clear'];
+  return { setQuality: lit.setQuality, update: particles(g, 'snow', 90) };
 }
 // castle courtyard: high walls, keep facade, main gate
 function svCastle(g, renderer, cfg, opts) {
   const { W, lit } = arenaBase(g, cfg, opts, 'day'); const R = rng(203);
   W.region(0, 0, 22, 22, 'stone');
-  const keep = W.house(0, -21, 0, 16, 7, { lit: false }); keep.scale.y = 1.6;
+  W.flat(0, -18, 12, 3, 1.1);   // an earthen terrace under the keep wall (before anything stands on it)
+  W.keep(0, -30, 0, 3, 13, 8, { base: 3.4, lit: false });   // the keep towers over the north wall
   for (const [x, z, len, rot] of [[-14, 21, 18, 0], [14, 21, 18, 0], [-22, 0, 36, Math.PI / 2], [22, 0, 36, Math.PI / 2], [-15, -25, 12, 0], [15, -25, 12, 0]]) W.wall(x, z, len, rot, 5.2);
   W.torii(0, 23, 0, 0.75);
   for (const [x, z] of [[-10, -12], [10, -12], [-16, 10], [16, 10]]) W.stoneLantern(x, z);
   for (const [x, z] of [[-18, -8], [-18, -6.8], [18, 14], [18, 15.3]]) W.prop('crate', x, z);
   W.prop('rack', -12, 16, 0); W.prop('rack', 12, 16, 0);
-  W.broadleaf([[-14, -14, 1.2], [14, -14, 1.2]], 'maple');
+  SP.slabFloor(W, 0, 2, 9, 9);   // polished court
+  SP.fence(W, -8, 6, 4.5, 0.5); SP.fence(W, 8, 6, 4.5, -0.5); SP.fence(W, 0, -11.5, 6, 0); SP.cart(W, -15, -2, 0.4); SP.cart(W, 15, 3, -2.6, 0.08);
+  for (const [x, z, c] of [[-6, -14.5, 0xb02a20], [6, -14.5, 0xb02a20], [-20, 18, 0x1c2a4a], [20, 18, 0x1c2a4a]]) SP.banner(W, x, z, c);
+  W.broadleaf([[-14, -14, 1.2], [14, -14, 1.2], [-17, 4, 1], [17, 4, 1]], 'sakura');
+  W.shrubs([[-19, -16, 1], [-19, -12, 0.9], [19, -16, 1], [19, -12, 0.9], [-8, 18, 0.9], [8, 18, 0.9]]);
   W.terrainMesh(70, 70, groundColor(W, [0.36, 0.36, 0.3]));
   W.spawns = [[0, 26], [-21, -19], [21, -19]]; cfg.weathers = ['clear', 'wind', 'snow'];
-  return { setQuality: lit.setQuality, update: () => { } };
-}
-// forest glade: clearing surrounded by pines and bamboo
-function svGlade(g, renderer, cfg, opts) {
-  const { W, lit } = arenaBase(g, cfg, opts, 'dusk'); const R = rng(204);
-  for (let i = 0; i < 8; i++) W.bump(R() * 40 - 20, R() * 40 - 20, 6 + R() * 6, R() * 0.8);
-  W.grassField(0, 0, 18, 18, 900, 41, (x, z) => Math.hypot(x, z) < 7);
-  for (const [x, z] of [[-7, -5], [8, 6], [3, -11], [-10, 9]]) W.rock(x, z, 0.8 + R() * 0.6);
-  W.bambooGrove(-18, -18, 9, 260, 42); W.bambooGrove(19, 17, 8, 220, 43);
-  W.stoneLantern(0, 0);
-  W.terrainMesh(70, 70, groundColor(W, [0.3, 0.42, 0.2]));
-  ringOfPines(W, R, 21, 32, 140, [0.5, 2.6, -1.6]);
-  W.spawns = [[Math.cos(0.5) * 24, Math.sin(0.5) * 24], [Math.cos(2.6) * 24, Math.sin(2.6) * 24], [Math.cos(-1.6) * 24, Math.sin(-1.6) * 24]]; cfg.weathers = ['fog', 'rain', 'clear', 'wind'];
-  return { setQuality: lit.setQuality, update: particles(g, 'fireflies', 120) };
+  return { setQuality: lit.setQuality, update: particles(g, 'petals', 150) };
 }
 // ruined fortress: broken walls with breaches, braziers, rubble, snow
 function svFortress(g, renderer, cfg, opts) {
-  const { W, lit } = arenaBase(g, cfg, opts, 'night'); const R = rng(205);
+  const { W, lit } = arenaBase(g, cfg, opts, 'night', false); const R = rng(205);
+  for (let i = 0; i < 9; i++) W.bump(R() * 30 - 15, R() * 30 - 15, 4 + R() * 4, (R() - 0.4) * 1.1);   // frozen, uneven ground
   W.region(0, 0, 20, 20, 'stone');
   for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2; if (i % 4 === 1) continue; W.wall(Math.cos(a) * 22, Math.sin(a) * 22, 11, -a + Math.PI / 2, 3.6, { broken: i % 3 === 0 }); }
   for (let i = 0; i < 20; i++) { const a = R() * 6.28, r = 8 + R() * 11; W.rock(Math.cos(a) * r, Math.sin(a) * r, 0.4 + R() * 0.7); }
   for (const [x, z] of [[-8, -8], [8, -8], [-8, 8], [8, 8]]) { const b = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.3, 1, 10), new THREE.MeshStandardMaterial({ color: 0x2a2624, metalness: 0.6, roughness: 0.5 })); W.add(b, x, z, 0, W.ground(x, z) + 0.5); W.circle(x, z, 0.5, 1.2);
     const f = new THREE.Mesh(new THREE.ConeGeometry(0.35, 0.8, 8), new THREE.MeshBasicMaterial({ color: 0xff9030 })); W.add(f, x, z, 0, W.ground(x, z) + 1.35); W.addLight(x, z, 1.6, 0xff8a3a, 9, 11); }
   W.house(0, -14, 0, 7, 5, { ruined: true });
+  SP.fence(W, -12, 3, 5, 1.2); SP.fence(W, 12, -2, 5, -1.1); SP.fence(W, 3, 13, 5, 0.1); SP.log(W, -4, 6, 0.8, 3.2); SP.log(W, 7, 3, -0.4, 2.8); SP.cart(W, -14, -10, 0.9, 0.3);
+  for (const [x, z] of [[-17, 5], [17, 5], [0, 18]]) SP.banner(W, x, z, 0x6a1a14);
+  W.mist([[24, 0, 8], [-12, 21, 8], [-12, -21, 8]]); W.mistK = 0.6;
   W.terrainMesh(70, 70, groundColor(W, [0.3, 0.3, 0.28]));
   W.spawns = [[Math.cos(Math.PI / 6) * 24, Math.sin(Math.PI / 6) * 24], [Math.cos(Math.PI / 6 + 2.094) * 24, Math.sin(Math.PI / 6 + 2.094) * 24], [Math.cos(Math.PI / 6 + 4.189) * 24, Math.sin(Math.PI / 6 + 4.189) * 24]];
   cfg.weathers = ['snow', 'wind', 'clear', 'fog'];
-  return { setQuality: lit.setQuality, update: () => { } };
+  return { setQuality: lit.setQuality, update: particles(g, 'snow', 220) };
 }
-registerMap('sv_temple', 'Shrine Courtyard', svTemple);
-registerMap('sv_village', 'Abandoned Village', svVillage);
+registerMap('sv_dojo', 'Dojo Court', svDojo);
+registerMap('sv_cave', 'Cave Grottos', svCave);
+registerMap('sv_trade', 'Trade Post', svTrade);
+registerMap('sv_bamboo', 'Bamboo Crossing', svBamboo);
+registerMap('sv_ruins', 'Sunken Ruins', svRuins);
 registerMap('sv_castle', 'Castle Courtyard', svCastle);
-registerMap('sv_glade', 'Forest Glade', svGlade);
 registerMap('sv_fortress', 'Ruined Fortress', svFortress);
-export const SV_MAPS = ['sv_temple', 'sv_village', 'sv_castle', 'sv_glade', 'sv_fortress'];
+// the old ring arenas were replaced: their keys (saved settings, records) open the arena that took their place
+registerMap('sv_temple', 'Dojo Court', svDojo); registerMap('sv_village', 'Trade Post', svTrade); registerMap('sv_glade', 'Bamboo Crossing', svBamboo);
+export const SV_MAPS = ['sv_dojo', 'sv_cave', 'sv_trade', 'sv_bamboo', 'sv_ruins', 'sv_castle', 'sv_fortress'];

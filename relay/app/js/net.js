@@ -20,6 +20,7 @@ export class Net {
   }
   create(meta = {}) { return new Promise(r => this.s.emit('create', meta, a => { this.slot = a.slot; this.code = a.code; this.meta = a.meta || {}; r(a); })); }
   join(code) { return new Promise(r => this.s.emit('join', code, a => { if (a.ok) { this.slot = a.slot; this.code = a.code; this.meta = a.meta || {}; } r(a); })); }
+  queue(rating) { return new Promise(r => this.s.emit('queue', { rating }, r)); }
   send(ev, d) { if (this.s && this.s.connected) this.s.emit(ev, d); }
   close() { if (this.s) { this.s.removeAllListeners(); this.s.offAny(); this.s.close(); this.s = null; } }
 }

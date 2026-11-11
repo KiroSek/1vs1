@@ -579,7 +579,7 @@ export function buildArena(scene, renderer) {
       if (c.fog) { if (c.fog.isFogExp2) c.fog.density = c.fog0 * fogK; else c.fog.far = c.fog0 / fogK; }
       renderer.toneMappingExposure = c.baseExposure * expK;
       for (const m of c.floors || []) { const u = m.userData; if (u.r0 === undefined) { u.r0 = m.roughness; u.e0 = m.envMapIntensity; u.c0 = m.color.clone(); } const wet = kind === 'rain';
-        m.roughness = wet ? 0.52 : u.r0; m.envMapIntensity = wet ? 0.8 : u.e0; m.color.copy(u.c0).multiplyScalar(wet ? 0.68 : 1); }
+        m.roughness = wet ? 0.66 : u.r0; m.envMapIntensity = wet ? 0.45 : u.e0; m.color.copy(u.c0).multiplyScalar(wet ? 0.68 : 1); }   // wet sheen, not a mirror: a sharp low-res environment shows its seams
       c.lightning = kind === 'rain' ? 3 + Math.random() * 5 : 0;
     },
     // large maps: the shadow-casting sun follows the local player

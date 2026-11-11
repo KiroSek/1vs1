@@ -30,7 +30,9 @@ const Grade = {
       if (sunAmt > 0.001) {
         vec2 sd = (uv - sunUV) * vec2(aspect, 1.0); float halo = pow(clamp(1.0 - length(sd) / 1.25, 0.0, 1.0), 2.6);
         vec3 sh = vec3(0.0);
-        if (rays > 0.001) { vec2 st = (sunUV - uv) * 0.055; vec2 p = uv; float dec = 1.0; for (int i = 0; i < 9; i++) { p += st; vec3 s = texture2D(tDiffuse, clamp(p, 0.001, 0.999)).rgb; sh += max(s - 0.55, 0.0) * dec; dec *= 0.84; } sh *= rays * 0.32; }
+        if (rays > 0.001) {   // 12 finer taps, start jittered per pixel (interleaved gradient noise): no ghost copies of bright windows / sky printed on the ground
+          vec2 st = (sunUV - uv) * 0.038; float ign = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))); vec2 p = uv + st * ign; float dec = 1.0;
+          for (int i = 0; i < 12; i++) { vec3 s = texture2D(tDiffuse, clamp(p, 0.001, 0.999)).rgb; sh += max(s - 0.6, 0.0) * dec; dec *= 0.87; p += st; } sh *= rays * 0.24; }
         col += sunCol * sunAmt * (halo * 0.22 * (1.0 - dot(col, vec3(0.33)))) + sh * sunCol * sunAmt;
       }
       float l = dot(col, vec3(0.299, 0.587, 0.114));
@@ -68,7 +70,7 @@ export class Post {
   frame(dt, state) {
     const f = this.fx;
     f.aberr = Math.max(0, f.aberr - dt * 0.12); f.radial = Math.max(0, f.radial - dt * 0.35); f.flash = Math.max(0, f.flash - dt * 2.8); f.mono += ((state.mono || 0) - f.mono) * Math.min(1, dt * 6);
-    this.U.time.value = (this.U.time.value + dt) % 100; this.U.aberr.value = f.aberr; this.U.radial.value = f.radial; this.U.flash.value = f.flash; this.U.mono.value = f.mono;
+    this.U.time.value = (this.U.time.value + dt) % 100; this.U.aberr.value = f.aberr; const run = (state.speed || 0) * 0.014; if (run > f.radial) { this.U.center.value.set(0.5, 0.52); } this.U.radial.value = Math.max(f.radial, run);   // sprint: a faint zoom blur at the edges this.U.flash.value = f.flash; this.U.mono.value = f.mono;
     const hpK = state.hp !== undefined ? Math.max(0, 1 - state.hp / 0.3) : 0;
     this.U.tint.value += (hpK * 0.35 - this.U.tint.value) * Math.min(1, dt * 3);
     this.U.sat.value += ((state.sat ?? 1) - this.U.sat.value) * Math.min(1, dt * 4);

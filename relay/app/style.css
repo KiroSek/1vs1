@@ -184,7 +184,7 @@ table.stats{margin:10px auto;border-collapse:collapse;font-size:13px;letter-spac
 .list.nav button.sel,.list.nav button:hover{color:#fff;background:linear-gradient(90deg,rgba(140,18,22,.92) 0%,rgba(120,16,20,.55) 55%,rgba(90,10,14,0) 100%);border-top-color:rgba(230,140,110,.35);border-bottom-color:rgba(230,140,110,.35);padding-left:64px}
 .list.nav button.sel .dia,.list.nav button:hover .dia{opacity:1}
 .motto{font-family:var(--serif);letter-spacing:.42em;font-size:13px;color:#9a8e7a;text-transform:uppercase;margin-top:2vh}
-#menu .rec{position:absolute;left:auto;bottom:auto;right:30px;top:62px;text-align:right}#menu .coins{position:absolute;right:30px;top:24px}
+#menu .rec{position:absolute;left:auto;bottom:auto;right:30px;top:74px;text-align:right}#menu .coins{position:absolute;right:30px;top:24px}
 #menu .mapsel{position:absolute;left:50%;bottom:20px;transform:translateX(-50%)}
 .keyfoot{position:absolute;right:30px;bottom:22px;display:flex;gap:22px;font-family:var(--serif);letter-spacing:.18em;font-size:14px;color:#d8ccb6;text-transform:uppercase;z-index:3}
 .keyfoot span{display:flex;align-items:center;gap:9px}.keyfoot b{font-weight:400}
@@ -255,3 +255,37 @@ table.stats{margin:10px auto;border-collapse:collapse;font-size:13px;letter-spac
 #shop.armory{cursor:grab}#shop.armory.drag{cursor:grabbing}#shop.armory button,#shop.armory .arminfo{cursor:pointer}
 @media (max-height:640px){.brand .kanji{font-size:78px;padding-top:12px}.brand .enso{width:160px;height:160px;top:-22px}.brand h1{font-size:40px}.brand .sub{font-size:14px}
   .list.nav button{font-size:19px;padding-top:7px;padding-bottom:7px}#menu .mcol{gap:2vh}.frame{padding:18px 24px 60px}.hd{font-size:24px;margin-bottom:8px;padding-bottom:8px}.modes button{font-size:17px}.preview p{font-size:15px}}
+.list.nav .sub{display:flex;flex-direction:column;gap:2px;margin:-2px 0 4px 34px;border-left:1px solid #5a3a2e;padding-left:6px}
+.list.nav .sub button{font-size:17px;padding:7px 14px 7px 44px}.list.nav .sub button .dia{left:14px;width:16px;height:16px;top:calc(50% - 8px)}
+.list.nav .sub button.sel,.list.nav .sub button:hover{padding-left:50px}
+.list.nav .caret{position:absolute;right:16px;top:50%;transform:translateY(-50%);font-size:16px;color:#c9a88a;transition:.2s}
+.list.nav button.drop.open .caret{transform:translateY(-50%) rotate(180deg)}
+.row.ranked{align-items:center;gap:14px}#rankInfo{font-family:var(--serif);letter-spacing:.12em;color:#e8d4a8}
+/* ---- wallet (coins + gems): two plates in the panel style, the currency's icon large and faded behind the number ---- */
+.wallet{display:flex;gap:10px;align-items:center;font-size:inherit;letter-spacing:0;text-shadow:none}
+#menu .coins.wallet{top:22px}
+.cur{position:relative;display:inline-flex;align-items:center;gap:9px;min-width:96px;height:38px;padding:0 16px 0 10px;overflow:hidden;
+  background:linear-gradient(160deg,rgba(30,20,17,.92),rgba(12,8,8,.92));border:1px solid #4a342a;box-shadow:inset 0 0 0 3px rgba(0,0,0,.35),0 6px 18px rgba(0,0,0,.5);
+  font-family:var(--serif);font-size:17px;letter-spacing:.08em;color:#f2e6cf;clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px)}
+.cur>svg{width:22px;height:22px;flex:none;position:relative;z-index:1;filter:drop-shadow(0 0 5px rgba(0,0,0,.6))}
+.cur::after{content:"";position:absolute;right:-14px;top:50%;width:62px;height:62px;transform:translateY(-50%) rotate(-12deg);opacity:.22;background:center/contain no-repeat;pointer-events:none}
+.cur.c::after{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-12 -12 24 24'%3E%3Ccircle r='10.5' fill='%23e2a83a'/%3E%3Crect x='-2.8' y='-2.8' width='5.6' height='5.6' fill='%23000'/%3E%3C/svg%3E")}
+.cur.g::after{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-12 -12 24 24'%3E%3Cpath d='M-6-8h12l5 5.5L0 10-11-2.5z' fill='%23d8203e'/%3E%3C/svg%3E")}
+.cur.c{border-color:#5a4222}.cur.c b{color:#f6d488;text-shadow:0 0 10px rgba(242,180,60,.35)}
+.cur.g{border-color:#5a2230}.cur.g b{color:#ffb3c2;text-shadow:0 0 10px rgba(230,40,70,.4)}
+.cur b{font-weight:400;position:relative;z-index:1}.cur small{font-size:11px;letter-spacing:.2em;color:#a89880;margin-left:4px;position:relative;z-index:1}
+#coinHud{top:24px;right:34px}#coinHud .cur{height:32px;font-size:15px}
+.ico{display:inline-block;width:1em;height:1em;vertical-align:-.15em;margin-left:2px}.ico svg{width:100%;height:100%}
+#toast{display:flex;align-items:center;gap:4px}
+/* armory price: coins or gems, gem-only items marked */
+.armprice .cur{height:34px;font-size:16px;min-width:0}.armprice em{font-style:normal;font-size:12px;letter-spacing:.2em;color:#a89880;margin:0 10px;text-transform:uppercase}
+.armprice .gonly{margin-top:8px;font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:#ff9ab0}
+.arminfo .big .ico{width:18px;height:18px;vertical-align:-4px;margin-left:6px}
+.arminfo .gemb{margin-top:8px;border-color:#6a2236}
+/* achievements: 8 x 6, a gem marker on feats that pay gems, reward line on the card */
+#achTiles{grid-template-columns:repeat(8,60px);grid-auto-rows:60px;gap:10px;max-height:470px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#5a3a2a transparent}
+.atile b{font-size:30px}.atile svg{width:24px;height:24px}
+.atile .tg{position:absolute;right:3px;top:3px;width:13px;height:13px;text-decoration:none;opacity:.9}.atile .tg svg{width:13px;height:13px;color:inherit;opacity:1}
+.achcard .rw{position:relative;display:flex;align-items:center;gap:10px;margin:0 0 14px;font-family:var(--serif);font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:#a89880}
+.achcard .rw .cur{height:32px;font-size:15px;min-width:0}
+@media (max-width:900px){#achTiles{grid-template-columns:repeat(8,38px);grid-auto-rows:38px;gap:6px}.atile b{font-size:20px}.cur{height:32px;min-width:0;font-size:14px}}

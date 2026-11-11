@@ -42,7 +42,7 @@ function canvasTex(w, h, draw, srgb = true) {
   const t = new THREE.CanvasTexture(c); if (srgb) t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
 }
 const TX = {};
-function tex(name) {
+export function tex(name) {
   if (TX[name]) return TX[name];
   const R = Math.random;
   const mk = {
@@ -68,7 +68,7 @@ function mistTex() {
   const g = x.createRadialGradient(32, 32, 0, 32, 32, 32); g.addColorStop(0, 'rgba(255,255,255,0.9)'); g.addColorStop(0.5, 'rgba(255,255,255,0.35)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 64, 64);
   return _mistTex = new THREE.CanvasTexture(c);
 }
-function mat(name) {
+export function mat(name) {
   if (MAT[name]) return MAT[name];
   const S = (o) => new THREE.MeshStandardMaterial(o);
   const m = {
@@ -85,6 +85,7 @@ function mat(name) {
 }
 
 // =====================================================================================
+const HGRID = { res: 0.5, pad: 8 };   // cached height grid: cell size (m), margin past the world bounds (m)
 export class World {
   constructor(scene, opts) {
     this.scene = scene; this.group = new THREE.Group(); scene.add(this.group);
@@ -96,14 +97,30 @@ export class World {
     this.fogRange = opts.fogRange || 60; this.night = !!opts.night;
   }
   // ---------- terrain ----------
-  bump(x, z, r, h) { this.bumps.push({ x, z, r, h }); }
-  flat(x, z, hx, hz, h, rot = 0) { this.flats.push({ x, z, hx, hz, h, c: Math.cos(rot), s: Math.sin(rot) }); }   // levelled pad (house plots, plazas)
+  bump(x, z, r, h) { this.bumps.push({ x, z, r, h }); this.hc = null; }
+  flat(x, z, hx, hz, h, rot = 0) { this.flats.push({ x, z, hx, hz, h, c: Math.cos(rot), s: Math.sin(rot) }); this.hc = null; }   // levelled pad (house plots, plazas)
+  // terrain height. Game-time queries (many per frame per fighter / prop) read a lazily filled 0.5 m height grid with bilinear
+  // interpolation instead of summing every bump and pad; the grid is dropped whenever the relief changes. Bridges stay exact.
   ground(x, z, noBridge = false) {
+    if (noBridge) return this.groundRaw(x, z, true);
+    let y = this.groundCached(x, z);
+    for (const b of this.bridges) { const dx = x - b.x, dz = z - b.z, la = dx * b.c - dz * b.s, lb = dx * b.s + dz * b.c; if (Math.abs(la) < b.len / 2 && Math.abs(lb) < b.w / 2) y = Math.max(y, b.flat ? b.h : b.h * Math.cos(Math.PI * la / b.len) * 0.9 + 0.35); }
+    return y;
+  }
+  groundCached(x, z) {
+    const R = HGRID.res, H = this.half + HGRID.pad, n = Math.ceil(2 * H / R) + 1;
+    if (!this.hc) { this.hc = new Float32Array(n * n).fill(NaN); }
+    const gx = (x + H) / R, gz = (z + H) / R, i = Math.floor(gx), j = Math.floor(gz);
+    if (i < 0 || j < 0 || i >= n - 1 || j >= n - 1) return this.groundRaw(x, z, false);
+    const c = this.hc, v = (a, b) => { const k = b * n + a; let h = c[k]; if (h !== h) h = c[k] = this.groundRaw(a * R - H, b * R - H, false); return h; };
+    const u = gx - i, w = gz - j;
+    return (v(i, j) * (1 - u) + v(i + 1, j) * u) * (1 - w) + (v(i, j + 1) * (1 - u) + v(i + 1, j + 1) * u) * w;
+  }
+  groundRaw(x, z, noBridge) {
     let y = 0;
     for (const b of this.bumps) { const d = Math.hypot(x - b.x, z - b.z); if (d < b.r) y += b.h * (0.5 + 0.5 * Math.cos(Math.PI * d / b.r)); }
-    if (this.water) { const w = this.water, d = Math.abs(this.riverDist(x, z)); if (d < w.width) { const k = 1 - d / w.width; y -= w.depth * Math.min(1, k * 1.6); } }
+    if (this.water) { const w = this.water, d = Math.abs(this.riverDist(x, z)); if (d < w.width) { const k = 1 - d / w.width; y -= w.depth * Math.min(1, k * 1.6); if (!noBridge) for (const f of w.fords) if (f[2] !== undefined && x > f[0] && x < f[1]) y = Math.max(y, f[2]); } }
     for (const f of this.flats) { const dx = x - f.x, dz = z - f.z, lx = dx * f.c - dz * f.s, lz = dx * f.s + dz * f.c, ex = Math.abs(lx) - f.hx, ez = Math.abs(lz) - f.hz; if (ex < 2 && ez < 2) { const k = clamp(1 - Math.max(ex, ez, 0) / 2, 0, 1); y = y * (1 - k) + f.h * k; } }
-    if (!noBridge) for (const b of this.bridges) { const dx = x - b.x, dz = z - b.z, la = dx * b.c - dz * b.s, lb = dx * b.s + dz * b.c; if (Math.abs(la) < b.len / 2 && Math.abs(lb) < b.w / 2) y = Math.max(y, b.h * Math.cos(Math.PI * la / b.len) * 0.9 + 0.35); }
     return y;
   }
   riverDist(x, z) { const w = this.water; return z - (w.z + Math.sin(x * w.f) * w.amp); }   // signed distance-ish to the river centre line
@@ -361,12 +378,12 @@ export class World {
     for (let x = cx - hx; x <= cx + hx; x += 3) for (let z = cz - hz; z <= cz + hz; z += 3) if (!(clear && clear(x, z)) && !this.inWater(x, z)) this.bush(x, z, 2.2, 1.05, 0.55, 'grass');
   }
   river(z, amp, f, width, depth, half) {
-    this.water = { z, amp, f, width, depth, fords: [] };
+    this.water = { z, amp, f, width, depth, fords: [] }; this.hc = null;
     const geo = new THREE.PlaneGeometry(half * 2, 1, 160, 1); geo.rotateX(-Math.PI / 2); const P = geo.attributes.position;
     for (let i = 0; i < P.count; i++) { const x = P.getX(i), side = P.getZ(i) > 0 ? 1 : -1; P.setZ(i, z + Math.sin(x * f) * amp + side * width * 0.62); P.setY(i, -depth * 0.45); }
     geo.computeVertexNormals();
     const wt = tex('water'); wt.repeat.set(30, 2);
-    const m = new THREE.MeshStandardMaterial({ color: 0x4a7a8a, roughness: 0.06, metalness: 0.35, transparent: true, opacity: 0.85, map: wt, envMapIntensity: 1.8 });
+    const m = new THREE.MeshStandardMaterial({ color: 0x4a7a8a, roughness: 0.2, metalness: 0.25, transparent: true, opacity: 0.85, map: wt, envMapIntensity: 1.1 });
     const mesh = new THREE.Mesh(geo, m); mesh.receiveShadow = true; this.group.add(mesh);
     this.updaters.push(dt => { wt.offset.x += dt * 0.05; return true; });
   }

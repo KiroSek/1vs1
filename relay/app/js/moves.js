@@ -97,16 +97,32 @@ export const MOVES = {
   // ---- deathblow (cinematic lunge stab and pull-out) ----
   deathblow: { segs: [['Sword_Heavy_A', 0.3, 0.45, 0.6], ['Sword_Heavy_A', 0.45, 0.52, 0.2], ['Sword_Heavy_A', 0.52, 0.73, 0.55], ['Sword_Heavy_A_Rec', 0.1, 1.0, 0.55]],
     hit: [0.72, 0.8], cancel: 1.75, track: 0, lunge: [0.45, 0.72, 0.45], kind: 'deathblow', range: 3 },
+  // ---- polearm (naginata / bisento) set, survival bosses: the body clip only moves the legs and torso, the shaft and both
+  // arms follow the keyframes in POLE_ANIM (fighter.js) from the low two-handed stance
+  pJab: { segs: [['Sword_Light_A', 0, 0.17, 0.26], ['Sword_Light_A', 0.17, 0.31, 0.1], ['Sword_Light_A', 0.31, 0.37, 0.08], ['Sword_Light_A_Rec', 0, 0.6, 0.3]],
+    hit: [0.26, 0.36], cancel: 0.46, next: 'pJab2', track: 0.3, lunge: [0.16, 0.4, 0.9], dmg: 9, post: 14, hitPost: 8, deflPost: 16, range: 3.0, kind: 'jab' },
+  pJab2: { segs: [['Sword_Light_B', 0, 0.2, 0.3], ['Sword_Light_B', 0.2, 0.34, 0.1], ['Sword_Light_B', 0.34, 0.42, 0.08], ['Sword_Light_B_Rec', 0, 0.6, 0.34]],
+    hit: [0.3, 0.4], cancel: 0.5, next: 'pRise', track: 0.3, lunge: [0.18, 0.44, 1.1], dmg: 10, post: 15, hitPost: 8, deflPost: 16, range: 3.1, kind: 'jab' },
+  pRise: { segs: [['Sword_UpperCut', 0, 0.2, 0.36], ['Sword_UpperCut', 0.2, 0.36, 0.12], ['Sword_UpperCut', 0.36, 0.7, 0.3], ['Sword_Light_B_Rec', 0.1, 0.57, 0.36]],
+    hit: [0.36, 0.48], cancel: 0.66, track: 0.32, lunge: [0.12, 0.46, 1.1], dmg: 13, post: 18, hitPost: 10, deflPost: 20, range: 2.9, kind: 'slash', dir: 'up', heavy: true },
+  // overhead diagonal cleave (kesa): shaft lifted over the right shoulder, blade comes down across the front to low left -> pBack
+  pSlam: { segs: [['Sword_Heavy_A', 0, 0.35, 0.55], ['Sword_Heavy_A', 0.35, 0.53, 0.14], ['Sword_Heavy_A', 0.53, 0.73, 0.22], ['Sword_Heavy_A_Rec', 0, 1.0, 0.6]],
+    hit: [0.55, 0.69], cancel: 0.92, next: 'pBack', track: 0.48, lunge: [0.2, 0.66, 1.4], dmg: 17, post: 26, hitPost: 14, deflPost: 22, range: 3.0, kind: 'slash', dir: 'down', heavy: true, slam: 0.7 },
+  // backhand: from low left the shaft swings back across the chest to the right -> pRise
+  pBack: { segs: [['Sword_Light_B', 0, 0.2, 0.32], ['Sword_Light_B', 0.2, 0.34, 0.12], ['Sword_Light_B', 0.34, 0.42, 0.08], ['Sword_Light_B_Rec', 0, 0.6, 0.38]],
+    hit: [0.32, 0.44], cancel: 0.55, next: 'pRise', track: 0.3, lunge: [0.14, 0.42, 1.0], dmg: 11, post: 16, hitPost: 9, deflPost: 18, range: 3.0, kind: 'slash', dir: 'side' },
+  pSpin: { segs: [['Sword_Heavy_B', 0, 0.38, 0.58], ['Sword_Heavy_B', 0.38, 0.5, 0.16], ['Sword_Heavy_B_Rec', 0, 0.77, 0.62]],
+    hit: [0.56, 0.74], cancel: 1.0, track: 0.5, lunge: [0.3, 0.72, 1.5], dmg: 15, post: 24, hitPost: 12, deflPost: 26, range: 3.2, kind: 'slash', dir: 'side', heavy: true },
 };
 // Edge alignment (hasuji): roll of the blade about its own axis, relative to the base grip, so the cutting edge leads the
 // swing. The clips turn the wrist differently (Mixamo vs UAL), so each attack has its own value, measured from the blade
 // motion inside the hit window. The wrist eases into it during the wind-up (Fighter.attachSword). Thrusts / kicks: 0.
-const EDGE = { runSlash: 0.62, lungeHeavy: 0.13,slash1: 0.51, slash2: 0.1, slash3: 0.14, heavy: 0.34, heavy2: 0.27, heavy3: 0.04, counter: 0.17, dash: 0.13, heavyB: 0.28, heavyC: 0.1, leap: -0.06, crush: 0.14, uppercut: 0.27, plunge: 0.43, stepCut: 0.62, boss1: 0.22, boss2: 0.09, boss3: 0.43, sweep: 0.28, deathblow: -1.35, dashCut: 0.13};
+const EDGE = { pBack: 0, pJab: 0, pJab2: 0, pRise: 0, pSlam: 0, pSpin: 0, runSlash: 0.62, lungeHeavy: 0.13,slash1: 0.51, slash2: 0.1, slash3: 0.14, heavy: 0.34, heavy2: 0.27, heavy3: 0.04, counter: 0.17, dash: 0.13, heavyB: 0.28, heavyC: 0.1, leap: -0.06, crush: 0.14, uppercut: 0.27, plunge: 0.43, stepCut: 0.62, boss1: 0.22, boss2: 0.09, boss3: 0.43, sweep: 0.28, deathblow: -1.35, dashCut: 0.13};
 for (const k in EDGE) if (MOVES[k]) MOVES[k].edge = EDGE[k];
 // Body drive (coil -> release): which way the blade sweeps round the body in the hit window, measured from the clips
 // (+1 = toward the fighter's left, -1 = toward the right), 'down' = vertical chop. Fighter twists the spine against it
 // during the wind-up and unwinds through the cut (COIL in fighter.js). Thrusts, kicks, deathblows: none.
-const SWING = { runSlash: 1, lungeHeavy: -1, slash1: 1, slash2: -1, slash3: -1, heavy2: -1, heavy3: -1, counter: -1, dash: -1, heavyB: -1, heavyC: -1, uppercut: -1, stepCut: 1, boss1: 1, boss2: -1, sweep: -1, flameSweep: -1, heavy: 1, leap: 'down', crush: 'down', plunge: 'down', boss3: 'down', dashCut: -1 };
+const SWING = { pBack: 1, pRise: -1, pSlam: 'down', pSpin: -1, runSlash: 1, lungeHeavy: -1, slash1: 1, slash2: -1, slash3: -1, heavy2: -1, heavy3: -1, counter: -1, dash: -1, heavyB: -1, heavyC: -1, uppercut: -1, stepCut: 1, boss1: 1, boss2: -1, sweep: -1, flameSweep: -1, heavy: 1, leap: 'down', crush: 'down', plunge: 'down', boss3: 'down', dashCut: -1 };
 for (const k in SWING) if (MOVES[k]) MOVES[k].swing = SWING[k];
 export const ATTACKS = new Set(Object.keys(MOVES));
 export const moveDur = m => { m.warp = null; return m.segs.reduce((s, x) => s + x[3], 0); };

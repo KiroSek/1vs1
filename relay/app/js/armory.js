@@ -59,7 +59,8 @@ export class Armory {
   // list of entries for the tab: { key, it, have, eq }
   list(REC) {
     const W = this.tab === 'weapons', DB = W ? WEAPONS : OUTFITS, owned = W ? REC.weapons : REC.skins, eq = W ? REC.weapon : REC.skin;
-    return Object.entries(DB).filter(([k, it]) => !it.hidden).map(([key, it]) => ({ key, it, have: owned.includes(key), eq: eq === key }));
+    const rank = it => it.unlock ? 2 : !(it.price > 0) && it.gems > 0 ? 1 : 0;   // coin items first, then gem-only, then the Survival reward
+    return Object.entries(DB).filter(([k, it]) => !it.hidden).sort((a, b) => rank(a[1]) - rank(b[1])).map(([key, it]) => ({ key, it, have: owned.includes(key), eq: eq === key }));
   }
   open(REC, tab = this.tab) {
     this.active = true; this.REC = REC; this.setTab(tab);

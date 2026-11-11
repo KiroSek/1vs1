@@ -56,12 +56,12 @@ function textures() {
 // ---------------- weapons (cosmetic only: identical length, reach, damage and timing) ----------------
 export const WEAPONS = {
   standard: { name: 'Kusabimaru', desc: 'Plain steel, black iron fittings.', price: 0, blade: 'steel', fit: 0x232026, fitMetal: 0.85, wrap: '#16141a', same: '#e9e2d0', saya: 0x0c0b0e, trail: 0xdfe8ff, tsuba: 'round' },
-  kuro: { name: 'Shi no Ken', desc: 'Scarred black blade, gold chrysanthemum guard, green wrap.', price: 400, blade: 'black', worn: true, fit: 0xd0a040, fitMetal: 1, wrap: '#2f6a46', same: '#c9a24a', saya: 0x08080a, trail: 0xc0c8d8, tsuba: 'kiku', tsubaD: 0.008, kashira: 'cap', sageo: 'bow', kanji: '死の剣', W: 0.033 },
-  koi: { name: 'Koi Nami', desc: 'Worn steel, gold koi and waves on a four-lobed guard.', price: 1100, blade: 'steel', worn: true, fit: 0x14120f, fitMetal: 0.6, tsubaTex: 'koi', wrap: '#7c7a74', same: '#6a6862', tsuka: 'rings', ringCol: 0xc8a050, saya: 0x0b0a0c, sayaTex: 'waves', trail: 0xe8dcc0, tsuba: 'mokko', tsubaR: 1.12, kashira: 'long', SORI: 0.03 },
-  crimson: { name: 'Crimson Moon', desc: 'Blood-red steel under a crescent-moon guard.', price: 900, blade: 'red', glow: 0xff2a14, fit: 0x1a0c0c, fitMetal: 0.7, wrap: '#7a0c10', same: '#120a0a', saya: 0x3a0606, trail: 0xff5040, tsuba: 'crescent', tsubaR: 1.1, W: 0.036, moon: true },
-  gilded: { name: 'Gilded Lotus', desc: 'Pierced eight-petal guard, golden temper line, gold-dotted wrap.', price: 1200, blade: 'gold', fit: 0xb9b6ae, fitMetal: 1, wrap: '#4a3424', same: '#3a2818', menukiRow: true, saya: 0x3a2416, bands: 3, trail: 0xffd27a, tsuba: 'sukashi8', tsubaR: 1.15, kashira: 'disk' },
-  frost: { name: 'Frostbite', desc: 'Ice-pale blade that glows cold, snowflake guard, scaled scabbard.', price: 1800, blade: 'ice', glow: 0x6ad0ff, fit: 0xc8d4de, fitMetal: 1, wrap: '#1c3a5a', same: '#dfe8f0', saya: 0x9fb4c8, sayaTex: 'scales', trail: 0x8ae0ff, tsuba: 'snow', tsubaR: 1.15 },
-  sakura: { name: 'Sakura Eda', desc: 'A blooming cherry branch for a hilt, plain wood scabbard.', price: 2000, blade: 'steel', fit: 0xb89a58, fitMetal: 1, saya: 0xd9a86a, sayaTex: 'wood', sageo: 'wrap', kanji: '桜', trail: 0xffc8dc, tsuba: 'square', tsubaR: 0.62, tsuka: 'branch' },
+  kuro: { name: 'Shi no Ken', desc: 'Scarred black blade, gold chrysanthemum guard, green wrap.', price: 400, gems: 6, blade: 'black', worn: true, fit: 0xd0a040, fitMetal: 1, wrap: '#2f6a46', same: '#c9a24a', saya: 0x08080a, trail: 0xc0c8d8, tsuba: 'kiku', tsubaD: 0.008, kashira: 'cap', sageo: 'bow', kanji: '死の剣', W: 0.033 },
+  koi: { name: 'Koi Nami', desc: 'Worn steel, gold koi and waves on a four-lobed guard.', price: 1100, gems: 14, blade: 'steel', worn: true, fit: 0x14120f, fitMetal: 0.6, tsubaTex: 'koi', wrap: '#7c7a74', same: '#6a6862', tsuka: 'rings', ringCol: 0xc8a050, saya: 0x0b0a0c, sayaTex: 'waves', trail: 0xe8dcc0, tsuba: 'mokko', tsubaR: 1.12, kashira: 'long', SORI: 0.03 },
+  crimson: { name: 'Crimson Moon', desc: 'Blood-red steel under a crescent-moon guard.', price: 900, gems: 12, blade: 'red', glow: 0xff2a14, fit: 0x1a0c0c, fitMetal: 0.7, wrap: '#7a0c10', same: '#120a0a', saya: 0x3a0606, trail: 0xff5040, tsuba: 'crescent', tsubaR: 1.1, W: 0.036, moon: true },
+  gilded: { name: 'Gilded Lotus', desc: 'Pierced eight-petal guard, golden temper line, gold-dotted wrap.', price: 1200, gems: 15, blade: 'gold', fit: 0xb9b6ae, fitMetal: 1, wrap: '#4a3424', same: '#3a2818', menukiRow: true, saya: 0x3a2416, bands: 3, trail: 0xffd27a, tsuba: 'sukashi8', tsubaR: 1.15, kashira: 'disk' },
+  frost: { name: 'Frostbite', desc: 'Ice-pale blade that glows cold, snowflake guard, scaled scabbard.', price: 1800, gems: 22, blade: 'ice', glow: 0x6ad0ff, fit: 0xc8d4de, fitMetal: 1, wrap: '#1c3a5a', same: '#dfe8f0', saya: 0x9fb4c8, sayaTex: 'scales', trail: 0x8ae0ff, tsuba: 'snow', tsubaR: 1.15 },
+  sakura: { name: 'Sakura Eda', desc: 'A blooming cherry branch for a hilt, plain wood scabbard.', price: 2000, gems: 25, blade: 'steel', fit: 0xb89a58, fitMetal: 1, saya: 0xd9a86a, sayaTex: 'wood', sageo: 'wrap', kanji: '桜', trail: 0xffc8dc, tsuba: 'square', tsubaR: 0.62, tsuka: 'branch' },
   naginata: { name: 'Naginata', desc: 'Polearm (final boss).', price: 0, hidden: true, blade: 'steel', fit: 0xb89a5a, fitMetal: 0.9, wrap: '#141214', same: '#e8e2d4', saya: 0x0c0b0e, trail: 0xdfe8ff, tsuba: 'round' },
   bisento: { name: 'Bisento', desc: 'Broad-bladed halberd (mini-boss).', price: 0, hidden: true, blade: 'steel', fit: 0x8a6a3a, fitMetal: 0.9, wrap: '#141214', same: '#c8a060', saya: 0x0c0b0e, trail: 0xffd8a0, tsuba: 'round' },
   // reward for completing Survival: a seven-branched shichishito, white hilt, gold flower guard and tassel (never sold)
@@ -69,7 +69,10 @@ export const WEAPONS = {
   // Shadow Hunt: a short blade (hira-zukuri tanto), navy cord wrap, small dark round guard, black lacquer scabbard tied with a navy cord knot
   tanto: { name: 'Tantō', desc: 'Short blade of the shadow hunter. Navy wrap, black lacquer.', price: 0, hidden: true, blade: 'steel', len: 0.3, gripL: 0.13, sayaLen: 0.33, W: 0.027, SORI: 0.006, fit: 0x3a3c42, fitMetal: 0.9, wrap: '#1d2756', same: '#262a34', saya: 0x09090b, trail: 0xc8d4ff, tsuba: 'round', tsubaR: 0.62, tsubaD: 0.004, sageo: 'knot', gold: 0x9a9ca4 },
   yari: { name: 'Yari', desc: 'Spear (enemy only).', price: 0, hidden: true, blade: 'steel', fit: 0x1c1c20, fitMetal: 0.6, wrap: '#3a1a10', same: '#2a1a10', saya: 0x0c0b0e, trail: 0xdfe8ff, tsuba: 'round' },
-  mortal: { name: 'Mortal Edge', desc: 'A cursed blade bleeding red light through a jagged guard.', price: 3000, blade: 'mortal', glow: 0xff1010, fit: 0x0b0607, fitMetal: 0.6, wrap: '#1a0606', same: '#5a0a0a', saya: 0x120404, sayaTex: 'cracks', trail: 0xff2020, tsuba: 'oni', tsubaR: 1.1, SORI: 0.018, W: 0.034 },
+  // gem-only blades
+  raijin: { name: 'Raijin no Kiba', desc: "The thunder god's fang: violet steel crackling with storm light, pierced guard.", price: 0, gems: 50, blade: 'storm', glow: 0x9a5cff, fit: 0x2a2440, fitMetal: 1, wrap: '#2a1846', same: '#c8c0e0', saya: 0x140c22, sayaTex: 'scales', trail: 0xb48cff, tsuba: 'sukashi8', tsubaR: 1.12, kashira: 'disk' },
+  ryujin: { name: 'Ryūjin', desc: "The sea dragon's blade: jade steel, gold chrysanthemum guard, wave-lacquered scabbard.", price: 0, gems: 75, blade: 'jade', glow: 0x2affb4, fit: 0xd0a040, fitMetal: 1, wrap: '#0e3a2c', same: '#d8c890', saya: 0x0a2a22, sayaTex: 'waves', trail: 0x6affc8, tsuba: 'kiku', tsubaD: 0.008, kashira: 'cap', sageo: 'bow', kanji: '龍神' },
+  mortal: { name: 'Mortal Edge', desc: 'A cursed blade bleeding red light through a jagged guard.', price: 3000, gems: 35, blade: 'mortal', glow: 0xff1010, fit: 0x0b0607, fitMetal: 0.6, wrap: '#1a0606', same: '#5a0a0a', saya: 0x120404, sayaTex: 'cracks', trail: 0xff2020, tsuba: 'oni', tsubaR: 1.1, SORI: 0.018, W: 0.034 },
 };
 const BLADES = {   // gradient spine->edge, hamon colour, shinogi line
   steel: [['#5e646c', '#9aa2ac', '#b8bfc8', '#d9dee4'], 'rgba(245,248,252,.9)'],
@@ -78,6 +81,8 @@ const BLADES = {   // gradient spine->edge, hamon colour, shinogi line
   ice: [['#7f9cb8', '#b8d4ea', '#d6ecfa', '#f2fbff'], 'rgba(255,255,255,.95)'],
   mortal: [['#0b0606', '#1e0a0a', '#2c0c0c', '#400e0e'], 'rgba(255,40,30,.95)'],
   gold: [['#5a5e64', '#8c9299', '#aeb3b8', '#cfc6a8'], 'rgba(236,190,90,.95)'],
+  storm: [['#140e22', '#2e2350', '#4a3c80', '#8478c4'], 'rgba(214,190,255,.95)'],
+  jade: [['#06201a', '#124a3a', '#22785c', '#56c49c'], 'rgba(190,255,228,.95)'],
 };
 const texCache = {};
 // blade texture, u = across (0 spine .. 1 edge), v = along (0 habaki .. 1 tip). Zones: mune / shinogi-ji (darker, brushed) /
@@ -318,7 +323,7 @@ function makePole(kind) {
   const bm = new THREE.MeshStandardMaterial({ color: 0xc8cdd4, metalness: 0.92, roughness: 0.34, envMapIntensity: 1.6, flatShading: true, side: THREE.DoubleSide });   // plain polished steel (the katana texture smears on an extruded profile)
   const blade = new THREE.Mesh(bg, bm); blade.position.z = z1 + 0.03; g.add(blade);
   g.traverse(o => { if (o.isMesh) o.castShadow = true; });
-  g.userData = { len: z1 + 0.03 + L, trail: W0.trail, baseZ: z1 + 0.05, tipZ: z1 + 0.06 + L, pole: { leftZ: 0.52 }, blade, bladeMat: bm };
+  g.userData = { len: z1 + 0.03 + L, trail: W0.trail, baseZ: z1 + 0.05, tipZ: z1 + 0.06 + L, pole: { leftZ: 0.45 }, blade, bladeMat: bm };
   return g;
 }
 function makeYari() {
@@ -511,7 +516,7 @@ export class Rope {
       const w = this.w * (1 - this.taper * i / (this.n - 1)) * 0.5, p = this.p[i];
       P.setXYZ(i * 2, p.x - side.x * w, p.y - side.y * w, p.z - side.z * w); P.setXYZ(i * 2 + 1, p.x + side.x * w, p.y + side.y * w, p.z + side.z * w);
     }
-    P.needsUpdate = true; this.mesh.geometry.computeVertexNormals(); this.mesh.geometry.computeBoundingSphere();
+    P.needsUpdate = true; if (((this.nf = (this.nf || 0) + 1) & 1) === 0) this.mesh.geometry.computeVertexNormals();   // normals every other frame; no bounds (never culled)
   }
   reset() { this.inited = false; }
   dispose(scene) { scene.remove(this.mesh); this.mesh.geometry.dispose(); }
@@ -565,14 +570,14 @@ const LOWPOLY = true;   // faceted (flat-shaded) cloth and armour, the low-poly 
 export const OUTFITS = {
   shinobi: { name: 'Shinobi', desc: 'Teal kimono, leather corset and guards, tattered scarf.', price: 0, kimono: 0x2c4644, hakama: 0x1f2a2b, under: 0x171b1c, hands: 0x2a2320, feet: 0x262422, skin: 0xb48a6e, hair: 0x141210, scarf: 0x7a3a26, sash: 0x6e4228, obiH: 0.15, obiCol: () => leather('#6e4228'), sleeveLen: 0.55, sleeveFlare: 0.035, puff: 0.07, style: 'shinobi' },
   ashina: { name: 'Ashina Samurai', desc: 'Red lacquer plates, kuwagata kabuto, fanged menpo.', price: 0, kimono: 0x221a1c, hakama: 0x1c1a20, under: 0x151416, hands: 0x1d1716, feet: 0x2a2624, skin: 0xa07a62, hair: 0x101010, armor: 0x8f1c1c, sash: 0x241a1a, sleeve: 0, puff: 0.05, sandals: [0x2a1c14, 0x8e1d1d], style: 'samurai' },
-  ronin: { name: 'Wandering Ronin', desc: 'Faded red haori, striped leg wraps, straw kasa.', price: 600, kimono: 0x2a2624, haori: 0x8c3c3a, sleeve: 0x8c3c3a, sleeveLen: 0.5, sleeveFlare: 0.06, hakama: 0x2d2b38, under: 0x2d2b38, arm: 0xb48a6e, hands: 0xb48a6e, feet: 0x4a4650, skin: 0xb48a6e, hair: 0x15120f, sash: 0xb8a283, puff: 0.075, sandals: [0x3a2418, 0x1c1410], style: 'ronin' },
-  kensei: { name: 'Kensei', desc: 'Dark kimono and hakama with the family crest.', price: 800, kimono: 0x30343c, hakama: 0x272a31, under: 0x22252b, sleeveFlare: 0.035, arm: 0xb08468, hands: 0xb08468, feet: 0xb08468, skin: 0xb08468, hair: 0x1a1512, sash: 0x1e2024, mon: true, pants: 'slim', sandals: [0x5a4230, 0x1a1410], style: 'kensei' },
-  oni: { name: 'Crimson Oni', desc: 'Oni mask, white mane, hakama licked by flames.', price: 1500, top: 'bare', torso: 0xb88a6c, kimono: 0x16151a, sleeve: 0, hakama: 0x141216, hakamaTex: () => flameHakama(), under: 0x141216, hands: 0x141214, feet: 0x1a1414, skin: 0xb88a6c, hair: 0xe8e4dc, sash: 0xa81818, obiH: 0.11, puff: 0.11, sandals: [0x2a1a14, 0xa81818], style: 'oni' },
-  bone: { name: 'Gashadokuro', desc: 'Rusted armour on a samurai who refused to die.', price: 2400, kimono: 0x2a1e18, hakama: 0x2e2018, under: 0x1e1612, hands: 0xd8ccb0, feet: 0x2a1e16, skin: 0xd8ccb0, hair: 0x1a1410, armor: 0x6a4228, sash: 0x3a1410, sleeve: 0, puff: 0.05, sandals: [0x2a1a10, 0x5a1410], style: 'bone' },
-  dragonGold: { name: 'Golden Dragon General', desc: 'Mini-boss (Survival).', hidden: true, price: 0, kimono: 0xc8781e, hakama: 0xd89a2a, under: 0x8a4a14, hands: 0x2a1e14, feet: 0xb08a3a, skin: 0xd8ceb4, hair: 0x1a1410, armor: 0xc9a040, sash: 0x2c3e7a, sleeve: 0, puff: 0.07, sandals: [0x2a1a10, 0xc9a040], style: 'dragon' },
-  dragonBlack: { name: 'Black Dragon General', desc: 'Mini-boss (Survival).', hidden: true, price: 0, kimono: 0x1a1612, hakama: 0x161310, under: 0x100e0c, hands: 0x1a1612, feet: 0xb08a3a, skin: 0xd8ceb4, hair: 0x1a1410, armor: 0xc9a040, sash: 0x2c3e7a, sleeve: 0, puff: 0.07, sandals: [0x1a1410, 0xc9a040], style: 'dragon' },
-  skullLord: { name: 'Skeleton Shogun', desc: 'Final boss (Survival).', hidden: true, price: 0, kimono: 0x2a1410, hakama: 0x221812, under: 0x1a1210, arm: 0xd8ccb0, hands: 0xd8ccb0, feet: 0x2a1e16, skin: 0xd8ccb0, hair: 0x0e0c0a, armor: 0x1e1a16, sash: 0x5a1410, sleeve: 0, puff: 0.06, sandals: [0x2a1a10, 0x5a1410], style: 'skull' },
-  kage: { name: 'Shadow Gold', desc: 'Black lacquer and gold, jingasa, red-eyed mask.', price: 3000, kimono: 0x0e0e12, hakama: 0x101014, under: 0x0c0c0e, hands: 0x101012, feet: 0xb08a3a, skin: 0x8a6a56, hair: 0x0a0a0a, armor: 0x0c0b0e, lace: 0xc9a14a, sash: 0xd9c9a0, sleeve: 0, puff: 0.05, sandals: [0x1a1410, 0xc9a14a], style: 'kage' },
+  ronin: { name: 'Wandering Ronin', desc: 'Faded red haori, striped leg wraps, straw kasa.', price: 600, gems: 8, kimono: 0x2a2624, haori: 0x8c3c3a, sleeve: 0x8c3c3a, sleeveLen: 0.5, sleeveFlare: 0.06, hakama: 0x2d2b38, under: 0x2d2b38, arm: 0xb48a6e, hands: 0xb48a6e, feet: 0x4a4650, skin: 0xb48a6e, hair: 0x15120f, sash: 0xb8a283, puff: 0.075, sandals: [0x3a2418, 0x1c1410], style: 'ronin' },
+  kensei: { name: 'Kensei', desc: 'Dark kimono and hakama with the family crest.', price: 800, gems: 10, kimono: 0x30343c, hakama: 0x272a31, under: 0x22252b, sleeveFlare: 0.035, arm: 0xb08468, hands: 0xb08468, feet: 0xb08468, skin: 0xb08468, hair: 0x1a1512, sash: 0x1e2024, mon: true, pants: 'slim', sandals: [0x5a4230, 0x1a1410], style: 'kensei' },
+  oni: { name: 'Crimson Oni', desc: 'Oni mask, white mane, hakama licked by flames.', price: 1500, gems: 18, top: 'bare', torso: 0xb88a6c, kimono: 0x16151a, sleeve: 0, hakama: 0x141216, hakamaTex: () => flameHakama(), under: 0x141216, hands: 0x141214, feet: 0x1a1414, skin: 0xb88a6c, hair: 0xe8e4dc, sash: 0xa81818, obiH: 0.11, puff: 0.11, sandals: [0x2a1a14, 0xa81818], style: 'oni' },
+  bone: { name: 'Gashadokuro', desc: 'Rusted armour on a samurai who refused to die.', price: 2400, gems: 28, kimono: 0x2a1e18, hakama: 0x2e2018, under: 0x1e1612, hands: 0xd8ccb0, feet: 0x2a1e16, skin: 0xd8ccb0, hair: 0x1a1410, armor: 0x6a4228, sash: 0x3a1410, sleeve: 0, puff: 0.05, sandals: [0x2a1a10, 0x5a1410], style: 'bone' },
+  dragonGold: { name: 'Golden Dragon General', desc: 'Gilded scale armour of the dragon generals, blue sash. A Survival mini-boss, now yours.', price: 0, gems: 80, kimono: 0xc8781e, hakama: 0xd89a2a, under: 0x8a4a14, hands: 0x2a1e14, feet: 0xb08a3a, skin: 0xd8ceb4, hair: 0x1a1410, armor: 0xc9a040, sash: 0x2c3e7a, sleeve: 0, puff: 0.07, sandals: [0x2a1a10, 0xc9a040], style: 'dragon' },
+  dragonBlack: { name: 'Black Dragon General', desc: 'Black lacquer and gold scales, the darker of the two generals.', price: 0, gems: 60, kimono: 0x1a1612, hakama: 0x161310, under: 0x100e0c, hands: 0x1a1612, feet: 0xb08a3a, skin: 0xd8ceb4, hair: 0x1a1410, armor: 0xc9a040, sash: 0x2c3e7a, sleeve: 0, puff: 0.07, sandals: [0x1a1410, 0xc9a040], style: 'dragon' },
+  skullLord: { name: 'Skeleton Shogun', desc: 'The final boss of Survival: bone, rusted iron and a crimson sash.', price: 0, gems: 120, kimono: 0x2a1410, hakama: 0x221812, under: 0x1a1210, arm: 0xd8ccb0, hands: 0xd8ccb0, feet: 0x2a1e16, skin: 0xd8ccb0, hair: 0x0e0c0a, armor: 0x1e1a16, sash: 0x5a1410, sleeve: 0, puff: 0.06, sandals: [0x2a1a10, 0x5a1410], style: 'skull' },
+  kage: { name: 'Shadow Gold', desc: 'Black lacquer and gold, jingasa, red-eyed mask.', price: 3000, gems: 35, kimono: 0x0e0e12, hakama: 0x101014, under: 0x0c0c0e, hands: 0x101012, feet: 0xb08a3a, skin: 0x8a6a56, hair: 0x0a0a0a, armor: 0x0c0b0e, lace: 0xc9a14a, sash: 0xd9c9a0, sleeve: 0, puff: 0.05, sandals: [0x1a1410, 0xc9a14a], style: 'kage' },
 };
 // hakama fading from black to red at the hem, with flame tongues (oni)
 function flameHakama() {

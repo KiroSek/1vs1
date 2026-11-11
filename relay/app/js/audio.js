@@ -99,7 +99,7 @@ function init() {
   const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
   loadSamples();
 }
-export function resume() { init(); if (ctx.state !== 'running') ctx.resume(); if (!started) { started = true; amb.play(); music.play(); } }
+export function resume() { init(); if (ctx.state !== 'running') ctx.resume(); if (!started) { started = true; amb.play(); music.play(); setTimeout(() => battle.prep(), 4000); } }
 export function setVolume(v) { vol = v; if (master) master.gain.value = v; }
 
 // positional playback: sfx.at() sets PAN (stereo -1..1) and GAINK (distance attenuation) for the calls inside it
@@ -233,7 +233,7 @@ for (const k in BANKED) { const f = BANKED[k]; sfx[k] = (...a) => { if (!f(...a)
 // base = exploration bed; perc = combat drums; layer = combat ostinato / extra voices. Starting a fight never just turns
 // the volume up: the drums swell in first, the extra layer enters on a later downbeat; when the fight ends the layer
 // leaves first and the drums thin out after it, back to the calm bed.
-const THEMES = { sakura: 'momiji', dojo: 'dojo', bamboo: 'bamboo', snow: 'winter', sv_glade: 'bamboo' };   // other maps (towns, valley, castle) -> 'town'
+const THEMES = { sakura: 'momiji', dojo: 'dojo', bamboo: 'bamboo', snow: 'winter', sv_glade: 'bamboo', sv_bamboo: 'bamboo', sv_dojo: 'dojo', sv_temple: 'dojo', sv_cave: 'winter' };   // other maps (towns, valley, castle) -> 'town'
 const BPM = { momiji: 84, dojo: 98, bamboo: 106, winter: 88, town: 110 };
 export const themeFor = map => THEMES[map] || 'town';
 const MIX = { off: [0, 0, 0], explore: [1, 0, 0], tension: [1, 0.45, 0], combat: [1, 0.9, 0.85], boss: [1, 1, 1] };
@@ -248,19 +248,22 @@ function loadTheme(name) {   // decoded at the files' own 32 kHz: ~a third less 
 const hold = (p, t) => { if (p.cancelAndHoldAtTime) p.cancelAndHoldAtTime(t); else { const v = p.value; p.cancelScheduledValues(t); p.setValueAtTime(v, t); } };
 export const music = {
   state: 'off', want: 'town', cur: null, bus: null, duckG: null, vol: 0.5, lvl: [0, 0, 0],
+  held: false,
+  hold(on) { if (on === this.held) return; this.held = on; if (on) { if (this.cur) { this.fadeOut(this.cur); this.cur = null; } } else this.play(); },   // battle music holds the map soundtrack silent
+  ensureBus() { this.bus = ctx.createGain(); this.bus.gain.value = this.vol; this.duckG = ctx.createGain(); this.bus.connect(this.duckG); this.duckG.connect(master); },
   theme(name) { if (name === this.want) return; this.want = name; this.play(); },
   set(s) { if (s === this.state) return; this.state = s; this.play(); this.mix(); },
   setVolume(v) { this.vol = v; if (this.bus) this.bus.gain.setTargetAtTime(v, ctx.currentTime, 0.1); },
   async play() {
     if (!ctx) return;
-    if (this.state === 'off') { if (this.cur) { this.fadeOut(this.cur); this.cur = null; } return; }
+    if (this.state === 'off' || this.held) { if (this.cur) { this.fadeOut(this.cur); this.cur = null; } return; }
     if (this.cur && this.cur.name === this.want) return;   // already playing (or loading) this theme
     const slot = { name: this.want }, old = this.cur; this.cur = slot; this.lvl = [0, 0, 0];
     if (old) this.fadeOut(old);   // crossfade: the old theme leaves while the new one loads in
     for (const k in LOADS) if (k !== slot.name) delete LOADS[k];   // keep only the current theme decoded (the old one is freed once it stops)
     const bufs = await loadTheme(slot.name);
     if (this.cur !== slot || !bufs) return;
-    if (!this.bus) { this.bus = ctx.createGain(); this.bus.gain.value = this.vol; this.duckG = ctx.createGain(); this.bus.connect(this.duckG); this.duckG.connect(master); }
+    if (!this.bus) this.ensureBus();
     const t = slot.t0 = ctx.currentTime + 0.1;
     slot.g = bufs.map(() => { const g = ctx.createGain(); g.gain.value = 0; g.connect(this.bus); return g; });
     slot.src = bufs.map((b, i) => { const s = ctx.createBufferSource(); s.buffer = b; s.loop = true; s.connect(slot.g[i]); s.start(t); return s; });   // one start time -> the stems stay sample-locked forever
@@ -282,6 +285,56 @@ export const music = {
     else { ramp(2, m[2], t, 1.0); ramp(1, m[1], nextBar(1.0), 1.6); }      // layer leaves first, drums thin out a bar later
     this.lvl = m.slice();
   },
+};
+
+// ---------- fight music (assets/music/<theme>_{intro,drop,fight}.ogg, made by tools/battlegen.py) ----------
+// One of the two combat themes is picked at random per match: "The Warrior's Resolve" (warrior) and "Blade of the Rising
+// Sun" (risingsun). intro = 8 bars: bars 1-4 build during the ~6 s bow; if the fight starts later only the tense half
+// (bars 5-8, introLoop) repeats. drop() fires on the intro's next beat: the one-shot clash bar (<name>_drop: crash,
+// odaiko, the band's first hit), then the seamless 48-bar fight loop right after it. The theme runs for the whole match
+// (rounds don't restart it); the location soundtrack is held silent meanwhile.
+const BATTLE = { names: ['warrior', 'risingsun'], bpm: { warrior: 168, risingsun: 160 }, introBars: 8, introLoop: 4, introLvl: 1, fightLvl: 1, fadeOut: 1.4 };
+const BLOADS = {};
+function loadBattle(name) {
+  return BLOADS[name] = BLOADS[name] || Promise.all(['intro', 'drop', 'fight'].map(async st => {
+    const a = await (await fetch(`/assets/music/${name}_${st}.ogg`)).arrayBuffer();
+    dec = dec || new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(2, 1, 32000); return dec.decodeAudioData(a);
+  })).catch(e => { console.warn('battle music load failed', name, e); delete BLOADS[name]; return null; });
+}
+export const battle = {
+  cur: null, next: null,
+  prep() { if (!this.next) { this.next = BATTLE.names[Math.random() * BATTLE.names.length | 0]; loadBattle(this.next); } },   // decode the next match's theme ahead (menu), so the bow starts with music
+  // start(): intro of a random theme (no-op if one is already running); drop(): into the fight; stop(): fade, back to the map music
+  async start(name) {
+    if (!ctx || this.cur) return; name = name || this.next || BATTLE.names[Math.random() * BATTLE.names.length | 0]; this.next = null;
+    for (const k in BLOADS) if (k !== name) delete BLOADS[k];   // keep only this theme decoded
+    const slot = this.cur = { name, dropped: false, wantDrop: false }; music.hold(true);
+    const bufs = await loadBattle(name); if (this.cur !== slot || !bufs) return;
+    if (!music.bus) music.ensureBus();
+    slot.bufs = bufs; slot.g = ctx.createGain(); slot.g.gain.value = 0; slot.g.connect(music.bus);
+    if (slot.wantDrop) { slot.wantDrop = false; this.dropNow(slot, ctx.currentTime + 0.05); return; }
+    const s = ctx.createBufferSource(); s.buffer = bufs[0]; s.loop = true; s.loopStart = bufs[0].duration * BATTLE.introLoop / BATTLE.introBars; s.loopEnd = bufs[0].duration; s.connect(slot.g); slot.t0 = ctx.currentTime + 0.05; s.start(slot.t0); slot.intro = s;
+    slot.g.gain.setTargetAtTime(BATTLE.introLvl, slot.t0, 0.6);
+  },
+  drop() {
+    const c = this.cur; if (!c) { this.start(); if (this.cur) this.cur.wantDrop = true; return; }
+    if (c.dropped) return; if (!c.bufs) { c.wantDrop = true; return; }
+    const beat = 60 / BATTLE.bpm[c.name], e = (ctx.currentTime + 0.08 - c.t0) % beat;   // next intro beat at least 80 ms away (loop region = whole bars)
+    this.dropNow(c, ctx.currentTime + 0.08 + (e > 0.01 ? beat - e : 0));
+  },
+  dropNow(c, at) {
+    c.dropped = true; const bar = 240 / BATTLE.bpm[c.name];
+    if (c.intro) { const ig = ctx.createGain(); c.intro.disconnect(); c.intro.connect(ig); ig.connect(c.g); ig.gain.setValueAtTime(1, at - 0.02); ig.gain.setTargetAtTime(0, at, 0.08); const s = c.intro; setTimeout(() => { try { s.stop(); } catch (e) { /* stopped */ } }, (at - ctx.currentTime + 1) * 1000); }
+    hold(c.g.gain, at); c.g.gain.setValueAtTime(BATTLE.fightLvl, at);
+    const d = ctx.createBufferSource(); d.buffer = c.bufs[1]; d.connect(c.g); d.start(at);
+    const f = ctx.createBufferSource(); f.buffer = c.bufs[2]; f.loop = true; f.connect(c.g); f.start(at + bar); c.fight = f; c.oneShot = d;
+  },
+  stop() {
+    const c = this.cur; if (!c) return; this.cur = null; music.hold(false);
+    if (c.g) { const t = ctx.currentTime; hold(c.g.gain, t); c.g.gain.setTargetAtTime(0, t, BATTLE.fadeOut / 3); }
+    setTimeout(() => { for (const s of [c.intro, c.oneShot, c.fight]) if (s) try { s.stop(); } catch (e) { /* stopped */ } this.prep(); }, BATTLE.fadeOut * 3000);
+  },
+  get active() { return !!this.cur; },
 };
 
 // ---------- ambience per location: streamed stereo bed (assets/amb) + weather-driven rain layer + sparse details ----------

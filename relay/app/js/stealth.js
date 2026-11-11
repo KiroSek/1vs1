@@ -2,6 +2,7 @@
 // and hearing (footsteps by gait and surface, combat, props, lures). Each observer keeps its own awareness.
 import * as THREE from 'three';
 import { MOVES } from './moves.js';
+import { MOVE_K } from './fighter.js';
 
 const V3 = THREE.Vector3;
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
@@ -31,7 +32,7 @@ export function gaitOf(f) {
   if (MOVES[f.act]) return 'attack';
   if (f.speed < 0.3) return 'still';
   if (f.crouch) return 'crouch';
-  return f.speed > 4.6 ? 'sprint' : f.speed > 2 ? 'run' : 'walk';
+  return f.speed > 4.6 * MOVE_K ? 'sprint' : f.speed > 2 * MOVE_K ? 'run' : 'walk';
 }
 export class Senses {
   constructor(world, weather, tod) { this.W = world; this.weather = weather; this.tod = tod; this.aware = 0; this.spotted = false; this.lastSeen = -99; this.lastKnown = null; this.vis = 0; this.t = 0; this.firstSpot = null; }

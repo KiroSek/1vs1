@@ -32,15 +32,15 @@
       <div class="kanji">侍</div><h1>KATANA</h1><div class="sub">DUEL</div></div>
     <div class="list nav" id="mainList">
       <button data-go="play"><i class="dia"></i><span data-i18n="m.play"></span></button>
-      <button data-go="settings"><i class="dia"></i><span data-i18n="m.options"></span></button>
-      <button data-go="ach"><i class="dia"></i><span data-i18n="m.ach"></span></button>
       <button data-go="shop"><i class="dia"></i><span data-i18n="m.armory"></span></button>
+      <button data-go="ach"><i class="dia"></i><span data-i18n="m.ach"></span></button>
+      <button data-go="settings"><i class="dia"></i><span data-i18n="m.options"></span></button>
       <button data-go="quit"><i class="dia"></i><span data-i18n="m.exit"></span></button>
     </div>
     <div class="motto" data-i18n="m.motto"></div>
   </div>
   <div class="rec" id="rec"></div>
-  <div class="coins" id="coinMenu"></div>
+  <div class="coins wallet" id="coinMenu"></div>
   <div class="mapsel"><small data-i18n="m.arena"></small><button id="mapPrev">◂</button><span id="mapName"></span><button id="mapNext">▸</button></div>
   <div class="keyfoot"><span><kbd>E</kbd><b data-i18n="k.select"></b></span><span><kbd>Esc</kbd><b data-i18n="k.back"></b></span></div>
 </div>
@@ -54,7 +54,12 @@
       <button data-go="ai" data-pv="ai"><i class="dia"></i><span data-i18n="p.ai"></span><small>(<span data-i18n="p.ai.s"></span>)</small></button>
       <button data-go="svSetup" data-pv="sv"><i class="dia"></i><span data-i18n="p.sv"></span></button>
       <button data-go="huntSetup" data-pv="hunt"><i class="dia"></i><span data-i18n="p.hunt"></span><small>(<span data-i18n="p.hunt.s"></span>)</small></button>
-      <button data-go="online" data-pv="online"><i class="dia"></i><span data-i18n="p.online"></span><small class="chips"><em data-go="online" data-i18n="p.1v1"></em> | <em data-go="teamSetup" data-i18n="p.2v2"></em></small></button>
+      <button data-go="onlineDrop" data-pv="online" class="drop"><i class="dia"></i><span data-i18n="p.online"></span><b class="caret">▾</b></button>
+      <div class="sub hidden" id="onlineSub">
+        <button data-go="online" data-pv="online"><i class="dia"></i><span data-i18n="p.1v1"></span></button>
+        <button data-go="teamSetup" data-pv="online"><i class="dia"></i><span data-i18n="p.2v2"></span></button>
+        <button data-go="ranked" data-pv="ranked"><i class="dia"></i><span data-i18n="p.ranked"></span><small id="rankLbl"></small></button>
+      </div>
       <button data-go="training" data-pv="training"><i class="dia"></i><span data-i18n="p.training"></span></button>
     </div>
     <div class="preview"><div class="pvimg" id="pvImg"></div><p id="pvDesc"></p></div>
@@ -76,7 +81,7 @@
   <button class="back" data-go="play" data-i18n="back"></button></div></div>
 <div id="svSetup" class="screen hidden"><div class="panel wide"><h2 data-i18n="m.sv"></h2><p class="msg desc" data-i18n="ss.desc"></p>
   <div class="grid2">
-    <label data-i18n="ss.map"></label><select id="sMap"><option value="sv_temple" data-i18n="map.sv_temple"></option><option value="sv_village" data-i18n="map.sv_village"></option><option value="sv_castle" data-i18n="map.sv_castle"></option><option value="sv_glade" data-i18n="map.sv_glade"></option><option value="sv_fortress" data-i18n="map.sv_fortress"></option><option value="random" data-i18n="map.random"></option></select>
+    <label data-i18n="ss.map"></label><select id="sMap"><option value="sv_dojo" data-i18n="map.sv_dojo"></option><option value="sv_cave" data-i18n="map.sv_cave"></option><option value="sv_trade" data-i18n="map.sv_trade"></option><option value="sv_bamboo" data-i18n="map.sv_bamboo"></option><option value="sv_ruins" data-i18n="map.sv_ruins"></option><option value="sv_castle" data-i18n="map.sv_castle"></option><option value="sv_fortress" data-i18n="map.sv_fortress"></option><option value="random" data-i18n="map.random"></option></select>
     <label data-i18n="ss.diff"></label><select id="sDiffSel"><option value="normal" data-i18n="gd.normal"></option><option value="hard" data-i18n="gd.hard"></option></select>
     <label data-i18n="hs.tod"></label><select id="sTod"><option value="auto" data-i18n="tod.auto"></option><option value="dusk" data-i18n="tod.dusk"></option><option value="night" data-i18n="tod.night"></option><option value="fog" data-i18n="tod.fog"></option><option value="day" data-i18n="tod.day"></option></select>
   </div>
@@ -105,9 +110,9 @@
 <div id="shop" class="screen hidden armory">
   <div class="armtop"><h2 class="hd"><svg class="mon" viewBox="-50 -50 100 100"><circle r="46" fill="none" stroke="currentColor" stroke-width="5"/><g fill="currentColor"><ellipse rx="9" ry="20" cy="-20" transform="rotate(0)"/><ellipse rx="9" ry="20" cy="-20" transform="rotate(45)"/><ellipse rx="9" ry="20" cy="-20" transform="rotate(90)"/><ellipse rx="9" ry="20" cy="-20" transform="rotate(135)"/><ellipse rx="9" ry="20" cy="-20" transform="rotate(180)"/><ellipse rx="9" ry="20" cy="-20" transform="rotate(225)"/><ellipse rx="9" ry="20" cy="-20" transform="rotate(270)"/><ellipse rx="9" ry="20" cy="-20" transform="rotate(315)"/></g><circle r="9" fill="#0d0a09" stroke="currentColor" stroke-width="4"/></svg><span data-i18n="m.armory"></span></h2>
     <div class="tabs2"><button class="t2" data-arm="weapons" data-i18n="arm.weapons"></button><button class="t2" data-arm="chars" data-i18n="arm.chars"></button></div>
-    <span class="coins in" id="coinShop"></span></div>
+    <span class="coins in wallet" id="coinShop"></span></div>
   <button class="armnav l" id="armPrev">‹</button><button class="armnav r" id="armNext">›</button>
-  <div class="arminfo"><h3 id="armName"></h3><p id="armDesc"></p><div class="armprice" id="armPrice"></div><button class="big" id="armBuy"></button></div>
+  <div class="arminfo"><h3 id="armName"></h3><p id="armDesc"></p><div class="armprice" id="armPrice"></div><button class="big" id="armBuy"></button><button class="big gemb hidden" id="armBuyGem"></button></div>
   <div id="armLocks"></div>
   <div class="keyfoot"><span><kbd>E</kbd><b id="armKey" data-i18n="k.purchase"></b></span><span><kbd>Esc</kbd><b data-i18n="k.back"></b></span></div>
 </div>
@@ -117,6 +122,7 @@
 <div id="online" class="screen hidden"><div class="panel">
   <h2 data-i18n="on.title"></h2>
   <div class="row"><button id="btnHost" class="big" data-i18n="on.create"></button></div>
+  <div class="row ranked"><button id="btnRanked" class="big" data-i18n="rk.find"></button><span id="rankInfo"></span></div>
   <div class="row split"><input id="joinCode" maxlength="4" placeholder="CODE" data-i18n-ph="on.code" autocomplete="off"><button id="btnJoin" class="big" data-i18n="on.join"></button></div>
   <label><span data-i18n="on.server"></span> <small data-i18n="on.serverHint"></small></label>
   <input id="serverUrl" placeholder="http://192.168.1.10:3000">

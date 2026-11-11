@@ -30,6 +30,23 @@ function start(port, opts = {}) {
   // Rooms: two slots + meta { mode, params, persist }. Persistent rooms (hunt / survival) survive a disconnect for
   // GRACE seconds so the same code can be used to rejoin; the remaining player receives 'peerleft' / 'peerback'.
   const GRACE = 45000;
+  // Ranked: a matchmaking queue. Two waiting players are put in a fresh 1 v 1 room; the closest ratings are paired first
+  // (the window widens the longer someone waits). Ratings themselves live on each client (Elo) and are exchanged in meta.r.
+  const queue = new Map();   // socket id -> { s, rating, t }
+  const pairQueue = () => {
+    const list = [...queue.values()].filter(q => q.s.connected); if (list.length < 2) return;
+    const now = Date.now(); let best = null;
+    for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
+      const a = list[i], b = list[j], gap = Math.abs(a.rating - b.rating), win = 150 + 25 * Math.min(now - a.t, now - b.t) / 1000;
+      if (gap <= win && (!best || gap < best.gap)) best = { a, b, gap };
+    }
+    if (!best) return; const { a, b } = best; queue.delete(a.s.id); queue.delete(b.s.id);
+    const c = newCode(), meta = { mode: 'ranked', r: [a.rating, b.rating] };
+    rooms.set(c, { slots: [a.s.id, b.s.id], meta, started: true });
+    [a, b].forEach((q, i) => { q.s.join(c); q.s.data.room = c; q.s.data.slot = i; q.s.emit('matched', { code: c, slot: i, meta }); });
+    io.to(c).emit('start', { meta });
+  };
+  setInterval(pairQueue, 2000).unref();
   io.on('connection', s => {
     // never let a malformed message take the relay down
     const safe = fn => (...a) => { try { fn(...a); } catch (e) { console.error('handler error', e && e.message); } };
@@ -53,6 +70,8 @@ function start(port, opts = {}) {
       const slots = Array(size).fill(null); slots[0] = s.id; rooms.set(c, { slots, meta: meta || {}, started: false });
       s.join(c); s.data.room = c; s.data.slot = 0; cb({ ok: true, code: c, slot: 0, meta: meta || {} });
     });
+    s.on('queue', (d, cb) => { leave(); queue.set(s.id, { s, rating: Math.max(0, Math.min(4000, +(d && d.rating) || 1000)), t: Date.now() }); if (typeof cb === 'function') cb({ ok: true, waiting: queue.size }); pairQueue(); });
+    s.on('unqueue', () => queue.delete(s.id));
     s.on('join', (c, cb) => {
       if (typeof cb !== 'function') return; c = String(c || '').toUpperCase().trim(); const r = rooms.get(c);
       if (!r) return cb({ ok: false, err: 'Room not found' });
@@ -71,8 +90,8 @@ function start(port, opts = {}) {
       if (typeof d.to === 'number' && r.slots[d.to]) io.to(r.slots[d.to]).emit('tm', m); else s.to(c).emit('tm', m); });
     s.on('meta', m => { const r = s.data.room && rooms.get(s.data.room); if (r && s.data.slot === 0) r.meta = { ...r.meta, ...m }; });
     // relay everything else to the other player in the room
-    s.onAny((ev, d) => { if (ev === 'create' || ev === 'join' || ev === 'meta' || ev === 'tm' || ev === 'tmstart') return; if (s.data.room) s.to(s.data.room).emit(ev, d); });
-    s.on('disconnect', leave);
+    s.onAny((ev, d) => { if (ev === 'create' || ev === 'join' || ev === 'meta' || ev === 'tm' || ev === 'tmstart' || ev === 'queue' || ev === 'unqueue') return; if (s.data.room) s.to(s.data.room).emit(ev, d); });
+    s.on('disconnect', () => { queue.delete(s.id); leave(); });
   });
 
   return new Promise((resolve, reject) => {

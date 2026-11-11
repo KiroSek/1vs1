@@ -4,20 +4,28 @@
 import * as THREE from 'three';
 import { MOVES } from '../moves.js';
 import { AI } from '../ai.js';
-import { sfx, music } from '../audio.js';
+import { sfx, music, battle } from '../audio.js';
 import { SV_MAPS } from '../maps.js';
 import { Flasks, Shuriken, ITEMS } from './svitems.js';
 import { BossAbilities } from './svabil.js';
 
 const V3 = THREE.Vector3;
+const setH = (el, h) => { if (el && el._h !== h) { el._h = h; el.innerHTML = h; } };   // HUD: touch the DOM only when the text changes
 const rnd = (a, b) => a + Math.random() * (b - a);
 const pick = a => a[Math.random() * a.length | 0];
 const pickW = w => { let s = 0; for (const k in w) s += w[k]; let r = Math.random() * s; for (const k in w) { r -= w[k]; if (r <= 0) return k; } return Object.keys(w)[0]; };
 
+// gems for clearing all ten waves, by difficulty (plus the usual coins)
+export const SV_GEMS = { normal: 40, hard: 60 };
+const NAV = { repath: 1.2, near: 2.5 };   // enemy pathing around cover: re-plan interval (s), no pathing closer than this (m)
+const _a = new V3(), _b = new V3(), _up = new V3(0, 1, 0);
+// AI move weights for the polearm bosses (the level's sword moves switched off)
+const POLE_MOVES = { slash: 0, heavy: 0, heavyB: 0, kick: 0, uppercut: 0, leap: 0, crush: 0, grab: 0, thrust: 1, dash: 1.5, sweep: 1.5, pJab: 3, pSpin: 2, pRise: 1.5, pSlam: 2.2 };
 export const SV = {
   netRate: 1 / 15, maxAlive: 6, spawnGap: [3.5, 6], groupSize: [1, 3], clearPause: 2.2, pickTime: 25, introTime: 3.2,
   reviveTime: 3.2, reviveRange: 1.8, riseHp: 0.4, respawnHp: 0.5, bossEvery: 10, miniEvery: 5, removeAfter: 3.5,
-  tokens: (n) => n <= 3 ? 1 : n <= 7 ? 2 : 3,              // simultaneous attackers per player: the rest circle, flank and wait their turn
+  tokens: (n) => n >= 8 ? 2 : 1,                          // simultaneous attackers per player (mini-bosses included): the rest circle, flank and wait their turn
+  dir: { gap: 0.9, holdMax: 3.2, cool: [1.8, 3.4], ring: 4.8, ring2: 0.8 },   // token handover gap (s), max time a token is held, cooldown after an attack, waiting ring radius (+ second ring)
   final: 10,                                              // the run ends when the wave-10 boss falls
 };
 // ---------------------------------------------------------------- enemy archetypes
@@ -36,15 +44,15 @@ export const ETYPES = {
   elite: { name: 'Shadow Elite', look: ['kage', 'mortal'], hp: 120, post: 130, scale: 1.02, tempo: 1.1, speed: 1.1, dmg: 1.15, level: 2, cost: 3.2, from: 6,
     ai: { deflect: 0.75, react: 0.9, feint: 0.4, punish: 0.9, mobility: 0.6 }, moves: { slash: 5, heavyB: 1.5, thrust: 1.5, uppercut: 1.2, dash: 1, sweep: 0.8 } },
   oniGeneral: { name: 'Golden Dragon General', boss: 'mini', look: ['dragonGold', 'bisento'], tint: null, reach: 1.35, hp: 420, post: 240, scale: 1.3, tempo: 0.95, speed: 0.95, dmg: 1.5, level: 2, armor: 'attack',
-    ai: { react: 0.78, deflect: 0.6, aggr: 0.6, feint: 0.3, punish: 0.8 }, moves: { heavy: 2, heavyB: 2, sweep: 2, thrust: 1.5, dash: 2.5, slash: 1.5 },   // reads timings, parries well, quick lunges
-    phases: [{ at: 0.5, tempo: 1.18, ai: { aggr: 0.8, feint: 0.45 }, moves: { leap: 2.5, sweep: 2.5, dash: 3 }, aura: 0xff3010 }] },
+    ai: { react: 0.78, deflect: 0.6, aggr: 0.6, feint: 0.3, punish: 0.8 }, moves: POLE_MOVES,   // naginata/bisento set: jab chain, rising cut, spin, overhead slam, low sweep
+    phases: [{ at: 0.5, tempo: 1.18, ai: { aggr: 0.8, feint: 0.45 }, moves: { pSlam: 2.5, pSpin: 2.5, sweep: 2, dash: 2.5 }, aura: 0xff3010 }] },
   oniGeneral2: { name: 'Black Dragon General', boss: 'mini', look: ['dragonBlack', 'bisento'], tint: null, reach: 1.35, hp: 420, post: 240, scale: 1.3, tempo: 1, speed: 1, dmg: 1.45, level: 2, armor: 'attack',
-    ai: { react: 0.78, deflect: 0.6, aggr: 0.6, feint: 0.3, punish: 0.8 }, moves: { heavy: 2, heavyB: 2, sweep: 2, thrust: 1.5, dash: 2.5, slash: 1.5 },   // reads timings, parries well, quick lunges
-    phases: [{ at: 0.5, tempo: 1.18, ai: { aggr: 0.8, feint: 0.45 }, moves: { leap: 2.5, sweep: 2.5, dash: 3 }, aura: 0xff3010 }] },
+    ai: { react: 0.78, deflect: 0.6, aggr: 0.6, feint: 0.3, punish: 0.8 }, moves: POLE_MOVES,   // naginata/bisento set: jab chain, rising cut, spin, overhead slam, low sweep
+    phases: [{ at: 0.5, tempo: 1.18, ai: { aggr: 0.8, feint: 0.45 }, moves: { pSlam: 2.5, pSpin: 2.5, sweep: 2, dash: 2.5 }, aura: 0xff3010 }] },
   sawSaint: { name: 'Skeleton Shogun', boss: 'major', look: ['skullLord', 'naginata'], tint: null, reach: 1.45, hp: 1100, post: 320, scale: 1.22, tempo: 1, speed: 1.05, dmg: 1.45, level: 2, armor: 'attack',
-    ai: { react: 0.85, deflect: 0.7, aggr: 0.6, feint: 0.35, punish: 0.9, mobility: 0.55 }, moves: { slash: 4, boss1: 2.5, thrust: 1.2, uppercut: 1, dash: 1 },
-    phases: [{ at: 0.66, tempo: 1.12, ai: { aggr: 0.7, feint: 0.45 }, moves: { flameSweep: 2, boss1: 3, dash: 2 }, aura: 0xff9a3a },
-      { at: 0.33, tempo: 1.25, ai: { aggr: 0.82, deflect: 0.8, feint: 0.55, mobility: 0.8 }, moves: { flameSweep: 2.5, thrust: 2.5, leap: 2, boss1: 3 }, aura: 0xff2a1a }] },
+    ai: { react: 0.85, deflect: 0.7, aggr: 0.6, feint: 0.35, punish: 0.9, mobility: 0.55 }, moves: { ...POLE_MOVES, boss1: 1.5, pSlam: 1 },
+    phases: [{ at: 0.66, tempo: 1.12, ai: { aggr: 0.7, feint: 0.45 }, moves: { flameSweep: 2, boss1: 2, pSpin: 2, dash: 2 }, aura: 0xff9a3a },
+      { at: 0.33, tempo: 1.25, ai: { aggr: 0.82, deflect: 0.8, feint: 0.55, mobility: 0.8 }, moves: { flameSweep: 2.5, pJab: 2.5, pSlam: 2, boss1: 2.5 }, aura: 0xff2a1a }] },
 };
 // ---------------------------------------------------------------- upgrades
 // stat: applied to the player's fighter by apply(). team: affects the partner too.
@@ -145,6 +153,21 @@ export class Survival {
     const e = { id, type, T, f, ai, role: T.role || 'any', target: null, deadT: 0, phase: 0, lastHitBy: null, aura: null };
     this.enemies.set(id, e); return e;
   }
+  // walk around cover: when the straight line to the goal (anchor or target) is blocked by walls, carts, rocks or water,
+  // follow an A* path over the arena's nav grid instead (re-planned every NAV.repath s); a stuck enemy side-steps
+  steer(e, inp, goal, dt) {
+    if (inp.move.lengthSq() < 0.01 || MOVES[e.f.act]) return;
+    const f = e.f, N = e.nav || (e.nav = { t: 0, path: null, stuck: 0, last: f.pos.clone(), side: 1, det: 0 }), d = Math.hypot(goal.x - f.pos.x, goal.z - f.pos.z);
+    N.t -= dt;
+    if (N.t <= 0) { N.t = NAV.repath; _a.set(f.pos.x, f.pos.y + 1, f.pos.z); _b.set(goal.x, f.pos.y + 1, goal.z);
+      N.path = d > NAV.near && (this.W.los(_a, _b, 0.6).blocked || (this.W.water && this.W.inWater((f.pos.x + goal.x) / 2, (f.pos.z + goal.z) / 2))) ? this.W.findPath(f.pos, goal) : null; }
+    if (N.path && N.path.length) {
+      while (N.path.length > 1 && Math.hypot(N.path[0].x - f.pos.x, N.path[0].z - f.pos.z) < 1.1) N.path.shift();
+      const q = N.path[0], qx = q.x - f.pos.x, qz = q.z - f.pos.z, qd = Math.hypot(qx, qz) || 1; inp.move.set(qx / qd, 0, qz / qd);
+    }
+    if ((N.stuck += dt) > 1) { if (f.pos.distanceTo(N.last) < 0.35) { N.det = 0.7; N.side = -N.side; N.t = 0; } N.stuck = 0; N.last.copy(f.pos); }
+    if (N.det > 0) { N.det -= dt; inp.move.applyAxisAngle(_up, N.side * 1.2); }
+  }
   players() { const a = [this.c.G.me]; if (this.mate) a.push(this.mate); return a; }
   alivePlayers() { return this.players().filter(p => !p.dead && !p.downed); }
   // ================= director: targets, attack tokens, roles, anchors =================
@@ -158,24 +181,43 @@ export class Survival {
       for (const p of pl) { const d = Math.hypot(p.pos.x - e.f.pos.x, p.pos.z - e.f.pos.z), s = d + load.get(p) * 3 + (e.target === p ? -2 : 0); if (s < bs) { bs = s; best = p; } }
       e.target = best; load.set(best, load.get(best) + (e.T.boss ? 3 : 1));
     }
-    // per target: hand out attack tokens to the closest, give the rest roles
+    // per target: attack tokens. A token is held for one attack (plus its combo); after it the enemy cools down and the
+    // next token is handed out only after a short gap, so blows come one after another instead of all at once. Those
+    // without a token wait on a ring around the player, spread evenly, walking (no sprinting at the player).
+    const now = this.t, D = SV.dir;
     for (const p of pl) {
       const group = live.filter(e => e.target === p).sort((a, b) => a.f.pos.distanceTo(p.pos) - b.f.pos.distanceTo(p.pos));
-      let tokens = SV.tokens(this.wave), heavyBusy = false;
-      group.forEach((e, i) => {
-        const busy = MOVES[e.f.act];   // an enemy mid-swing keeps its token
-        let attack = busy || (tokens > 0 && (e.T.boss || e.role !== 'keep' || i === 0));
-        if (e.role === 'pressure') { attack = attack && !heavyBusy; heavyBusy = heavyBusy || attack; }
-        if (attack) tokens--;
-        e.ai.allowAttack = !!attack || !!e.T.boss;
-        if (e.ai.allowAttack) { e.ai.anchor = null; return; }
-        const toE = new V3(e.f.pos.x - p.pos.x, 0, e.f.pos.z - p.pos.z).normalize(), ang = Math.atan2(toE.x, toE.z);
-        let a = ang, r = 4.6;
-        if (e.role === 'flank') { a = Math.atan2(-p.fwd.x, -p.fwd.z) + (i % 2 ? 0.9 : -0.9); r = 3.4; }        // circle behind the target
-        else if (e.role === 'keep') r = 4.2;                                                                    // spear: hold the line at reach
-        else a = ang + ((i % 3) - 1) * 0.55;                                                                     // spread around the target
-        const q = new V3(p.pos.x + Math.sin(a) * r, 0, p.pos.z + Math.cos(a) * r); this.W.bounds(q, 0.5); e.ai.anchor = q;
+      const cap = SV.tokens(this.wave); let held = 0, heavyBusy = false;
+      p.tokGap = p.tokGap ?? 0;
+      // 1) current holders: keep the token while swinging, release it after the swing (or after holdMax) with a cooldown
+      for (const e of group) {
+        if (!e.tok) continue;
+        const busy = !!MOVES[e.f.act]; if (busy) e.swung = true;
+        if ((e.swung && !busy) || (now - e.tokAt > D.holdMax && !busy) || e.f.dead) { e.tok = false; e.swung = false; e.tokCd = now + D.cool[0] + Math.random() * (D.cool[1] - D.cool[0]); p.tokGap = now + D.gap; }
+        else { held++; if (e.role === 'pressure') heavyBusy = true; }
+      }
+      // 2) hand out free tokens, one per gap: mini-bosses first, then the nearest (only the final boss never waits)
+      const major = group.find(e => e.T.boss === 'major' && !e.f.dead), bossBusy = major && (MOVES[major.f.act] || major.abil) && major.f.pos.distanceTo(p.pos) < 6;
+      for (const e of [...group].sort((a, b) => (b.T.boss ? 1 : 0) - (a.T.boss ? 1 : 0))) {
+        if (e.tok || e.T.boss === 'major' || bossBusy) continue;
+        if (held >= cap || now < p.tokGap || now < (e.tokCd || 0)) continue;
+        if (e.role === 'pressure' && heavyBusy) continue;
+        if (e.role === 'keep' && group.indexOf(e) !== 0 && held > 0) continue;   // spears poke from the line, they do not join a crowd
+        e.tok = true; e.tokAt = now; e.swung = false; held++; p.tokGap = now + D.gap; if (e.role === 'pressure') heavyBusy = true;
+      }
+      // 3) everyone else: a slot on the waiting ring, spread evenly around the player (flankers prefer the back)
+      const wait = group.filter(e => !e.tok && e.T.boss !== 'major'), k = wait.length;
+      const ang = e => Math.atan2(e.f.pos.x - p.pos.x, e.f.pos.z - p.pos.z);
+      wait.sort((a, b) => ang(a) - ang(b));
+      const base = k ? ang(wait[0]) : 0;
+      wait.forEach((e, i) => {
+        let a = base + (i / Math.max(1, k)) * Math.PI * 2, r = D.ring + (i % 2) * D.ring2;
+        if (e.role === 'flank') { a = Math.atan2(-p.fwd.x, -p.fwd.z) + (i % 2 ? 0.8 : -0.8); r = D.ring - 0.6; }
+        else if (e.role === 'keep') r = D.ring - 0.3;
+        const q = new V3(p.pos.x + Math.sin(a) * r, 0, p.pos.z + Math.cos(a) * r); this.W.bounds(q, 0.5);
+        e.ai.allowAttack = false; e.ai.anchor = q; e.ai.calm = true;
       });
+      for (const e of group) if (e.tok || e.T.boss === 'major') { e.ai.allowAttack = true; e.ai.anchor = null; e.ai.calm = false; }
     }
   }
   // ================= combat =================
@@ -253,12 +295,13 @@ export class Survival {
     const c = this.c; c.G.slow = 0.25; c.G.slowT = 1.6; c.fx.finisher(e.f.hitPoint, new V3(0, 1, 0)); c.fx.ring(e.f.pos.clone().setY(e.f.pos.y + 0.3), 7, 1, 0xffd27a);
     this.shockwave(e.f.pos, 4); sfx.victory(); c.banner('討', '#ffd870', true); c.$('bossBar').style.display = 'none';
     c.rig.startCine({ type: 'orbit', f: e.f, ang: c.rig.yaw, r: 5, dur: 2.4 });
-    const coins = e.T.boss === 'major' ? 200 : 90; c.addCoins(coins); this.res += 1; this.bossReward = true;
+    const coins = e.T.boss === 'major' ? 200 : 90; c.addCoins(coins); c.ach.add('bossKills'); this.res += 1; this.bossReward = true;
   }
   // ================= frame =================
   step(dt, rawDt, live) {
     const c = this.c, G = c.G, me = G.me;
     this.t += dt; this.phaseT += rawDt; this.stats.time += rawDt;
+    if (!this.over) { battle.start(); if (this.phase === 'fight' || this.wave > 1) battle.drop(); }   // fight music: intro while wave 1 gathers, then the drive
     if (this.titleT > 0 && (this.titleT -= rawDt) <= 0) c.$('title').classList.remove('show');
     // target: chosen by the player via lock-on
     const alive = [...this.enemies.values()].filter(e => !e.f.dead);
@@ -292,6 +335,7 @@ export class Survival {
       if (f.dead) { e.deadT += rawDt; if (e.deadT > SV.removeAfter) this.removeEnemy(e); f.update(dt, null, null); continue; }
       const tgt = e.target && !e.target.dead && !e.target.downed ? e.target : this.alivePlayers()[0];
       const inp = tgt && this.phase !== 'over' ? (this.abil.step(e, dt, tgt) ? c.noInput : e.ai.think(dt, tgt)) : c.noInput;   // a boss busy with an ability (or holding after a Hook Pull) does not attack
+      if (inp !== c.noInput && tgt) this.steer(e, inp, e.ai.anchor || tgt.pos, dt);
       f.update(dt, inp, tgt || null); f.lastTgt = tgt;
       for (const k of ['light', 'heavy', 'dodge', 'finisher', 'jump']) if (inp[k]) inp[k] = Math.max(0, inp[k] - dt);
       c.fighterEvents(f);
@@ -322,7 +366,14 @@ export class Survival {
     const best = c.REC.svBest || {}; if (this.wave > (best[this.p.map] || 0)) { best[this.p.map] = this.wave; c.REC.svBest = best; c.saveRec(); }
     c.addCoins(10 + this.wave * 4);
     c.ach.max('svWave', this.wave);
-    if (this.wave >= SV.final) { c.ach.max('svCleared', 1); c.REC.svCleared = true; if (!c.REC.weapons.includes('onisbane')) { c.REC.weapons.push('onisbane'); c.toast(c.t('sv.reward')); } c.saveRec(); setTimeout(() => this.end(c.t('sv.victory')), 1500); }   // run complete
+    if (this.wave >= SV.final) { this.clearReward(); setTimeout(() => this.end(c.t('sv.victory')), 1500); }   // run complete
+  }
+  // all ten waves survived (host and co-op partner alike): Oni's Bane, gems by difficulty (SV_GEMS), clear feats
+  clearReward() {
+    const c = this.c; if (this.paid) return; this.paid = true;
+    c.ach.max('svCleared', 1); c.REC.svCleared = true; if (!c.REC.weapons.includes('onisbane')) { c.REC.weapons.push('onisbane'); c.toast(c.t('sv.reward')); }
+    const hard = this.p.diff === 'hard'; this.gemsWon = c.addGems(hard ? SV_GEMS.hard : SV_GEMS.normal);
+    if (hard) c.ach.add('svHard'); if (this.online) c.ach.add('svCoop'); c.saveRec();
   }
   removeEnemy(e) {
     this.enemies.delete(e.id); e.f.dispose();
@@ -342,7 +393,7 @@ export class Survival {
     const c = this.c, me = c.G.me, m = this.mate, pr = c.$('prompt');
     if (!m || !m.downed || me.downed || me.dead) { this.reviveP = 0; if (!me.downed) pr.style.display = 'none'; return; }
     const d = Math.hypot(m.pos.x - me.pos.x, m.pos.z - me.pos.z);
-    if (d > SV.reviveRange) { this.reviveP = 0; pr.style.display = 'block'; pr.innerHTML = c.t('sv.mateDown', { s: Math.ceil(m.bleed) }); return; }
+    if (d > SV.reviveRange) { this.reviveP = 0; pr.style.display = 'block'; setH(pr, c.t('sv.mateDown', { s: Math.ceil(m.bleed) })); return; }
     const holding = c.isDown('interact') && me.act === 'idle';
     if (holding && this.t - this.lastHitT > 0.3) { this.reviveP += dt * (1 + (this.mods.revive || 0)); me.locoV.set(0, 0, 0); }
     else if (!holding) this.reviveP = Math.max(0, this.reviveP - dt * 2);
@@ -445,7 +496,7 @@ export class Survival {
       case 'efx': { const e = this.enemies.get(m.id); if (e && this.mate) c.showResult(m.r, e.f, this.mate); break; }
       case 'strike': { const e = this.enemies.get(m.eid); if (!e) break; const r = me.resolveStrike(m.kind, { x: m.x, z: m.z }, m.mul, 1, { pmul: m.pm }); this.onMeStruck(r); c.showResult(r, e.f, me); c.net.send('sv', { t: 'sout', eid: m.eid, r }); break; }
       case 'phase': { const e = this.enemies.get(m.id); if (e) { e.phase = m.phase; const P = e.T.phases[m.phase - 1]; if (P.aura) this.setAura(e, P.aura); sfx.roar(); this.shockwave(e.f.pos, 5); c.banner(m.phase === 2 ? '鬼' : '怒', '#ff4a2a', true); } break; }
-      case 'clear': this.stats.waves = m.n; { const best = c.REC.svBest || {}; if (m.n > (best[this.p.map] || 0)) { best[this.p.map] = m.n; c.REC.svBest = best; c.saveRec(); } } c.banner('勝', '#ffd870', true); music.set('explore'); { if (this.mods.mend && !me.downed && !me.dead) me.hp = Math.min(me.maxHp, me.hp + me.maxHp * this.mods.mend); } c.addCoins(10 + m.n * 4); break;
+      case 'clear': this.stats.waves = m.n; { const best = c.REC.svBest || {}; if (m.n > (best[this.p.map] || 0)) { best[this.p.map] = m.n; c.REC.svBest = best; c.saveRec(); } } c.banner('勝', '#ffd870', true); music.set('explore'); { if (this.mods.mend && !me.downed && !me.dead) me.hp = Math.min(me.maxHp, me.hp + me.maxHp * this.mods.mend); } c.addCoins(10 + m.n * 4); if (m.n >= SV.final) this.clearReward(); break;
       case 'pick': this.openPicks(); break;
       case 'killed': break;
       case 'over': this.end(null, m.stats); break;
@@ -487,7 +538,7 @@ export class Survival {
     const c = this.c, me = c.G.me, alive = [...this.enemies.values()].filter(e => !e.f.dead);
     const left = alive.length + (this.host ? this.queue.length : (this.queueLeft || 0));
     const le = this.lockF && this.enemyOf(this.lockF); c.$('oppBars').style.opacity = le && !le.T.boss ? 1 : 0; if (le) c.$('oppName').textContent = c.t('en.' + le.type);
-    c.$('waveInfo').innerHTML = `<b>${c.t('sv.waveN', { n: this.wave })}</b><span>${this.phase === 'pick' ? c.t('sv.choosing') : this.phase === 'clear' ? c.t('sv.cleared') : c.t('sv.left', { n: left })}</span>`;
+    setH(c.$('waveInfo'), `<b>${c.t('sv.waveN', { n: this.wave })}</b><span>${this.phase === 'pick' ? c.t('sv.choosing') : this.phase === 'clear' ? c.t('sv.cleared') : c.t('sv.left', { n: left })}</span>`);
     // partner card
     if (this.mate) { const m = this.mate, st = this.mateGone ? c.t('net.offline') : m.dead ? c.t('sv.dead') : m.downed ? c.t('sv.down', { s: Math.ceil(m.bleed) }) : ''; c.$('mateHp').style.width = Math.max(0, m.hp / m.maxHp * 100) + '%'; c.$('mateSt').textContent = st; c.$('mateCard').classList.toggle('down', m.downed || m.dead); }
     // boss bar
@@ -507,12 +558,12 @@ export class Survival {
   }
   // ================= end =================
   end(note, remoteStats) {
-    if (this.over) return; const c = this.c; this.over = true; this.phase = 'over'; c.G.over = true; c.G.phase = 'end'; music.set('off');
+    if (this.over) return; battle.stop(); const c = this.c; this.over = true; this.phase = 'over'; c.G.over = true; c.G.phase = 'end'; music.set('off');
     if (this.host && this.online) c.net.send('sv', { t: 'over', stats: { waves: this.stats.waves, kills: this.stats.kills } });
     const s = this.stats; if (remoteStats) { s.waves = remoteStats.waves; s.teamKills = remoteStats.kills; }
     c.banner('終', '#e8dcc4', true);
     const best = (c.REC.svBest || {})[this.p.map] || 0;
-    const coins = 20 + s.waves * 12; c.addCoins(coins);
+    const coins = 20 + s.waves * 12; c.addCoins(coins); c.ach.add('matches');
     const fmt = x => Math.floor(x / 60) + ':' + String(Math.floor(x % 60)).padStart(2, '0');
     setTimeout(() => {
       if (c.G.mode !== 'survival') return; document.exitPointerLock && document.exitPointerLock(); this.closePicks();
@@ -522,13 +573,13 @@ export class Survival {
         <tr><td>${c.t('sv.wavesDone')}</td><td>${s.waves} (${c.t('sv.best')} ${best})</td></tr><tr><td>${c.t('sv.kills')}</td><td>${s.teamKills ?? s.kills}</td></tr>
         <tr><td>${c.t('sv.byType')}</td><td>${by}</td></tr><tr><td>${c.t('sv.bosses')}</td><td>${s.bosses}</td></tr>
         <tr><td>${c.t('st.parry')}</td><td>${s.deflects}</td></tr><tr><td>${c.t('sv.deathblows')}</td><td>${s.deathblows}</td></tr>
-        <tr><td>${c.t('sv.rescues')}</td><td>${s.rescues}</td></tr><tr><td>${c.t('st.dealt')}</td><td>${Math.round(s.dealt)}</td></tr><tr><td>${c.t('st.time')}</td><td>${fmt(s.time)}</td></tr></table>+${coins} ◎`;
+        <tr><td>${c.t('sv.rescues')}</td><td>${s.rescues}</td></tr><tr><td>${c.t('st.dealt')}</td><td>${Math.round(s.dealt)}</td></tr><tr><td>${c.t('st.time')}</td><td>${fmt(s.time)}</td></tr></table>${c.payLine(coins, this.gemsWon || 0)}`;
       c.$('result').classList.remove('hidden'); c.$('bRematch').textContent = c.t('sv.again');
     }, 2600);
   }
   requestRematch() { this.c.$('result').classList.add('hidden'); this.c.restartMode(); }
   dispose() {
-    const c = this.c; this.flasks.clear(); this.abil.clear(); for (const s of this.shuris) if (!s.done) s.finish(); this.shuris = []; for (const e of this.enemies.values()) e.f.dispose(); this.enemies.clear(); if (this.mate) { this.mate.dispose(); this.mate = null; }
+    battle.stop(); const c = this.c; this.flasks.clear(); this.abil.clear(); for (const s of this.shuris) if (!s.done) s.finish(); this.shuris = []; for (const e of this.enemies.values()) e.f.dispose(); this.enemies.clear(); if (this.mate) { this.mate.dispose(); this.mate = null; }
     document.body.classList.remove('surv'); c.$('ebars').innerHTML = ''; c.$('bossBar').style.display = 'none'; c.$('prompt').style.display = 'none'; c.$('upgrades').classList.add('hidden');
     music.set('off'); c.G.targets = null; const o = c.G.dummy || c.G.opp; o.group.visible = true; o.katana.visible = true; o.dead = false; c.G.opp = o;
   }

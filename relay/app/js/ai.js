@@ -48,6 +48,7 @@ export class AI {
     // ---- finish a broken opponent ----
     // a broken / finished opponent is immune to normal cuts: only go for the deathblow, otherwise wait
     if (opp.act === 'guardBreak' || opp.act === 'dbVictim') { i.guard = false; i.light = 0; i.heavy = 0; this.chain = 0; this.plan = null;
+      if (this.allowAttack === false) { if (dist < 3) i.move.copy(d).negate(); return i; }   // only the one holding the attack token finishes
       if (opp.broken && dist < 3.0) i.finisher = 0.25; else if (opp.broken) { i.move.copy(d); i.sprint = dist > 4; } else if (dist < 2) i.move.copy(d).negate(); return i; }
 
     // ---- defence: answer the opponent's swing once per attack ----
@@ -78,7 +79,7 @@ export class AI {
     if (free && this.prevAct && MOVES[this.prevAct] && dist < 3.2 && Math.random() < P.mobility * 0.3) { this.prevAct = f.act; i.dodge = 0.2; i.move.copy(d).negate().addScaledVector(side, this.strafe * 0.6).normalize(); return i; }
     this.prevAct = f.act;
     if (free && Math.random() < P.mobility * dt * 0.9) this.strafe = -this.strafe;
-    if (free && !this.plan && dist < 5 && Math.random() < P.mobility * dt * 0.18) { i.dodge = 0.2; i.move.copy(side).multiplyScalar(this.strafe).addScaledVector(d, Math.random() < 0.5 ? 0.4 : -0.4).normalize(); return i; }
+    if (free && !this.plan && !this.calm && dist < 5 && Math.random() < P.mobility * dt * 0.18) { i.dodge = 0.2; i.move.copy(side).multiplyScalar(this.strafe).addScaledVector(d, Math.random() < 0.5 ? 0.4 : -0.4).normalize(); return i; }
     // don't start a swing into the opponent's wind-up: meet it with the blade (mutual trades read as cheap, not as a duel)
     const winding = om && opp.act !== 'deathblow' && opp.t < om.hit[0] && dist < om.range + 1.2;
     if (winding && opp.seq !== this.windSeq) { this.windSeq = opp.seq; this.windGuard = Math.random() < NO_TRADE; }
@@ -90,7 +91,7 @@ export class AI {
     // feint: vary the rhythm of the wind-up right after a swing starts
     if (MOVES[f.act] && f.seq !== this.feintSeq) { this.feintSeq = f.seq; if (P.feint && Math.random() < P.feint) f.feint = rnd(0.45, 0.7); }
     if (!mayAttack && this.plan) this.plan = null;
-    if (mayAttack && free && open && dist < 3.2 && Math.random() < P.punish * dt * 8) { this.press(f.counterT > 0 ? 'slash' : 'slash'); this.chain = 1 + (Math.random() * P.combo | 0); }
+    if (mayAttack && free && open && dist < 3.2 && Math.random() < P.punish * dt * 8) { this.press(P.moves.pJab ? 'pJab' : 'slash'); this.chain = 1 + (Math.random() * P.combo | 0); }
     // keep a combo going
     if (MOVES[f.act] && MOVES[f.act].next && this.chain > 0 && f.t > MOVES[f.act].hit[0] && opp.act !== 'guardBreak') { if (Math.random() < 0.9) i.light = 0.2; this.chain--; }
     if (this.plan) {   // approach until in range, then commit
@@ -107,13 +108,13 @@ export class AI {
       if (lowPosture && Math.random() < 0.6) { this.retreat = rnd(0.8, 1.6); this.strafe = -this.strafe; }
       else if (mayAttack && Math.random() < P.aggr) {
         const w = { ...P.moves }; if (theyTurtle) w.kick = (w.kick || 0) * 4 + 0.5; if (dist > 4.5) { w.dash = (w.dash || 0) * 3; }
-        const k = pickW(w); this.plan = { kind: k, move: k === 'slash' ? 'slash1' : k }; this.chain = k === 'slash' ? (Math.random() * P.combo | 0) : 0;
+        const k = pickW(w); this.plan = { kind: k, move: k === 'slash' ? 'slash1' : k }; this.chain = k === 'slash' || k === 'pJab' || k === 'pSlam' ? (Math.random() * P.combo | 0) : 0;
       } else { this.strafe = Math.random() < 0.5 ? 1 : -1; this.prefDist = P.prefDist ? rnd(...P.prefDist) : rnd(2.4, 3.6 + P.mobility); this.jog = Math.random() < P.mobility; if (Math.random() < 0.25 * (1 - P.mobility * 0.5)) this.guardFor = rnd(0.5, 1.2); }
     }
     // director-assigned position (survival roles: flank / keep distance / wait for an attack token)
     if (this.anchor && this.retreat <= 0) {
       const ax = this.anchor.x - f.pos.x, az = this.anchor.z - f.pos.z, ad = Math.hypot(ax, az);
-      if (ad > 0.7) { i.move.set(ax / ad, 0, az / ad); i.walk = ad < 2.5; i.sprint = ad > 7; } else { i.move.copy(side).multiplyScalar(this.strafe * 0.3); i.walk = true; }
+      if (ad > 0.7) { i.move.set(ax / ad, 0, az / ad); i.walk = this.calm ? ad < 6 : ad < 2.5; i.sprint = ad > (this.calm ? 14 : 7); } else { i.move.copy(side).multiplyScalar(this.strafe * 0.3); i.walk = true; }   // calm: waiting for a token, no rushing
       if (dist < (P.prefDist ? P.prefDist[0] - 0.4 : 1.6)) i.move.addScaledVector(d, -1).normalize();
       return i;
     }

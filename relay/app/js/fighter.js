@@ -28,7 +28,9 @@ const HEAD_OFF = new Set(['grabbed', 'grabHold', 'dbBack', 'dodgeL', 'dodgeR', '
 const DOWNED = { bleed: 22, hitPenalty: 4 };                    // survival: seconds until a downed fighter bleeds out; seconds lost per hit taken while down
 const AMBUSH_RANGE = 3.4;
 const AMBUSH = { back: 2.6, side: 1.6, front: 1, post: 2.2 };   // surprise-attack damage multipliers by angle; posture multiplier
-const SPEED = { lockSide: 0.78, lockBack: 0.4, crouch: 1.7, water: 0.6, lockRun: 3.8, lockSprint: 5.6, freeRun: 3.8, freeSprint: 5.6, guardWalk: 2.2, walk: 1.4 };
+// MOVE_K: overall pace of every gait (sneak, slow walk, guard walk, run, sprint); clips play faster by the same factor so feet stay planted
+export const MOVE_K = 1.25;
+const SPEED = { lockSide: 0.78, lockBack: 0.4, crouch: 1.7 * MOVE_K, water: 0.6, lockRun: 3.8 * MOVE_K, lockSprint: 5.6 * MOVE_K, freeRun: 3.8 * MOVE_K, freeSprint: 5.6 * MOVE_K, guardWalk: 2.2 * MOVE_K, walk: 1.4 * MOVE_K };
 const CANCEL_AFTER_HIT = 0.08;     // s after the active frames when guard/dodge/jump may cancel a swing
 const ARMORED = new Set(['ashina', 'oni', 'bone', 'kage']);   // skins in lacquered plates: armour foley and armour hits
 const JUMP = { height: 1.1, air: [0.12, 0.72], land: 0.1, airControl: 1.3, minSpeed: 3.8 };   // airborne window (s) of 'jump'; air control rate (1/s ~ 20%/0.17s)
@@ -63,20 +65,43 @@ const BOW = { down: 0.55, hold: 0.45, up: 0.55, bend: [['sp1', 0.26], ['sp2', 0.
 const PIERCE = { in0: 0.6, in1: 0.74, out0: 0.98, out1: 1.25, depth: 0.42 };
 // polearm (naginata / bisento) poses, character frame: x right, y up, z forward (m, x scaleF). R = rear (right) hand on the
 // shaft, D = shaft direction toward the blade. Attacks: W = end of the wind-up (reached at hit[0]), E = end of the strike (hit[1]).
-// Refs: low two-handed stance, shaft across the body, blade forward-up at the opponent; upright at the side when running.
+// Refs (Patch 1.1 naginata sheet): rear hand low at the right hip, front hand far up the shaft, shaft held across the front of
+// the body with the blade forward at the opponent (chudan); when running the blade drops forward-low (gedan), never upright.
 const POLE = {
-  stance: { R: [0.2, 0.95, 0.02], D: [-0.38, 0.4, 0.84] }, guard: { R: [0.22, 1.12, 0.12], D: [-0.86, 0.22, 0.46] }, carry: { R: [0.24, 1.0, 0.05], D: [0.05, 0.96, 0.25] },
+  stance: { R: [0.29, 1.09, -0.11], D: [-0.3, 0.12, 0.95] }, guard: { R: [0.25, 1.21, 0.21], D: [-0.9, 0.2, 0.4] }, carry: { R: [0.29, 1.26, -0.17], D: [-0.2, -0.35, 0.92] },
   thrust: { W: { R: [0.24, 1.0, -0.32], D: [-0.12, 0.12, 0.98] }, E: { R: [0.1, 1.08, 0.45], D: [-0.04, 0.04, 1] } },
   side: { W: { R: [0.3, 1.05, -0.1], D: [0.86, 0.15, 0.48] }, E: { R: [-0.05, 1.0, 0.25], D: [-0.9, 0.02, 0.42] } },
   low: { W: { R: [0.3, 0.98, -0.08], D: [0.85, -0.28, 0.45] }, E: { R: [-0.04, 0.92, 0.22], D: [-0.88, -0.32, 0.34] } },
   down: { W: { R: [0.24, 1.35, -0.14], D: [-0.08, 0.86, -0.5] }, E: { R: [0.1, 1.05, 0.3], D: [-0.05, -0.45, 0.89] } },
   up: { W: { R: [0.26, 0.88, -0.2], D: [0.2, -0.55, -0.8] }, E: { R: [0.14, 1.2, 0.25], D: [-0.1, 0.8, 0.6] } },
   diag: { W: { R: [0.28, 1.25, -0.05], D: [0.62, 0.66, -0.2] }, E: { R: [0.0, 1.0, 0.3], D: [-0.6, -0.22, 0.76] } },
-  rate: 16, strikeRate: 34,
+  rate: 16, strikeRate: 34, reach: 1.05,   // reach: grip distance from its shoulder, x arm length (shoulder->wrist; the palm adds a little)
+  body: { r: 0.24, rArmored: 0.26, butt: 0.6, tip: 1.75, twist: 0.32, twistIdle: 0.12 },   // shaft vs torso: capsule radius (m, x scale), shaft ends from the rear hand; torso turn with the shaft (rad per unit sideways)
 };
-const SAYA = { k: 55, c: 7, g: 0.9, vert: 0.3, max: 0.32 };   // scabbard sway: spring (1/s^2), damping (1/s), drive per m/s^2, max swing (rad)
+// closest points of segments p1-q1 and p2-q2 (writes them into c1 / c2)
+function segClosest(p1, q1, p2, q2, c1, c2) {
+  const d1 = _s1.subVectors(q1, p1), d2 = _s2.subVectors(q2, p2), r = _s3.subVectors(p1, p2), a = d1.dot(d1), e = d2.dot(d2), f = d2.dot(r);
+  let sP, tP; const c = d1.dot(r), b = d1.dot(d2), den = a * e - b * b;
+  sP = den > 1e-8 ? clamp((b * f - c * e) / den, 0, 1) : 0; tP = (b * sP + f) / e;
+  if (tP < 0) { tP = 0; sP = clamp(-c / a, 0, 1); } else if (tP > 1) { tP = 1; sP = clamp((b - c) / a, 0, 1); }
+  c1.copy(p1).addScaledVector(d1, sP); c2.copy(p2).addScaledVector(d2, tP);
+}
+const _s1 = new THREE.Vector3(), _s2 = new THREE.Vector3(), _s3 = new THREE.Vector3(), _pa = new THREE.Vector3(), _pb = new THREE.Vector3(), _pc = new THREE.Vector3(), _pd = new THREE.Vector3(), _pe = new THREE.Vector3(), _pf = new THREE.Vector3();
+const _w1 = new THREE.Vector3(), _w2 = new THREE.Vector3(), _w3 = new THREE.Vector3(), _w4 = new THREE.Vector3(), _w5 = new THREE.Vector3(), _wq = new THREE.Quaternion(), _wq2 = new THREE.Quaternion(), _wq3 = new THREE.Quaternion(), _wq4 = new THREE.Quaternion(), _we = new THREE.Euler();   // per-frame scratch (no garbage)
+const SAYA = { k: 55, c: 7, g: 0.9, vert: 0.3, max: 0.32, hold: 0.8 };   // hold: how much the belt angle follows the body instead of the hip bone   // scabbard sway: spring (1/s^2), damping (1/s), drive per m/s^2, max swing (rad)
 const THROW = { toss: { rel: 0.42 }, hookCast: { rel: 0.55, hold: true } };   // s into the act at which the off hand lets go (svabil.js ABIL matches)
 const POLE_THRUST = new Set(['jab', 'thrust', 'dash', 'lungeHeavy', 'stepCut', 'runSlash', 'counter', 'deathblow']);
+// keyframed polearm attacks (MOVES pJab..pSpin): [move time s, R, D] in the POLE frame; before the first key the pose eases out of
+// the stance, after the last key it eases back to it by the end of the move. Times line up with each move's hit window.
+const POLE_ANIM = {
+  pJab: [[0.2, [0.3, 1.1, -0.35], [-0.05, 0.05, 1]], [0.36, [0.27, 1.23, -0.2], [-0.03, 0, 1]], [0.5, [0.28, 1.14, -0.14], [-0.2, 0.08, 0.98]]],
+  pJab2: [[0.24, [0.3, 1.16, -0.33], [-0.05, 0.15, 0.99]], [0.4, [0.27, 1.24, -0.18], [-0.03, 0.06, 1]], [0.56, [0.28, 1.15, -0.13], [-0.2, 0.1, 0.97]]],
+  pRise: [[0.3, [0.23, 1.44, -0.21], [0.15, -0.75, 0.64]], [0.36, [0.24, 1.4, -0.21], [0.08, -0.62, 0.78]], [0.48, [0.21, 1.09, 0.15], [-0.15, 0.86, 0.48]], [0.64, [0.17, 1.14, 0.2], [-0.1, 0.95, 0.3]]],
+  pSlam: [[0.3, [0.18, 1.31, 0.25], [0.2, 0.7, -0.68]], [0.55, [0.12, 1.39, 0.26], [0.1, 0.82, -0.56]], [0.62, [0.27, 1.22, -0.05], [-0.15, 0.6, 0.79]], [0.69, [0.26, 1.34, 0.04], [-0.45, -0.45, 0.77]], [0.85, [0.22, 1.32, 0.11], [-0.55, -0.55, 0.62]]],
+  pBack: [[0.22, [0.23, 1.28, 0.1], [-0.6, -0.35, 0.72]], [0.32, [0.17, 1.16, 0.15], [-0.72, 0.06, 0.69]], [0.44, [-0.26, 1.19, 0.1], [0.75, 0.06, 0.65]], [0.58, [-0.16, 1.14, 0.26], [0.98, 0.06, -0.17]]],
+  sweep: [[0.45, [-0.14, 1.16, 0.35], [0.8, -0.32, -0.5]], [0.62, [-0.29, 1.21, 0.09], [0.76, -0.38, 0.53]], [0.7, [0.26, 1.28, -0.25], [0, -0.41, 0.91]], [0.78, [0.17, 1.17, 0.17], [-0.81, -0.38, 0.45]], [0.95, [0.04, 1.07, 0.34], [-0.73, -0.3, -0.61]]],
+  pSpin: [[0.4, [0.02, 1.14, 0.3], [0.72, 0.08, -0.69]], [0.56, [-0.23, 1.18, 0.17], [0.95, 0.05, 0.3]], [0.65, [0.26, 1.25, -0.2], [0, 0.04, 1]], [0.74, [0.11, 1.14, 0.21], [-0.92, 0.04, 0.38]], [0.92, [0, 1.13, 0.32], [-0.75, 0.1, -0.65]]],
+};
 const RECOIL = { deflectPush: 4.2, clashPush: 3.2, blockPush: 1.2, deflectJolt: 1.1, clashJolt: 0.8, blockJolt: 0.45 };
 // hit reaction choice: attacker behind if front < back; on a side if |side| > side; heavy blows knock down above knockPost posture
 const REACT_PICK = { back: -0.35, side: 0.3, knockPost: 0.72, knockInv: 1.3 };
@@ -87,6 +112,13 @@ const GRAB = { dist: 0.85, cd: 8 };
 // finger curl (rad) per phalanx for the sword fist; thumb wraps less
 const FIST_RELAX = 0.45;   // sheathed: loosely closed hand
 const FIST = { finger: [1.15, 1.35, 0.85], thumb: [0.25, 0.45, 0.4] };
+// two-handed guard (block): the hilt is held in front of the chest, the blade rises up-forward and a little to the left,
+// right hand under the tsuba, left hand at the pommel end (leftGripIK). x: right, y: up, z: forward, from the chest bone
+const _g1 = new V3(), _g2 = new V3(), _g3 = new V3(), _g4 = new V3(), _gm1 = new THREE.Matrix4(), _gm2 = new THREE.Matrix4(), _gq1 = new THREE.Quaternion(), _gq2 = new THREE.Quaternion(), _gq3 = new THREE.Quaternion();
+const GUARD_REACT = new Set(['hitF', 'hitL', 'hitR', 'hitU', 'hitD', 'hitHeavy', 'hitBack']);   // blocked-hit staggers keep the guard pose
+const GUARD = { x: 0.05, y: -0.02, z: 0.4, up: 0.72, fwd: 0.38, left: 0.58, rate: 12, walkBob: 0.012 };
+// left hand glued under the right on the tsuka: gap along the hilt toward the pommel, sideways nudge (m, x scale)
+const GLUE = { gap: 0.1, side: 0, parryReach: 0.82, rate: 32 };   // parryReach: parry hand kept within this share of the arm from the LEFT shoulder; rate: grip ease while guarding (1/s)
 const GRIP = { handZ: 0.065, z: -0.19, near: 0.12, far: 0.3, atkFar: 0.5, rate: 14, roll: 1.6, edgeRate: 14 };   // roll: base turn of the blade in the fist (edge down-forward in stance); edgeRate: wrist turn speed toward a swing's edge roll (1/s)   // left hand on the hilt: seat point (katana z), full weight below near, none beyond far (m)
 const LINK = { combo: 0.1, stepCut: 0.35, vault: 0.4, vaultRange: 3.2, vaultBack: 5.5, vaultHeight: 0.7, sprintDash: 4.2 };   // Sekiro-style link windows (s) / ranges (m)
 const SWEEP_JUMP_POST = 40;        // posture an attacker takes when a sweep is jumped
@@ -114,7 +146,7 @@ let WALK = { F: ['Walk_Fwd_Loop', 1.25], B: ['Walk_Bwd_Loop', 1.2], L: ['Walk_L_
 const JOG = { F: ['Jog_Fwd_Loop', 3.4], B: ['Jog_Bwd_Loop', 1.25], L: ['Jog_Left_Loop', 1.2], R: ['Jog_Left_Loop', 1.2, true] };   // R = the left side-step clip played backwards (the stock right clip's feet do not plant)   // natural speeds measured from planted-foot slip
 const STRIDE = { maxRate: 4.4, sprintCycle: 0.47 };   // max clip speed-up for locomotion; MX_Run2 cycle at full sprint (s)
 // live-tunable groups (tune.js, F9): the objects are mutated in place, so the game reads the new values immediately
-export const TUNE = { FOOT, COIL, RECOIL, JOLT, ATK_FADE, PACE, STRIKE_LEAN, MOTION, PARRY_FX, REACT_PICK, DELAY, GRIP, STRIDE, SPEED, JUMP };
+export const TUNE = { FOOT, COIL, RECOIL, JOLT, ATK_FADE, PACE, STRIKE_LEAN, MOTION, PARRY_FX, REACT_PICK, DELAY, GRIP, GUARD, GLUE, STRIDE, SPEED, JUMP };
 
 export class Fighter {
   constructor(scene, base, style, name, weapon = 'standard') {
@@ -423,7 +455,7 @@ export class Fighter {
         if (locked) face(toOpp);
         const lf = this.fwd, side = new V3(lf.z, 0, -lf.x).dot(mv), fw = lf.dot(mv);   // side>0 = to the character's left
         { const left = Math.abs(side) > 0.3 ? side > 0 : (this.lastSideL = !this.lastSideL); this.setAct(left ? 'dodgeL' : 'dodgeR'); this.visYawT = fw < -0.5 ? (left ? 1.25 : -1.25) : fw > 0.5 ? (left ? -0.9 : 0.9) : 0; }
-        sfx.dodge(); this.emit('dodge'); return this.integrate(dt, null, 0, opp);
+        sfx.dodge(); this.emit('dodge', this.dodgeDir.clone()); return this.integrate(dt, null, 0, opp);
       }
       if (inp.finisher > 0 && oppAlive && opp.broken && dist < 3.4) {
         inp.finisher = 0; const d = toOpp.clone();
@@ -433,7 +465,7 @@ export class Fighter {
       }
       const fin = MOVES[A] && !MOVES[A].next && !MOVES[A].nextHeavy;
       const rested = this.counterT > 0 || (MOVES[A] ? !fin || this.t >= Math.min(MOVES[A].dur, MOVES[A].cancel + PACE.restFinisher) : this.time >= (this.atkRestUntil ?? -9));
-      const runAtk = A === 'idle' && this.sprint && this.speed > 3.5 && !this.remote;   // attacking out of a sprint keeps the run's momentum
+      const runAtk = A === 'idle' && this.sprint && this.speed > 3.5 * MOVE_K && !this.remote;   // attacking out of a sprint keeps the run's momentum
       if (inp.heavy > 0 && rested && runAtk && (inp.heavyKind || 'heavy') === 'heavy') { inp.heavy = 0; if (toOpp && locked) face(toOpp); this.setAct('lungeHeavy'); this.carry = true; this.guard = false; this.emit('lunge'); return this.integrate(dt, null, 0, opp); }
       if (inp.light > 0 && rested && runAtk && !(inp.lightKind && inp.lightKind !== 'slash1')) { inp.light = 0; if (toOpp && locked) face(toOpp); this.setAct('runSlash'); this.carry = true; this.guard = false; return this.integrate(dt, null, 0, opp); }
       if (inp.heavy > 0 && rested) { inp.heavy = 0; let hk = inp.heavyKind || 'heavy';
@@ -578,8 +610,9 @@ export class Fighter {
     // ---- locomotion (lower body) ----
     const v = this.locoV, f = this.fwd, r = new V3(f.z, 0, -f.x);   // r = character left
     const vf = v.dot(f), vl = v.dot(r), s = Math.hypot(vf, vl);
-    const jogK = clamp((s - 1.3) / 1.4, 0, 1), sprintK = clamp((s - 4.2) / 1.0, 0, 1) * clamp(vf / Math.max(s, 1e-3), 0, 1);
-    const moveK = clamp(s / 0.45, 0, 1);
+    const sg = s / MOVE_K;   // gait choice on the unscaled speed: the same clip blend at every pace
+    const jogK = clamp((sg - 1.3) / 1.4, 0, 1), sprintK = clamp((sg - 4.2) / 1.0, 0, 1) * clamp(vf / Math.max(s, 1e-3), 0, 1);
+    const moveK = clamp(sg / 0.45, 0, 1);
     const dirW = s > 1e-3 ? { F: Math.max(0, vf) / (Math.abs(vf) + Math.abs(vl)), B: Math.max(0, -vf) / (Math.abs(vf) + Math.abs(vl)), L: Math.max(0, vl) / (Math.abs(vf) + Math.abs(vl)), R: Math.max(0, -vl) / (Math.abs(vf) + Math.abs(vl)) } : { F: 0, B: 0, L: 0, R: 0 };
     let natural = 0; for (const d of 'FBLR') natural += dirW[d] * (WALK[d][1] * (1 - jogK) + JOG[d][1] * jogK);
     natural = natural * (1 - sprintK) + 5.6 * sprintK;
@@ -597,7 +630,7 @@ export class Fighter {
     this.ck = (this.ck || 0) + ((this.crouch && !this.dead ? 1 : 0) - (this.ck || 0)) * Math.min(1, dt * 8); const ck = this.ck;
     if (L.lo.Crouch_Fwd_Loop) {
       if (ck > 0.001) for (const a of this.acts.values()) { const n = a.getClip().name; if (n.endsWith('#lo') && !n.startsWith('Crouch')) a.setEffectiveWeight(a.getEffectiveWeight() * (1 - ck)); }
-      this.cphase = ((this.cphase || 0) + dt * clamp(s / 1.2, 0, 1.6) / 2.0) % 1;
+      this.cphase = ((this.cphase || 0) + dt * clamp(s / 1.2, 0, 1.6 * MOVE_K) / 2.0) % 1;
       const cw = { Crouch_Idle_Loop: 1 - moveK, Crouch_Fwd_Loop: moveK * dirW.F, Crouch_Bwd_Loop: moveK * dirW.B, Crouch_Left_Loop: moveK * dirW.L, Crouch_Right_Loop: moveK * dirW.R };
       for (const n of CROUCH) { const w = cw[n] * ck * baseW; for (const part of ['lo', 'up']) { const a = this.action(L[part][n]); a.time = n === 'Crouch_Idle_Loop' ? (this.time % a.getClip().duration) : (this.cphase * a.getClip().duration); a.setEffectiveWeight(w); } }
     }
@@ -626,7 +659,7 @@ export class Fighter {
     const sideV = new V3(), wind = new V3(-this.locoV.x * 6 - this.vel.x * 4 + 0.9 * gust, 0.15 * gust, -this.locoV.z * 6 - this.vel.z * 4 + 0.45 * gust);
     this.colliders[0].c.copy(this.chest); this.colliders[1].c.copy(this.b.pelvis.getWorldPosition(new V3())).y += 0.05;
     for (const ro of this.gear.ropes) {
-      const ap = ro.anchor.getWorldPosition(new V3()); sideV.set(1, 0, 0).applyQuaternion(ro.sideBone.getWorldQuaternion(new Q())).normalize();
+      const ap = ro.anchor.getWorldPosition(_w1); sideV.set(1, 0, 0).applyQuaternion(ro.sideBone.getWorldQuaternion(_wq)).normalize();
       ro.rope.update(dt, ap, sideV, wind);
     }
   }
@@ -734,8 +767,14 @@ export class Fighter {
     if (!P || this.sheathed || this.dead) { this.poleS = null; return; }
     const m = MOVES[this.act], sm = u => u * u * (3 - 2 * u), lerp3 = (a, b, u) => a.map((v, i) => v + (b[i] - v) * u);
     let base = this.guard ? POLE.guard : POLE.stance, R = base.R, D = base.D, rate = POLE.rate;
-    if (!m && !this.guard) { const k = clamp((this.speed - 2.6) / 1.4, 0, 1); if (k > 0) { R = lerp3(R, POLE.carry.R, k); D = lerp3(D, POLE.carry.D, k); } }
-    if (m) {
+    if (!m && !this.guard) { const k = clamp((this.speed - 2.6 * MOVE_K) / 2, 0, 1); if (k > 0) { R = lerp3(R, POLE.carry.R, k); D = lerp3(D, POLE.carry.D, k); } }
+    const anim = m && POLE_ANIM[this.act];
+    if (anim) {   // keyframed polearm move
+      const t = this.t, end = m.dur || 1, keys = anim, last = keys[keys.length - 1]; rate = POLE.strikeRate;
+      if (t <= keys[0][0]) { const u = sm(clamp(t / keys[0][0], 0, 1)); R = lerp3(base.R, keys[0][1], u); D = lerp3(base.D, keys[0][2], u); rate = POLE.rate * 1.6; }
+      else if (t >= last[0]) { const u = sm(clamp((t - last[0]) / Math.max(end - last[0], 0.05), 0, 1)); R = lerp3(last[1], base.R, u); D = lerp3(last[2], base.D, u); rate = POLE.rate; }
+      else for (let i = 1; i < keys.length; i++) if (t < keys[i][0]) { const a = keys[i - 1], b = keys[i], u = sm((t - a[0]) / (b[0] - a[0])); R = lerp3(a[1], b[1], u); D = lerp3(a[2], b[2], u); break; }
+    } else if (m) {
       const kind = POLE_THRUST.has(this.act) ? POLE.thrust : m.kind === 'sweep' ? POLE.low : m.dir === 'down' ? POLE.down : m.dir === 'up' ? POLE.up : m.dir === 'side' ? POLE.side : POLE.diag;
       const t = this.t, a = m.hit[0], b = m.hit[1], c = Math.max(b + 0.05, m.cancel);
       if (t < a) { const u = sm(clamp(t / Math.max(a, 0.01), 0, 1)); R = lerp3(base.R, kind.W.R, u); D = lerp3(base.D, kind.W.D, u); }
@@ -747,10 +786,37 @@ export class Fighter {
     const Rw = toW(R, true), Dw = toW(D, false);
     if (!this.poleS) this.poleS = { R: Rw.clone(), D: Dw.clone() };
     const k = 1 - Math.exp(-rate * dt); this.poleS.R.lerp(Rw, k); this.poleS.D.lerp(Dw, k).normalize();
+    // the torso turns with the shaft: wound back to one side -> shoulders turned that way, unwinding through the strike
+    const PB = POLE.body, side = this.poleS.D.dot(rt), tw = -side * (m ? PB.twist : PB.twistIdle);
+    for (const b of [this.b.sp2, this.b.sp3]) if (b) { const wq = b.parent.getWorldQuaternion(new Q()), ax = UP.clone().applyQuaternion(wq.invert()); b.quaternion.premultiply(new Q().setFromAxisAngle(ax, tw / 2)); b.updateMatrixWorld(true); }
+    // both hands stay on the shaft: the whole shaft slides (aim kept) until the rear grip is within reach of the right
+    // shoulder and the front grip (leftZ up the shaft) within reach of the left; only if that is impossible is it re-aimed
+    if (this.b.uarmL && this.b.farm) {
+      const sR = this.b.uarm.getWorldPosition(_pa), sL = this.b.uarmL.getWorldPosition(_pb), lz = (P.leftZ || 0.45) * s, Rp = this.poleS.R, D = this.poleS.D;
+      const reach = (sR.distanceTo(this.b.farm.getWorldPosition(_pc)) + _pc.distanceTo(this.b.hand.getWorldPosition(_pd))) * POLE.reach;
+      for (let it = 0; it < 6; it++) {
+        const Lp = _pe.copy(Rp).addScaledVector(D, lz), dr = Rp.distanceTo(sR), dl = Lp.distanceTo(sL); if (dr <= reach && dl <= reach) break;
+        const mv = _pf.set(0, 0, 0);
+        if (dr > reach) mv.addScaledVector(_pc.subVectors(sR, Rp), (dr - reach) / dr);
+        if (dl > reach) mv.addScaledVector(_pd.subVectors(sL, Lp), (dl - reach) / dl);
+        Rp.addScaledVector(mv, 0.8);
+      }
+      const Lp = _pe.copy(Rp).addScaledVector(D, lz), dl = Lp.distanceTo(sL);
+      if (dl > reach * 1.08) { Lp.sub(sL).multiplyScalar(reach / dl).add(sL); D.subVectors(Lp, Rp).normalize(); }
+    }
+    // the shaft never goes through the body: torso capsule pelvis -> neck; checked after the reach fit, so it wins
+    if (this.b.pelvis && this.b.neck) {
+      const A = this.b.pelvis.getWorldPosition(_pa), B = this.b.neck.getWorldPosition(_pb), rr = (this.armored ? PB.rArmored : PB.r) * s;
+      for (let it = 0; it < 2; it++) {
+        const butt = _pc.copy(this.poleS.R).addScaledVector(this.poleS.D, -PB.butt * s), tip = _pd.copy(this.poleS.R).addScaledVector(this.poleS.D, PB.tip * s);
+        segClosest(butt, tip, A, B, _pe, _pf); const n = _pe.sub(_pf), dist = n.length(); if (dist >= rr) break;
+        if (dist < 1e-4) n.copy(rt); else n.divideScalar(dist); this.poleS.R.addScaledVector(n, rr - dist + 0.01);
+      }
+    }
     const d = this.poleS.D, y = UP.clone().addScaledVector(d, -UP.dot(d)); if (y.lengthSq() < 1e-4) y.copy(f); y.normalize();
     const q = new Q().setFromRotationMatrix(new THREE.Matrix4().makeBasis(new V3().crossVectors(y, d), y, d));
     const nat = this.hiltWorld(), hand = this.b.hand.getWorldPosition(new V3());
-    this.armIK(hand.add(this.poleS.R.clone().sub(nat.p)), null, 1, 'r');   // rear hand onto the shaft
+    this.poleHandT = hand.add(this.poleS.R.clone().sub(nat.p)); this.armIK(this.poleHandT, null, 1, 'r');   // rear hand onto the shaft
     this.poleOv = { p: this.poleS.R.clone(), q };
   }
   // deathblow: put the blade THROUGH the victim's chest (not beside it). Blend in for the thrust, hold, draw it back out.
@@ -794,6 +860,10 @@ export class Fighter {
     const arm = (sh.distanceTo(el) + el.distanceTo(hd)) * 0.97;   // reachable hand distance from the shoulder
     let H = P.p.clone().addScaledVector(d, -PARRY_FX.reach * this.scaleF);
     const off = H.clone().sub(sh), L = off.length(); if (L > arm) H = sh.clone().addScaledVector(off, arm / L);
+    if (this.b.uarmL) for (let it = 0; it < 2; it++) {   // a two-handed parry: keep the hilt where the left hand can hold it too
+      const shl = this.b.uarmL.getWorldPosition(new V3()), o2 = H.clone().sub(shl), l2 = o2.length(); if (l2 > arm * GLUE.parryReach) H = shl.clone().addScaledVector(o2, arm * GLUE.parryReach / l2);
+      const o3 = H.clone().sub(sh), l3 = o3.length(); if (l3 > arm) H = sh.clone().addScaledVector(o3, arm / l3);
+    }
     // the blade must pass through the contact point: aim it from the (reachable) hand straight at it, with the palm offset
     const pd = P.p.clone().sub(H); if (pd.length() > 0.05) d = pd.normalize();
     this.armIK(H, d, w);
@@ -802,7 +872,40 @@ export class Fighter {
     if (w > 0.02) { this.model.updateMatrixWorld(true); const hw = this.hiltWorld(), base = hw.p;
       const bd = new V3(0, 0, 1).applyQuaternion(hw.q), u = Math.max(0, P.p.clone().sub(base).dot(bd));
       const miss = P.p.clone().sub(base.clone().addScaledVector(bd, u));
-      if (miss.length() > 0.01) this.armIK(this.b.hand.getWorldPosition(new V3()).add(miss), bd, w); }
+      if (miss.length() > 0.01) { const T = this.b.hand.getWorldPosition(new V3()).add(miss);
+        if (this.b.uarmL) { const shl = this.b.uarmL.getWorldPosition(new V3()), o2 = T.clone().sub(shl), l2 = o2.length(); if (l2 > arm * GLUE.parryReach) T.copy(shl).addScaledVector(o2, arm * GLUE.parryReach / l2); }
+        this.armIK(T, bd, w); } }
+  }
+  // block stance: right hand put in front of the chest with the blade up-forward-left; the left hand then closes on the
+  // pommel end in leftGripIK. Eased in/out, so the clip pose is only replaced while the guard is really held.
+  guardIK(dt) {
+    const K = this.katana, on = this.guard && !this.dead && !this.sheathed && K && !K.userData.pole && !K.userData.spear && !K.userData.short && (this.act === 'idle' || this.act === 'deflect' || GUARD_REACT.has(this.act));
+    this.gk = on && this.act === 'deflect' ? 1 : (this.gk || 0) + ((on ? 1 : 0) - (this.gk || 0)) * (1 - Math.exp(-GUARD.rate * dt));   // a deflect snaps straight into the two-handed pose
+    if (this.gk < 0.01) return;
+    const s = this.scaleF, f = this.fwd, rt = _g1.set(-f.z, 0, f.x), c = this.b.sp3.getWorldPosition(_g2);
+    const bob = Math.sin(this.phase * Math.PI * 4) * GUARD.walkBob * clamp(this.speed / 2, 0, 1);
+    const H = _g3.copy(c).addScaledVector(rt, GUARD.x * s).addScaledVector(UP, (GUARD.y + bob) * s).addScaledVector(f, GUARD.z * s);
+    const d = _g4.set(0, 0, 0).addScaledVector(UP, GUARD.up).addScaledVector(f, GUARD.fwd).addScaledVector(rt, -GUARD.left).normalize();
+    this.armIK(H, d, smooth(this.gk));
+  }
+  // two-handed katana grip: the left hand is the right hand's grip mirrored across the plane of the blade (thumbs both
+  // toward the tip, palms wrapping from either side) and slid GLUE.gap down the tsuka toward the pommel; the arm is IK'd to
+  // that wrist point and the hand takes that rotation, so it always sits on the hilt right under the right hand
+  glueLeft(w) {
+    const B = this.b; if (!B.handL || !B.uarmL) return;
+    if (!this.glueS) {   // bone-axis convention between hand_r and hand_l, from the rest pose: S = Wr0^T * Mx * Wl0
+      const B0 = n => this.base.scene.getObjectByName(n); this.base.scene.updateMatrixWorld(true);
+      const r0 = new THREE.Matrix4().extractRotation(B0('hand_r').matrixWorld), l0 = new THREE.Matrix4().extractRotation(B0('hand_l').matrixWorld);
+      this.glueS = r0.clone().transpose().multiply(new THREE.Matrix4().makeScale(-1, 1, 1)).multiply(l0);
+    }
+    const s = this.scaleF, hw = this.hiltWorld(), a = _g1.set(0, 0, 1).applyQuaternion(hw.q), n = _g2.set(1, 0, 0).applyQuaternion(hw.q);
+    const Pr = B.hand.getWorldPosition(_g3), Pl = _g4.copy(Pr).addScaledVector(n, -2 * _g3.copy(Pr).sub(hw.p).dot(n)).addScaledVector(a, -GLUE.gap * s);
+    Pl.addScaledVector(n, GLUE.side * s);
+    const Mn = _gm1.set(1 - 2 * n.x * n.x, -2 * n.x * n.y, -2 * n.x * n.z, 0, -2 * n.y * n.x, 1 - 2 * n.y * n.y, -2 * n.y * n.z, 0, -2 * n.z * n.x, -2 * n.z * n.y, 1 - 2 * n.z * n.z, 0, 0, 0, 0, 1);
+    const Wl = Mn.multiply(_gm2.extractRotation(B.hand.matrixWorld)).multiply(this.glueS), ql = _gq1.setFromRotationMatrix(Wl);
+    this.armIK(Pl, null, w, 'l');
+    const hl = B.handL, pq = hl.parent.getWorldQuaternion(_gq2), cur = hl.getWorldQuaternion(_gq3).slerp(ql, w);
+    hl.quaternion.copy(pq.invert().multiply(cur)); hl.updateMatrixWorld(true);
   }
   leftGripIK(dt) {
     if ((this.act === 'toss' || this.act === 'hookCast') && this.b.uarmL) { this.throwArm(dt); return; }
@@ -823,8 +926,20 @@ export class Fighter {
       else if (MOVES[this.act]) w = Math.max(w, 1 - smooth(clamp((d - GRIP.near) / (GRIP.atkFar - GRIP.near), 0, 1)));   // swings: grab the hilt whenever it is within reach
       tgt = new V3(0, 0, GRIP.z * s).applyQuaternion(kq).add(kp).sub(palmOff);
     }
-    this.gripW = (this.gripW || 0) + (w - (this.gripW || 0)) * (1 - Math.exp(-GRIP.rate * dt));
-    if (tgt && this.gripW > 0.01) this.armIK(tgt, null, this.gripW, 'l');
+    this.gripW = (this.gripW || 0) + (w - (this.gripW || 0)) * (1 - Math.exp(-(this.guard || this.act === 'deflect' ? GLUE.rate : GRIP.rate) * dt));
+    if (this.act === 'deflect' && w >= 1) this.gripW = 1;
+    if (tgt && !pole && this.gripW > 0.01) { this.glueLeft(this.gripW); }   // katana: the left hand is glued to the tsuka under the right
+    else if (tgt && this.gripW > 0.01) this.armIK(tgt, null, this.gripW, 'l');
+    // polearm: the shaft goes through the hands where the IK actually put them (it can never hang off the hands): it follows
+    // the rear hand's real position and is re-aimed through the front palm
+    if (pole && this.poleOv && this.poleHandT && !this.sheathed && !this.dead) {
+      const s = this.scaleF, p0 = this.poleOv.p.clone(), q0 = this.poleOv.q.clone(), A = this.b.pelvis.getWorldPosition(new V3()), B = this.b.neck.getWorldPosition(new V3());
+      const clear = (p, q) => { const ax = new V3(0, 0, 1).applyQuaternion(q); segClosest(_pc.copy(p).addScaledVector(ax, -POLE.body.butt * s), _pd.copy(p).addScaledVector(ax, POLE.body.tip * s), A, B, _pe, _pf); return _pe.distanceTo(_pf) >= (this.armored ? POLE.body.rArmored : POLE.body.r) * s * 0.92; };
+      const hA = this.b.hand.getWorldPosition(new V3()), p1 = p0.clone().add(hA.sub(this.poleHandT)), q1 = q0.clone();
+      const pa = this.b.palmL.getWorldPosition(new V3()).lerp(this.b.handL.getWorldPosition(new V3()), 0.35), d = pa.sub(p1), dl = d.length();
+      if (dl > 0.12 * s) { d.divideScalar(dl); const y = UP.clone().addScaledVector(d, -UP.dot(d)); if (y.lengthSq() < 1e-4) y.copy(this.fwd); y.normalize(); q1.setFromRotationMatrix(new THREE.Matrix4().makeBasis(new V3().crossVectors(y, d), y, d)); }
+      for (const k of [1, 0.5]) { const p = p0.clone().lerp(p1, k), q = q0.clone().slerp(q1, k); if (clear(p, q)) { this.poleOv.p.copy(p); this.poleOv.q.copy(q); break; } }   // never into the torso
+    }
   }
 
   // boss off-hand throw (bomb toss / chain hook cast): wind back over the shoulder, snap forward at the release and hold
@@ -875,7 +990,7 @@ export class Fighter {
       this.mLean = (this.mLean || 0) + (lt - (this.mLean || 0)) * (1 - Math.exp(-MOTION.rate * dt));
       this.mBank = (this.mBank || 0) + (bt - (this.mBank || 0)) * (1 - Math.exp(-MOTION.rate * dt));
       { const ph = (this.phase || 0) % 1, half = ph >= 0.5 ? 1 : 0, sp = vs.length();   // footsteps: two per locomotion cycle
-        if (this.stepHalf !== undefined && half !== this.stepHalf && sp > 1.2 && !busy && !this.airborne) this.emit('step', { sprint: sp > 5 }); this.stepHalf = half; }
+        if (this.stepHalf !== undefined && half !== this.stepHalf && sp > 1.2 && !busy && !this.airborne) this.emit('step', { sprint: sp > 5 * MOVE_K }); this.stepHalf = half; }
       if (Math.abs(this.mLean) > 1e-3) { twW(this.b.sp1, RIGHT, this.mLean * 0.5); twW(this.b.sp2, RIGHT, this.mLean * 0.5); }
       if (Math.abs(this.mBank) > 1e-3) { twW(this.b.pelvis, FWD, this.mBank * 0.4); twW(this.b.sp2, FWD, this.mBank * 0.6); }
       // stance life: slow weight shift and a faint blade drift while standing in guard
@@ -919,6 +1034,7 @@ export class Fighter {
       bone.quaternion.multiply(new Q().setFromAxisAngle(axis, this.headYaw * share));
     }
     this.fist('r', this.sheathed ? FIST_RELAX : 1);
+    this.guardIK(dt);
     this.parryIK(dt);
     this.poleStep(dt);
     this.pierceStep();
@@ -946,14 +1062,19 @@ export class Fighter {
   // stop or turn (damped spring on two axes, driven by the pelvis acceleration). Cosmetic, runs on every client.
   sayaSway(dt) {
     const S = this.saya; if (!S || !S.visible || !this.b.pelvis || dt <= 0) return;
-    const P = this.b.pelvis.getWorldPosition(new V3()), sw = this.sway || (this.sway = { q0: S.quaternion.clone(), p: P.clone(), v: new V3(), ax: 0, ay: 0, vx: 0, vy: 0 });
-    const v = P.clone().sub(sw.p).divideScalar(dt); sw.p.copy(P);
+    const P = this.b.pelvis.getWorldPosition(_w1), sw = this.sway || (this.sway = { q0: S.quaternion.clone(), p: P.clone(), v: new V3(), ax: 0, ay: 0, vx: 0, vy: 0, rel: null, idleT: 0 });
+    const pq = S.parent.getWorldQuaternion(_wq), bq = this.body.getWorldQuaternion(_wq2), anim = _wq3.copy(pq).multiply(sw.q0);
+    // the scabbard keeps its belt angle relative to the BODY, not to the pelvis bone: hip twists in big swings, dodges and
+    // hits used to swing it forward or straight up like a pole. Learned once from the calm stance, then mostly held.
+    if (!sw.rel) { sw.idleT = this.act === 'idle' && !MOVES[this.act] && this.t > 0.3 ? sw.idleT + dt : 0; if (sw.idleT > 0.25) sw.rel = bq.clone().invert().multiply(anim); }
+    if (sw.rel) anim.slerp(_wq4.copy(bq).multiply(sw.rel), SAYA.hold);
+    const v = _w2.copy(P).sub(sw.p).divideScalar(dt); sw.p.copy(P);
     if (v.lengthSq() > 400) v.set(0, 0, 0);   // respawn / teleport: no kick
-    const a = v.clone().sub(sw.v).divideScalar(dt); sw.v.lerp(v, 0.5); a.y *= SAYA.vert; a.clampLength(0, 25);   // the hips bob with every step: damp the vertical part
-    const wq = S.parent.getWorldQuaternion(new Q()).multiply(sw.q0), X = new V3(1, 0, 0).applyQuaternion(wq), Y = new V3(0, 1, 0).applyQuaternion(wq), K = SAYA;
+    const a = _w3.copy(v).sub(sw.v).divideScalar(dt); sw.v.lerp(v, 0.5); a.y *= SAYA.vert; a.clampLength(0, 25);   // the hips bob with every step: damp the vertical part
+    const X = _w4.set(1, 0, 0).applyQuaternion(anim), Y = _w5.set(0, 1, 0).applyQuaternion(anim), K = SAYA;
     sw.vx += (-K.k * sw.ax - K.c * sw.vx + K.g * a.dot(Y)) * dt; sw.vy += (-K.k * sw.ay - K.c * sw.vy - K.g * a.dot(X)) * dt;
     sw.ax = clamp(sw.ax + sw.vx * dt, -K.max, K.max); sw.ay = clamp(sw.ay + sw.vy * dt, -K.max, K.max);
-    S.quaternion.copy(sw.q0).multiply(new Q().setFromEuler(new THREE.Euler(sw.ax, sw.ay, 0)));
+    S.quaternion.copy(pq.invert()).multiply(anim).multiply(_wq4.setFromEuler(_we.set(sw.ax, sw.ay, 0)));
   }
   attachSword(dt) {
     const K = this.katana;

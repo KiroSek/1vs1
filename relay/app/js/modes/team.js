@@ -6,7 +6,7 @@
 //   out {a, v, r}       resolved outcome (owner of v -> all)       ph {ph, n, sc, w}                       round phase (host -> all)
 import * as THREE from 'three';
 import { AI } from '../ai.js';
-import { sfx, music } from '../audio.js';
+import { sfx, music, battle } from '../audio.js';
 
 const V3 = THREE.Vector3;
 export const TM = {
@@ -112,6 +112,7 @@ export class Team {
   step(dt, rawDt, live) {
     const c = this.c, G = c.G, me = G.me;
     this.phaseT += rawDt;
+    if (!this.over) { battle.start(); if (this.phase !== 'intro' || this.round > 1) battle.drop(); }   // fight music: intro during the bow, drive from the first fight
     if (this.phase === 'intro' && this.introSt < 2) {   // first-round ceremony on every client: all four bow, then the owned fighters draw
       if (this.introSt === 0 && this.phaseT > TM.intro1.bow) { this.introSt = 1; for (const f of this.F) if (f) f.bow(); }
       if (this.introSt === 1 && this.phaseT > TM.intro1.draw) { this.introSt = 2; for (let s = 0; s < 4; s++) if (this.F[s] && this.owned(s)) this.F[s].setAct('draw'); }
@@ -224,14 +225,15 @@ export class Team {
   }
   // ================= end =================
   end(w, note) {
-    if (this.over) return; const c = this.c; this.over = true; this.phase = 'over'; c.G.over = true; c.G.phase = 'end';
+    if (this.over) return; battle.stop(); const c = this.c; this.over = true; this.phase = 'over'; c.G.over = true; c.G.phase = 'end';
     const win = w === this.team(this.my); c.banner(win ? '勝' : '終', win ? '#ffe2a0' : '#e8dcc4', true);
     if (w >= 0) c.addCoins(win ? 90 : 30);
     if (win && this.online) c.ach.add('onlineWins');
+    c.ach.add('matches'); const gems = win ? c.addGems(this.online ? 2 : 1) : 0; if (win) { c.ach.add('wins'); c.ach.add('teamWins'); }
     setTimeout(() => {
       if (c.G.mode !== 'team') return; document.exitPointerLock && document.exitPointerLock();
       c.$('resBig').textContent = w < 0 ? c.t('tm.ended') : win ? c.t('tm.win') : c.t('tm.lose'); c.$('resBig').className = win ? 'win' : 'lose';
-      c.$('resSub').innerHTML = (note ? note + '<br>' : '') + `<b style="color:${TM.css[0]}">${this.score[0]}</b> : <b style="color:${TM.css[1]}">${this.score[1]}</b><br>${c.t('st.dealt')}: ${Math.round(this.stats.dealt)} · ${c.t('st.parry')}: ${this.stats.deflects}` + (w >= 0 ? `<br>+${win ? 90 : 30} ◎` : '');
+      c.$('resSub').innerHTML = (note ? note + '<br>' : '') + `<b style="color:${TM.css[0]}">${this.score[0]}</b> : <b style="color:${TM.css[1]}">${this.score[1]}</b><br>${c.t('st.dealt')}: ${Math.round(this.stats.dealt)} · ${c.t('st.parry')}: ${this.stats.deflects}` + (w >= 0 ? '<br>' + c.payLine(win ? 90 : 30, gems) : '');
       c.$('result').classList.remove('hidden'); c.$('bRematch').textContent = c.t('sv.again');
     }, 2200);
   }
@@ -241,7 +243,7 @@ export class Team {
     if (this.host) { this.over = false; this.c.G.over = false; this.score = [0, 0]; this.newRound(1); } else this.c.toast(this.c.t('tm.hostRematch'));
   }
   dispose() {
-    const c = this.c; for (let s = 0; s < 4; s++) { if (this.F[s] && this.F[s] !== c.G.me) this.F[s].dispose(); if (this.rings[s]) { c.scene.remove(this.rings[s]); this.rings[s].geometry.dispose(); } }
+    battle.stop(); const c = this.c; for (let s = 0; s < 4; s++) { if (this.F[s] && this.F[s] !== c.G.me) this.F[s].dispose(); if (this.rings[s]) { c.scene.remove(this.rings[s]); this.rings[s].geometry.dispose(); } }
     c.G.me.hitTargets = null; c.G.me.onStrike = null;
     this.hudEl && this.hudEl.remove(); this.tagEl && this.tagEl.remove(); c.$('title').classList.remove('show');
     c.G.targets = null; const o = c.G.dummy || c.G.opp; o.group.visible = true; o.katana.visible = true; o.dead = false; c.G.opp = o;

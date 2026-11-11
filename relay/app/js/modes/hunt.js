@@ -6,12 +6,14 @@ import { Weather } from '../world.js';
 import { Senses, Footsteps, SENSE } from '../stealth.js';
 import { MOVES } from '../moves.js';
 import { AI } from '../ai.js';
-import { sfx, music } from '../audio.js';
+import { sfx, music, battle } from '../audio.js';
 import { Stone } from './huntitems.js';
 import { DAY } from '../maps.js';
 import { inBush } from '../stealth.js';
+import { MOVE_K } from '../fighter.js';
 
 const V3 = THREE.Vector3;
+const setH = (el, h) => { if (el && el._h !== h) { el._h = h; el.innerHTML = h; } };   // HUD: touch the DOM only when the text changes
 const rnd = (a, b) => a + Math.random() * (b - a);
 const angDiff = (a, b) => { let d = (b - a) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d; };
 export const HUNT = {
@@ -75,6 +77,7 @@ class HuntBot {
 }
 
 // ---------------------------------------------------------------- mode controller
+const HUNT_DUEL_DROP = 3.5;   // s after the 12:30 duel is called until the fight music drops in
 export class Hunt {
   constructor(ctx, opts) {
     this.c = ctx; this.o = opts; this.online = !!opts.online; this.p = opts.params;
@@ -182,7 +185,7 @@ export class Hunt {
   }
   throwStone(yaw, pitch) {
     const c = this.c, me = c.G.me, from = me.b && me.b.handL ? me.b.handL.getWorldPosition(new V3()) : me.hitPoint;
-    const s = new Stone(c.scene, this.W, from, yaw, pitch); s.mine = true; this.stones.push(s); sfx.at('swing', 0, 0.35);
+    const s = new Stone(c.scene, this.W, from, yaw, pitch); s.mine = true; this.stones.push(s); c.ach.add('stones'); sfx.at('swing', 0, 0.35);
     if (this.online) c.net.send('hunt', { t: 'stone', p: from.toArray().map(v => +v.toFixed(2)), v: s.v0.toArray().map(v => +v.toFixed(2)) });
   }
   stonesStep(dt) {
@@ -200,6 +203,7 @@ export class Hunt {
   step(dt, rawDt, live) {
     const c = this.c, G = c.G, { me, opp } = G, inp = c.inp;
     this.t += dt; this.lureT -= rawDt; this.noiseT -= rawDt;
+    if (this.phase === 'duel' && !this.over && (this.duelT = (this.duelT || 0) + rawDt) > HUNT_DUEL_DROP) battle.drop();   // the square: a short intro, then the drive
     if (!this.over && !this.waiting) this.clock(rawDt);
     // senses: my view = camera direction
     const newSpot = this.senses.update(dt, me, c.rig.yaw, opp, this.t);
@@ -251,7 +255,7 @@ export class Hunt {
   // 12:30: the hunt is over. Both stand in the village square, draw their katana and fight to the death.
   startDuel() {
     const c = this.c, G = c.G; if (this.phase === 'duel') return; this.phase = 'duel'; this.overtime = true; this.left = 0;
-    c.banner('決闘', '#ff8a60', true); c.toast(c.t('hunt.duel')); sfx.bell(); music.set('combat');
+    c.banner('決闘', '#ff8a60', true); c.toast(c.t('hunt.duel')); sfx.bell(); battle.start(); this.duelT = 0;
     for (const s of this.stones) s.finish(); this.stones = []; this.throwAt = null; this.respawnT = this.oppRespawnT = -1;
     c.setLook(true, c.REC.skin, c.REC.weapon); const me = G.me; me.onProp = ids => this.breakProps(ids, true); me.canAmbush = false; me.remote = false; me.onStrike = (a, k, v) => this.onStrike(a, k, v);
     if (!this.online) { c.setLook(false, this.botLook[0], this.botLook[1]); const o = G.opp; o.remote = false; o.canAmbush = false; o.onStrike = (a, k, v) => this.onStrike(a, k, v); o.onProp = ids => this.breakProps(ids, true); this.bot.f = o; this.bot.ai.f = o; this.bot.state = 'duel'; this.bot.senses.aware = 1.3; }
@@ -282,19 +286,20 @@ export class Hunt {
     c.$('oppBars').style.opacity = s.spotted && !opp.dead ? 1 : 0;
     const m = Math.max(0, this.left), mm = Math.floor(m / 60), ss = Math.floor(m % 60), h = this.hour, hh = Math.floor(h), hm = Math.floor((h - hh) * 60);
     const rem = `${mm}:${String(ss).padStart(2, '0')}`, clock = this.phase === 'duel' ? '決闘 ' + c.t('hunt.duelT') : !c.arena.cfg.setHour ? rem : `${String(hh).padStart(2, '0')}:${String(hm).padStart(2, '0')} <small>· ${mm}:${String(ss).padStart(2, '0')}</small>`;   // the hour of the hunt (duel at 12:30) and the time left
-    c.$('huntInfo').innerHTML = `<b class="${this.phase === 'duel' ? 'ot' : ''}">${clock}</b><span>${c.t('hunt.lives')} ${'◆'.repeat(Math.max(0, me.lives))}${'◇'.repeat(Math.max(0, this.p.lives - me.lives))}</span>`;
+    setH(c.$('huntInfo'), `<b class="${this.phase === 'duel' ? 'ot' : ''}">${clock}</b><span>${c.t('hunt.lives')} ${'◆'.repeat(Math.max(0, me.lives))}${'◇'.repeat(Math.max(0, this.p.lives - me.lives))}</span>`);
     // awareness eye (how close I am to spotting him) and my own concealment
     const eye = c.$('eye'); eye.style.setProperty('--k', Math.min(1, s.aware)); eye.classList.toggle('on', s.spotted);
-    const cover = this.W.coverAt(me.pos.x, me.pos.z, me.crouch ? 0.9 : 1.6), light = this.W.lightAt(me.pos.x, me.pos.z), gait = me.crouch ? 0.6 : me.speed > 4.6 ? 1.25 : me.speed > 2 ? 1 : 0.8;
+    const cover = this.W.coverAt(me.pos.x, me.pos.z, me.crouch ? 0.9 : 1.6), light = this.W.lightAt(me.pos.x, me.pos.z), gait = me.crouch ? 0.6 : me.speed > 4.6 * MOVE_K ? 1.25 : me.speed > 2 * MOVE_K ? 1 : 0.8;
     const night = this.senses.tod === 'night', exposure = me.crouch && inBush(this.W, me.pos.x, me.pos.z) ? 0 : (1 - cover * 0.8) * (night ? 0.4 + light : 0.8 + light * 0.3) * gait;
-    const hid = c.$('hidden'); hid.textContent = exposure < 0.45 ? c.t('hunt.hidden') : exposure < 0.8 ? c.t('hunt.partly') : c.t('hunt.exposed'); hid.className = exposure < 0.45 ? 'h' : exposure < 0.8 ? 'p' : 'e';
+    const hid = c.$('hidden'); { const ht = exposure < 0.45 ? c.t('hunt.hidden') : exposure < 0.8 ? c.t('hunt.partly') : c.t('hunt.exposed'); if (hid._t !== ht) { hid._t = ht; hid.textContent = ht; } } hid.className = exposure < 0.45 ? 'h' : exposure < 0.8 ? 'p' : 'e';
   }
   end(win, note) {
-    if (this.over) return; const c = this.c; this.over = true; c.G.over = true; c.G.phase = 'end'; music.set('off');
+    if (this.over) return; battle.stop(); const c = this.c; this.over = true; c.G.over = true; c.G.phase = 'end'; music.set('off');
     if (win) { c.ach.add('huntWins'); if (this.phase === 'duel') c.ach.add('noonWins'); if (this.online) c.ach.add('onlineWins'); }
     const s = this.stats; s.time = this.t;
     c.banner(win === null ? '引分' : win ? '勝利' : '死', win ? '#ffd870' : win === null ? '#e8dcc4' : '#ff2a2a', true);
     const coins = win ? 120 : win === null ? 50 : 30; c.addCoins(coins);
+    c.ach.add('matches'); const gems = win ? c.addGems(this.online ? 2 : 1) : 0; if (win) c.ach.add('wins');
     const fmt = x => x === null ? '—' : Math.floor(x / 60) + ':' + String(Math.floor(x % 60)).padStart(2, '0');
     const acc = s.deflects + s.blocks + s.hitsTaken ? Math.round(100 * s.deflects / (s.deflects + s.blocks + s.hitsTaken)) + '%' : '—';
     setTimeout(() => {
@@ -305,7 +310,7 @@ export class Hunt {
         <tr><td>${c.t('st.time')}</td><td>${fmt(s.time)}</td></tr><tr><td>${c.t('st.firstSpot')}</td><td>${fmt(s.firstSpot)}</td></tr>
         <tr><td>${c.t('st.ambush')}</td><td>${s.ambush}</td></tr><tr><td>${c.t('st.attacks')}</td><td>${s.attacks}</td></tr>
         <tr><td>${c.t('st.parry')}</td><td>${acc} (${s.deflects})</td></tr><tr><td>${c.t('st.dealt')}</td><td>${Math.round(s.dealt)}</td></tr>
-        <tr><td>${c.t('st.taken')}</td><td>${Math.round(s.taken)}</td></tr><tr><td>${c.t('st.props')}</td><td>${s.props}</td></tr></table>+${coins} ◎`;
+        <tr><td>${c.t('st.taken')}</td><td>${Math.round(s.taken)}</td></tr><tr><td>${c.t('st.props')}</td><td>${s.props}</td></tr></table>${c.payLine(coins, gems)}`;
       c.$('result').classList.remove('hidden'); c.$('bRematch').textContent = c.t('res.rematch');
     }, 3200);
     this.rematch = [false, false];
@@ -322,6 +327,6 @@ export class Hunt {
     this.c.arena.setMap('dojo'); this.stats = { start: 0, firstSpot: null, ambush: 0, attacks: 0, deflects: 0, blocks: 0, hitsTaken: 0, dealt: 0, taken: 0, props: 0, time: 0 };
     this.overtime = false; this.respawnT = this.oppRespawnT = -1; this.start();
   }
-  dispose() { document.body.classList.remove('hunt'); music.set('off'); if (this.weather) this.weather.set('clear'); this.c.$('noiseRing').innerHTML = ''; }
+  dispose() { battle.stop(); document.body.classList.remove('hunt'); music.set('off'); if (this.weather) this.weather.set('clear'); this.c.$('noiseRing').innerHTML = ''; }
 }
 function c_send(c, n) { c.net.send('hunt', { t: 'noise', x: +n.x.toFixed(2), z: +n.z.toFixed(2), loud: n.loud, kind: n.kind, surface: n.surface }); }

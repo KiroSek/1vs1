@@ -122,18 +122,18 @@ export class FX {
   deflect(pos, dir, heavy) {          // perfect deflect: white-gold burst, lens streak, shockwave, spark fountain
     this.spark(pos, 260, 15, 0xffd27a, 0.6, dir, 0.85); this.spark(pos, 90, 6, 0xffffff, 0.3, null, 1, 4);
     this.spark(pos, 50, 22, 0xffe7b0, 0.25, dir, 0.4, 2);
-    this.flare(pos, heavy ? 0.8 : 0.65, 0.18, 0xffffff); this.flare(pos, 0.35, 0.3, 0xffd890);
-    this.lensStreak(pos, heavy ? 3.6 : 3, 0.26); this.ring(pos, 1.0, 0.24, 0xfff0c8);
-    this.light(pos, 0xffe0b0, 60, 0.3);
+    this.flare(pos, heavy ? 0.5 : 0.4, 0.14, 0xfff4e0); this.flare(pos, 0.25, 0.24, 0xffd890);   // a sharp spark of light, not a blinding sun (bloom adds the rest)
+    this.lensStreak(pos, heavy ? 2.4 : 2, 0.2); this.ring(pos, 0.9, 0.22, 0xfff0c8);
+    this.light(pos, 0xffe0b0, 26, 0.22);
   }
-  clash(pos, dir) { this.spark(pos, 160, 12, 0xffc060, 0.5, dir, 0.9); this.flare(pos, 0.9, 0.2, 0xffe0a0); this.lensStreak(pos, 2.6, 0.2); this.ring(pos, 0.9, 0.2); this.light(pos, 0xffd090, 35, 0.2); }
+  clash(pos, dir) { this.spark(pos, 160, 12, 0xffc060, 0.5, dir, 0.9); this.flare(pos, 0.55, 0.16, 0xffe0a0); this.lensStreak(pos, 1.8, 0.16); this.ring(pos, 0.8, 0.2); this.light(pos, 0xffd090, 20, 0.18); }
   hit(pos, dir, heavy) {               // flesh: dark blood spray along the cut + mist
     this.spark(pos, heavy ? 70 : 45, heavy ? 7 : 5, 0x8a0808, 0.6, dir, 0.55, 12);
     this.puff(pos, heavy ? 26 : 16, 1.6, 0x5a0606, 0.9, 1, 0.1, 3);
     this.flare(pos, heavy ? 0.5 : 0.35, 0.06, 0xff6050); this.light(pos, 0xff3020, 6, 0.08);
     if (heavy) this.ring(pos, 0.9, 0.22, 0x8a1010);   // heavy blow: a short crimson shock ring
   }
-  mikiri(pos) { this.spark(pos, 180, 10, 0xffe2a0, 0.5); this.flare(pos, 1.2, 0.3, 0xfff6e0); this.ring(pos, 1.6, 0.35, 0xffffff); this.lensStreak(pos, 3.5, 0.3, 0xffffff); this.light(pos, 0xffffff, 40, 0.3); }
+  mikiri(pos) { this.spark(pos, 180, 10, 0xffe2a0, 0.5); this.flare(pos, 0.8, 0.26, 0xfff6e0); this.ring(pos, 1.5, 0.35, 0xffffff); this.lensStreak(pos, 2.6, 0.26, 0xffffff); this.light(pos, 0xffffff, 26, 0.26); }
   finisher(pos, dir) {
     this.spark(pos, 140, 9, 0x9a0a0a, 0.9, dir, 0.6, 12); this.puff(pos, 60, 2.6, 0x620606, 1.4, 1, 0.2, 2);
     this.flare(pos, 0.9, 0.3, 0xff2a1a); this.ring(pos, 1.8, 0.42, 0xff3020); this.lensStreak(pos, 4, 0.4, 0xff4030); this.light(pos, 0xff2a18, 25, 0.4);
