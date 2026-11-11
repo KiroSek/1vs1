@@ -7,6 +7,7 @@ const PILLARS = [];
 const rnd = (a, b) => a + Math.random() * (b - a);
 
 import { bakeStatic } from './world.js';
+import { vista } from './vista.js';
 // open-world maps (Hunt / Survival) register a World here; bounds/camClip/ground then use its colliders and terrain
 export const WORLD = { active: null };
 export const groundAt = (x, z) => WORLD.active ? WORLD.active.ground(x, z) : 0;
@@ -291,16 +292,20 @@ function applyLightBudget(pools, q, k = 1) { pools.forEach((P, i) => { const on 
 // Outdoor maps + map manager. The fighting rectangle (ARENA) is identical everywhere,
 // so online opponents may pick different maps without any desync.
 // ===================================================================================
+const DUEL_GROUND = { bamboo: 62 };   // ground disc radius under a duel arena's vista (the vista relief takes over past it)
+// duel arenas have no World: give vista.js the little it needs (flat ground at 0 inside, the ground colour)
+function duelVista(g, cfg, half, col, P) { const W = { half, ground: () => 0, colorFn: (x, z, c) => c.setRGB(...col).convertSRGBToLinear(), water: null }; vista(g, W, cfg, { inner: half, ...P }); }
 export function gradSky(top, mid, hor, sunDir, sunCol, sunPow = 600, glow = 0.6) {
   return new THREE.ShaderMaterial({
     side: THREE.BackSide, depthWrite: false, fog: false,
-    uniforms: { a: { value: new THREE.Color(hor) }, b: { value: new THREE.Color(mid) }, c: { value: new THREE.Color(top) }, s: { value: new THREE.Vector3(...sunDir).normalize() }, sc: { value: new THREE.Color(sunCol) }, sp: { value: sunPow }, gl: { value: glow } },
+    uniforms: { a: { value: new THREE.Color(hor) }, b: { value: new THREE.Color(mid) }, c: { value: new THREE.Color(top) }, s: { value: new THREE.Vector3(...sunDir).normalize() }, sc: { value: new THREE.Color(sunCol) }, sp: { value: sunPow }, gl: { value: glow }, fc: { value: new THREE.Color(hor) }, fk: { value: 0 } },
     vertexShader: 'varying vec3 p;void main(){p=normalize(position);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
-    fragmentShader: 'varying vec3 p;uniform vec3 a,b,c,sc,s;uniform float sp,gl;void main(){float h=clamp(p.y,-.2,1.);vec3 col=mix(a,b,smoothstep(-.02,.25,h));col=mix(col,c,smoothstep(.25,.9,h));float m=max(dot(p,s),0.);col+=sc*(pow(m,sp)*3.+pow(m,8.)*gl*.5);gl_FragColor=vec4(col,1.);}',
+    fragmentShader: 'varying vec3 p;uniform vec3 a,b,c,sc,s,fc;uniform float sp,gl,fk;void main(){float h=clamp(p.y,-.2,1.);vec3 col=mix(a,b,smoothstep(-.02,.25,h));col=mix(col,c,smoothstep(.25,.9,h));col=mix(col,fc,fk*(1.-smoothstep(-.01,.16,h)));float m=max(dot(p,s),0.);col+=sc*(pow(m,sp)*3.+pow(m,8.)*gl*.5);gl_FragColor=vec4(col,1.);}',
   });
 }
+export const SKY_R = 780;   // sky sphere radius: inside the camera far plane (main.js) with room for the camera's offset on big maps
 export function skyAndEnv(g, cfg, mat) {
-  const sky = new THREE.Mesh(new THREE.SphereGeometry(220, 32, 16), mat); sky.frustumCulled = false; g.add(sky);
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(SKY_R, 32, 16), mat); sky.frustumCulled = false; g.add(sky); cfg.skyMat = cfg.skyMat || mat;
   const env = new THREE.Scene(); env.add(new THREE.Mesh(new THREE.SphereGeometry(100, 32, 16), mat.clone()));
   cfg.envScene = env;
   return env;
@@ -443,7 +448,8 @@ function buildSakura(g, renderer, cfg) {
   const ring = (n, r0, r1, s0, s1, avoid) => { const out = []; let k = 0; while (out.length < n && k++ < 500) { const a = rnd(0, Math.PI * 2), r = rnd(r0, r1), x = Math.cos(a) * r, z = Math.sin(a) * r; if (avoid && avoid(x, z)) continue; out.push([x, -0.5, z, rnd(s0, s1)]); } return out; };
   const clearView = (x, z) => z > 10 && Math.abs(x) < 7;   // keep the line to Fuji open behind the far edge of the stage
   forest(g, 'momiji', ring(7, 14, 24, 1.05, 1.5, clearView));
-  forest(g, 'pine', ring(11, 16, 28, 0.85, 1.25, clearView));
+  forest(g, 'momijiLow', ring(6, 15, 27, 0.9, 1.2, clearView), { variants: 3 });   // low, crooked, wide
+  forest(g, 'momijiTall', ring(5, 18, 28, 0.9, 1.15, clearView), { variants: 2 });
   forest(g, 'bare', ring(5, 15, 27, 0.9, 1.2, clearView));
   const rockM = new THREE.MeshStandardMaterial({ color: 0x4a4e52, roughness: 0.95, flatShading: true });
   for (const [x, z, sc] of [[-15, 12, 2.4], [16, 13, 2.0], [-19, -6, 2.6], [19, -9, 2.2], [-9, -16, 1.6], [11, -17, 1.8], [-22, 20, 3.0], [23, 18, 2.6]]) {
@@ -464,6 +470,11 @@ function buildSakura(g, renderer, cfg) {
     pag.position.set(17, -0.5, 33); pag.rotation.y = 0.3; g.add(pag); }
   for (const [x, z, lit] of [[-12.6, 6.5, 1], [12.6, 6.5, 1], [-5.5, 13.2, 1], [5.5, 13.2, 1], [-12.6, -6.5, 0], [12.6, -6.5, 0]]) stoneLantern(g, x, z, !!lit);
   const upd = particles(g, 'momiji', 260);
+  // around the field: open moonlit land rising slowly to far snowy ranges; only momiji on it (the map's own tree), no
+  // other kinds; the relief starts past the pagoda so the field, susuki, torii and trees stay exactly as they were
+  duelVista(g, cfg, 46, [0.22, 0.25, 0.19], { seed: 42, tod: 'night', far: 'snow', keepBackdrop: ['fuji_night'], clouds: 0, treeK: 0.14, nearK: 0.4, rockK: 0.5,
+    sides: [[0, 'hills'], [100, 'hills'], [200, 'hills'], [290, 'hills']], near: [['momiji', 0.4], ['momijiLow', 0.35], ['momijiTall', 0.25]],
+    trees: [['autumn', 0.6, 'broad'], ['autumn', 0.4, 'spread']], palette: { grass: [0.22, 0.25, 0.19], rock: [0.3, 0.3, 0.33] } });
   return { setQuality(q) { sun.shadow.mapSize.setScalar(q === 'high' ? 2048 : 1024); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } }, update: upd };
 }
 
@@ -491,6 +502,10 @@ function buildSnow(g, renderer, cfg) {
   { const pts = []; let k = 0; while (pts.length < 40 && k++ < 400) { const a = rnd(0, Math.PI * 2), r = rnd(14, 45), x = Math.cos(a) * r, z = Math.sin(a) * r; if (Math.abs(x - 2) < 7 && z > 16 && z < 34) continue; if (Math.hypot(x + 15, z - 24) < 6) continue; pts.push([x, 0, z, rnd(0.7, 1.4)]); } forest(g, 'snowpine', pts); }   // pines kept off the pagoda and the hall
   for (const [x, z] of [[-11, -7.5], [11, -7.5], [-11, 7.5], [11, 7.5], [-4.5, 11], [4.5, 11]]) stoneLantern(g, x, z, true);
   const upd = particles(g, 'snow', 1200);
+  // the temple yard sits in a snowed-in mountain basin: peaks behind the pagoda, a pine slope, a cliff, rolling drifts
+  duelVista(g, cfg, 48, [0.86, 0.89, 0.93], { seed: 41, tod: 'fog', sides: [[0, 'hills'], [95, 'cliff'], [180, 'mountain'], [270, 'forest']], near: 'snowpine', far: 'snow', clouds: 10,
+    trees: [['snow', 1, 'snow']], palette: { grass: [0.86, 0.89, 0.93], rock: [0.42, 0.43, 0.46], forestFloor: [0.78, 0.81, 0.86], snowLine: 3 },
+    landmarks: [['castle', 200, 120, 1.3], ['shrine', 300, 30, 1], ['tower', 60, 70, 1]] });
   return { setQuality(q) { sun.shadow.mapSize.setScalar(q === 'high' ? 2048 : 1024); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } }, update: upd };
 }
 
@@ -503,7 +518,7 @@ function buildBamboo(g, renderer, cfg) {
   g.add(new THREE.HemisphereLight(0x9cbcc8, 0x1e2a1c, 1.0));
   const moon = sunLight(g, 0xd4e6ff, 2.6, [moonDir[0] * 40, 26, moonDir[2] * 40]);
   const moss = new THREE.MeshStandardMaterial({ map: noiseTex('#3a5a32', () => [rnd(80, 110), rnd(25, 45), rnd(18, 38)], 7000, 512, 20), roughness: 1 }); moss.map.repeat.set(26, 26);
-  const ground = new THREE.Mesh(new THREE.CircleGeometry(150, 48), moss); ground.rotation.x = -Math.PI / 2; ground.position.y = -0.02; ground.receiveShadow = true; g.add(ground);
+  const ground = new THREE.Mesh(new THREE.CircleGeometry(DUEL_GROUND.bamboo, 48), moss); ground.rotation.x = -Math.PI / 2; ground.position.y = -0.02; ground.receiveShadow = true; g.add(ground);
   const tiles = tilesTex('#5c5e58', '#2c302a'); tiles.repeat.set(5, 3.5);
   const pave = new THREE.Mesh(new THREE.PlaneGeometry(ARENA.hx * 2 + 1, ARENA.hz * 2 + 1), new THREE.MeshStandardMaterial({ map: tiles, roughness: 0.8 })); cfg.floors = [pave.material, moss]; pave.rotation.x = -Math.PI / 2; pave.position.y = 0.005; pave.receiveShadow = true; g.add(pave);
   // bamboo stalks: one instanced mesh, nodes painted on a canvas texture
@@ -526,6 +541,11 @@ function buildBamboo(g, renderer, cfg) {
   for (const [x, z, sc] of [[-12.5, -9, 1.7], [12.5, -9.5, 1.5], [-13.5, 5, 2.1], [-6, 13, 1.3], [7.5, 9.5, 1.1], [-17, 16, 2.6], [20, 4, 2.2]]) capRock(g, x, z, sc, 0x4a6a34, 0x3a3e40, -0.25);
   for (const [x, z] of [[-10.5, -7], [10.5, -7], [-10.5, 7], [10.5, 7], [-2.6, 13], [2.6, 13]]) stoneLantern(g, x, z, true);
   const big = new THREE.Mesh(new THREE.CircleGeometry(9, 32), new THREE.MeshBasicMaterial({ color: 0xf2f6ff, fog: false })); big.position.set(moonDir[0] * 180, moonDir[1] * 180, moonDir[2] * 180); big.lookAt(0, 0, 0); g.add(big);
+  // the grove fills a hollow between wooded hills: a mountain shoulder behind the torii, a cliff with a fall of water
+  // behind the stage, a temple on the far slope; night ranges beyond (bamboo itself stays the near plane)
+  duelVista(g, cfg, 42, [0.2, 0.3, 0.17], { seed: 43, tod: 'night', far: 'night', clouds: 6, sides: [[0, 'cliff'], [95, 'hills'], [180, 'mountain'], [270, 'forest']], near: [['kusu', 0.45], ['matsu', 0.35], ['tsubaki', 0.2]],
+    trees: [['bamboo', 0.35, 'bamboo'], ['green', 0.25, 'spread'], ['matsu', 0.25, 'pad'], ['green', 0.15, 'vase']], palette: { grass: [0.2, 0.3, 0.17], rock: [0.3, 0.32, 0.31], forestFloor: [0.14, 0.2, 0.12] },
+    landmarks: [['temple', 185, 60, 1], ['pagoda', 120, 70, 1], ['shrine', 300, 34, 0.9]], waterfall: 0 });
   const upd = particles(g, 'fireflies', 160);
   return { setQuality(q) { moon.shadow.mapSize.setScalar(q === 'high' ? 2048 : 1024); if (moon.shadow.map) { moon.shadow.map.dispose(); moon.shadow.map = null; } }, update: upd };
 }
@@ -561,12 +581,12 @@ export function buildArena(scene, renderer) {
       if (LK.exp) cfg.exposure = LK.exp; renderer.toneMappingExposure = cfg.baseExposure = cfg.exposure; cfg.haze = cfg.haze ?? LK.haze ?? 0.5; cfg.weathers = cfg.weathers || LK.weathers || ['clear'];
       g.traverse(o => { if (!cfg.sunL && o.isDirectionalLight && o.castShadow) cfg.sunL = o; if (!cfg.hemi && o.isHemisphereLight) cfg.hemi = o; });
       if (cfg.fog) cfg.fog0 = cfg.fog.isFogExp2 ? cfg.fog.density : cfg.fog.far;
-      cfg.pools = cfg.world ? [] : lightPools(g); cfg.backdrop = addBackdrops(g, BACKDROPS[name] || (cfg.world ? (cfg.night ? BACKDROPS._worldNight : BACKDROPS._world) : null), cfg);
+      cfg.pools = cfg.world ? [] : lightPools(g); { const bd = BACKDROPS[name] || (cfg.world ? (cfg.night ? BACKDROPS._worldNight : BACKDROPS._world) : null); cfg.backdrop = addBackdrops(g, cfg.noBackdrop ? (cfg.keepBackdrop && bd ? bd.filter(b => cfg.keepBackdrop.includes(b[0])) : null) : bd, cfg); }   // a vista (vista.js) replaces the flat strips (a few far ones may stay)
       cur = { name, key, group: g, api, envTex, envRT, cfg }; api.setQuality(q); applyLightBudget(cfg.pools, q, cfg.poolK ?? 1);
     },
     setQuality(qq) { q = qq; if (cur) { cur.api.setQuality(q); applyLightBudget(cur.cfg.pools, q, cur.cfg.poolK ?? 1); } },
     update(dt) {
-      if (cur) { (cur.api.update)(dt); const c = cur.cfg; updateBackdrops(c, scene);
+      if (cur) { (cur.api.update)(dt); const c = cur.cfg; updateBackdrops(c, scene); if (c.vistaTick) c.vistaTick(dt);
         if (c.lightning > 0 && (c.lightning -= dt) <= 0) { c.lightning = 5 + Math.random() * 9; c.flashT = 1; c.flashNow = true; }   // rain: a lightning strike now and then
         if (c.flashT > 0 && c.hemi) { c.flashT = Math.max(0, c.flashT - dt * 3.2); if (c.hemi0 === undefined) c.hemi0 = c.hemi.intensity; const f = c.flashT; c.hemi.intensity = c.hemi0 * (1 + 3.5 * f * (0.6 + 0.4 * Math.sin(f * 40))); }
       }

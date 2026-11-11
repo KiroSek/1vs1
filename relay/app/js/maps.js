@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { registerMap, gradSky, skyAndEnv, particles } from './arena.js';
 import { World, rng } from './world.js';
 import * as SP from './svprops.js';
+import { vista } from './vista.js';
 
 const V3 = THREE.Vector3;
 // time of day presets: sky colours, sun/moon, ambient, fog distance, exposure
@@ -84,7 +85,7 @@ function buildHunt(g, renderer, cfg, opts = {}) {
   const sy = W.ground(-40, -44); W.flat(-40, -46, 7, 6, sy);
   W.keep(-40, -49, 0, 3, 9, 6.5, { lit: tod !== 'day' }); W.torii(-40, -36, 0, 1.1); W.torii(-36, -24, 0.4, 0.9);   // the castle keep crowns the hill
   for (const [x, z] of [[-44, -40], [-36, -40], [-49, -50], [-31, -50]]) W.stoneLantern(x, z);
-  W.broadleaf([[-48, -44, 1.2], [-31, -47, 1.1], [-46, -33, 1]], 'maple');
+  W.broadleaf([[-48, -44, 1.2], [-31, -47, 1.1], [-46, -33, 1]], 'keyaki');
   // ---- a pagoda above the east road, with cherries around it ----
   W.keep(22, -18, 0.35, 4, 4.2, 4.2, { base: 0.9, lit: tod !== 'day' }); W.broadleaf([[17, -22, 0.9], [27, -21, 0.9]], 'sakura'); W.stoneLantern(19, -13); W.stoneLantern(25, -14);
   // ---- bamboo forest (NE) with a path through it ----
@@ -111,7 +112,7 @@ function buildHunt(g, renderer, cfg, opts = {}) {
   for (let i = 0; i < 230; i++) { const x = R() * 136 - 68, z = R() * 136 - 68, edge = Math.max(Math.abs(x), Math.abs(z)) > 58;
     if (!edge && R() < 0.62) continue; if (W.inWater(x, z) || W.solidAt(x, W.ground(x, z) + 1, z)) continue;
     if (Math.hypot(x + 12, z + 4) < 22 || Math.hypot(x - 36, z + 40) < 23 || Math.hypot(x + 40, z + 46) < 9 || Math.hypot(x - 22, z + 18) < 9 || Math.abs(W.riverDist(x, z)) < 6) continue; pines.push([x, z, 0.8 + R() * 0.7]); }
-  W.pines(pines);
+  W.pines(pines, [['matsu', 0.35], ['keyaki', 0.25], ['kusu', 0.25], ['bonsai', 0.1], ['tsubaki', 0.05]]);
   W.broadleaf([[-30, 14, 1.1], [14, 12, 1], [-50, -14, 1.2], [8, -46, 1], [-56, 52, 1.1], [26, -10, 0.9]], 'sakura');
   for (let i = 0; i < 26; i++) { const x = R() * 120 - 60, z = R() * 120 - 60; if (W.inWater(x, z) || Math.hypot(x + 12, z + 4) < 16) continue; W.rock(x, z, 0.4 + R() * 0.8); }
   // ---- bushes: cover to crouch in along the village, paths, river banks, shrine slopes and ruins ----
@@ -129,6 +130,9 @@ function buildHunt(g, renderer, cfg, opts = {}) {
   W.spawns = [[-56, -56], [52, 58], [58, -58], [-58, 52], [-62, -8], [62, 6]];
   W.waypoints = [[-12, -6], [-40, -44], [36, -40], [6, -34], [0, 22], [52, 22], [36, 46], [-46, 8], [28, 6], [-28, 30], [-24, -20], [10, -6], [48, -52], [-50, 34], [22, 49]];
   cfg.huntStart = [[0, 1], [2, 3], [4, 5]];
+  vista(g, W, cfg, { seed: 30, inner: 75, tod: cycle ? 'night' : tod, sides: [[0, 'mountain'], [70, 'forest'], [150, 'hills'], [215, 'valley'], [290, 'cliff']], near: [['matsu', 0.4], ['keyaki', 0.3], ['kusu', 0.2], ['sakura', 0.1]],
+    trees: [['matsu', 0.3, 'pad'], ['green', 0.25, 'vase'], ['green', 0.2, 'spread'], ['dark', 0.1, 'low'], ['bamboo', 0.08, 'bamboo'], ['sakura', 0.07, 'broad']], palette: { grass: [0.36, 0.42, 0.24] },
+    landmarks: [['pagoda', 345, 70, 1.2], ['castle', 40, 140, 1.6], ['temple', 120, 60, 1], ['village', 200, 90, 1], ['torii', 300, 30, 1.3]], paths: [[340, 350, 4, 60]], waterfall: 290, far: 'green' });
   return { setQuality: lit.setQuality, update: () => { } };
 }
 registerMap('hunt_valley', 'Kirigakure Valley', buildHunt);
@@ -147,14 +151,41 @@ function shrubRing(W, R, r0, r1, n, gates) {
   for (let i = 0; i < n; i++) { const a = R() * 6.283, r = r0 + R() * (r1 - r0); if (gates.some(gt => Math.abs(Math.atan2(Math.sin(a - gt), Math.cos(a - gt))) < 0.3)) continue; const x = Math.cos(a) * r, z = Math.sin(a) * r; if (W.solidAt(x, W.ground(x, z) + 0.6, z)) continue; pts.push([x, z, 0.8 + R() * 0.4]); }
   W.shrubs(pts);
 }
-function ringOfPines(W, R, r0, r1, n, gates) {
+function ringOfPines(W, R, r0, r1, n, gates, kinds) {   // kinds: see World.pines (groves of Japanese trees by default)
   const pts = [];
-  for (let i = 0; i < n; i++) { const a = R() * 6.283, r = r0 + R() * (r1 - r0); if (gates.some(gt => Math.abs(Math.atan2(Math.sin(a - gt), Math.cos(a - gt))) < 0.18)) continue; pts.push([Math.cos(a) * r, Math.sin(a) * r, 0.9 + R() * 0.6]); }
-  W.pines(pts);
+  for (let i = 0; i < n; i++) { const a = R() * 6.283, r = r0 + R() * (r1 - r0); if (gates.some(gt => Math.abs(Math.atan2(Math.sin(a - gt), Math.cos(a - gt))) < 0.18)) continue; pts.push([Math.cos(a) * r, Math.sin(a) * r, 0.75 + R() * 0.8]); }
+  W.pines(pts, kinds);
 }
 // sand / rock / earth tints for the arena ground (on top of the surface colours)
 const tintGround = (W, fn) => (x, z, c) => { groundColor(W)(x, z, c); const t = fn(x, z, W.surfaceAt(x, z)); if (t) { c.setRGB(t[0], t[1], t[2]); c.convertSRGBToLinear(); } };
 const ring = (R, r, a0, a1) => [Math.cos(a0) * r, Math.sin(a0) * r, Math.cos(a1) * r, Math.sin(a1) * r];
+// ---------------------------------------------------------------- surroundings of the Survival arenas (vista.js)
+// each side of each arena gets its own land (mountain slope, cliff wall, forest, hills, valley, shore), landmarks on it
+// and far ranges behind, so the arena reads as a place inside a big mountain country, not a square in the void
+const AROUND = {
+  sv_dojo: { seed: 31, sides: [[0, 'mountain'], [80, 'forest'], [165, 'valley'], [235, 'hills'], [295, 'cliff']], near: [['matsu', 0.45], ['keyaki', 0.3], ['sakura', 0.15], ['bonsai', 0.1]],
+    trees: [['matsu', 0.35, 'pad'], ['green', 0.25, 'vase'], ['green', 0.15, 'spread'], ['sakura', 0.12, 'broad'], ['dark', 0.13, 'low']], palette: { grass: [0.34, 0.42, 0.23] },
+    landmarks: [['pagoda', 8, 52, 1.1], ['temple', 92, 64, 1], ['castle', 178, 150, 1.5], ['shrine', 238, 46, 1], ['torii', 352, 22, 1.2]], paths: [[350, 6, 4, 50]], waterfall: 295, far: 'green' },
+  sv_cave: { seed: 32, sides: [[0, 'cliff'], [95, 'mountain'], [185, 'cliff'], [265, 'mountain']], near: [['bonsai', 0.55], ['matsu', 0.45]], treeK: 0.7, rockK: 1.8,
+    trees: [['matsu', 0.55, 'pad'], ['dark', 0.25, 'low'], ['dead', 0.2, 'broad']], palette: { grass: [0.24, 0.27, 0.2], rock: [0.36, 0.35, 0.36] },
+    landmarks: [['shrine', 200, 26, 0.9], ['tower', 80, 70, 1.2]], waterfall: 0, far: 'night', clouds: 8 },
+  sv_trade: { seed: 33, sides: [[0, 'forest'], [90, 'valley'], [185, 'mountain'], [270, 'hills']], near: [['keyaki', 0.4], ['kusu', 0.35], ['matsu', 0.25]],
+    trees: [['green', 0.3, 'vase'], ['green', 0.25, 'spread'], ['matsu', 0.25, 'pad'], ['bamboo', 0.12, 'bamboo'], ['dark', 0.08, 'low']], palette: { grass: [0.38, 0.36, 0.22] },
+    landmarks: [['village', 95, 70, 1], ['castle', 268, 120, 1.3], ['pagoda', 192, 60, 1], ['torii', 4, 16, 1]], paths: [[2, 12, 3, 55], [180, 172, 3, 45]], far: 'green' },
+  sv_bamboo: { seed: 34, sides: [[0, 'mountain'], [90, 'forest'], [180, 'cliff'], [270, 'forest']], near: [['kusu', 0.4], ['matsu', 0.3], ['tsubaki', 0.3]],
+    trees: [['bamboo', 0.4, 'bamboo'], ['green', 0.25, 'spread'], ['matsu', 0.2, 'pad'], ['green', 0.15, 'vase']], palette: { grass: [0.3, 0.4, 0.22] },
+    landmarks: [['shrine', 6, 44, 1], ['pagoda', 125, 95, 1.1], ['temple', 300, 110, 1]], paths: [[0, 8, 4, 40]], waterfall: 180, far: 'green' },
+  sv_ruins: { seed: 35, sides: [[0, 'mountain'], [75, 'hills'], [180, 'lake'], [285, 'cliff']], near: [['matsu', 0.5], ['bonsai', 0.25], ['kusu', 0.25]], walls: [40, 320],
+    trees: [['matsu', 0.4, 'pad'], ['green', 0.25, 'spread'], ['green', 0.2, 'vase'], ['dark', 0.15, 'low']], palette: { grass: [0.4, 0.38, 0.26], rock: [0.44, 0.41, 0.36] },
+    landmarks: [['tower', 55, 45, 1], ['temple', 335, 66, 1], ['castle', 228, 150, 1.4], ['village', 125, 80, 0.8]], waterfall: 285, far: 'green' },
+  sv_castle: { seed: 36, sides: [[0, 'hills'], [90, 'valley'], [180, 'forest'], [270, 'mountain']], near: [['matsu', 0.4], ['keyaki', 0.3], ['sakura', 0.2], ['tsubaki', 0.1]],
+    trees: [['matsu', 0.3, 'pad'], ['green', 0.3, 'vase'], ['green', 0.15, 'spread'], ['sakura', 0.15, 'broad'], ['dark', 0.1, 'low']], palette: { grass: [0.36, 0.42, 0.25] },
+    landmarks: [['village', 92, 72, 1.1], ['gate', 180, 14, 1], ['pagoda', 270, 62, 1.1], ['temple', 30, 80, 1]], paths: [[180, 186, 18, 60], [268, 272, 4, 40]], far: 'green' },
+  sv_fortress: { seed: 37, sides: [[0, 'mountain'], [115, 'cliff'], [200, 'valley'], [285, 'forest']], near: 'snowpine',
+    trees: [['snow', 1, 'snow']], palette: { grass: [0.78, 0.81, 0.86], rock: [0.38, 0.38, 0.41], dirt: [0.6, 0.6, 0.62], forestFloor: [0.7, 0.73, 0.78], snowLine: 4 },
+    landmarks: [['tower', 40, 55, 1.2], ['shrine', 300, 40, 1], ['gate', 200, 10, 1]], far: 'snow', clouds: 10 },
+};
+function around(g, W, cfg, name) { vista(g, W, cfg, AROUND[name]); }
 // ---------------------------------------------------------------- Dojo Court
 // a walled dojo yard: the hall on its plinth (N), covered galleries down both sides, a polished slab court with
 // training posts, low fences and racks to fight around; gates S, E, W
@@ -175,8 +206,9 @@ function svDojo(g, renderer, cfg, opts) {
   for (const [x, z] of [[-26, -2], [26, -4], [-22, 24], [22, 24]]) W.bump(x, z, 7, 2.2);
   W.mist([[-24, 6, 8], [24, 6, 8], [0, 26, 9]]); W.mistK = 0.4;
   W.terrainMesh(70, 70, groundColor(W, [0.34, 0.4, 0.24]));
-  ringOfPines(W, R, 27, 34, 60, [Math.PI / 2, 0, Math.PI]);
+  ringOfPines(W, R, 27, 34, 60, [Math.PI / 2, 0, Math.PI], [['matsu', 0.4], ['keyaki', 0.25], ['kusu', 0.2], ['bonsai', 0.15]]);
   W.spawns = [[0, 25], [25, 7.5], [-25, 7.5]]; cfg.weathers = ['clear', 'rain', 'wind'];
+  around(g, W, cfg, 'sv_dojo');
   return { setQuality: lit.setQuality, update: particles(g, 'petals', 140) };
 }
 // ---------------------------------------------------------------- Cave Grottos
@@ -200,6 +232,7 @@ function svCave(g, renderer, cfg, opts) {
   W.mist([[-12, 10, 7], [10, -10, 7]]); W.mistK = 0.45;
   W.terrainMesh(70, 70, tintGround(W, (x, z) => { const n = 0.85 + 0.15 * Math.sin(x * 0.5) * Math.cos(z * 0.43); return [0.34 * n, 0.31 * n, 0.27 * n]; }));
   W.spawns = gaps.map(a => [Math.cos(a) * 25, Math.sin(a) * 25]); cfg.weathers = ['fog', 'clear'];
+  around(g, W, cfg, 'sv_cave');
   return { setQuality: lit.setQuality, update: particles(g, 'fireflies', 140) };
 }
 // ---------------------------------------------------------------- Trade Post
@@ -222,13 +255,14 @@ function svTrade(g, renderer, cfg, opts) {
   for (const [x, z] of [[-4, -3.5], [4, 3.6]]) W.prop('lantern', x, z, R() * 6);
   SP.lanternString(W, -4.4, -11, 4.4, -11); SP.lanternString(W, -4.4, 11.5, 4.4, 11.5); SP.lanternString(W, 11.5, -4.4, 11.5, 4.4); SP.lanternString(W, -11.5, -4.4, -11.5, 4.4);
   for (const [x, z, c] of [[-4.2, -9.4, 0x7a2a22], [4.2, 10, 0x2a4a7a], [10, 4.2, 0x3a5a2a]]) SP.banner(W, x, z, c);
-  W.broadleaf([[-14, -14, 1], [14, 14, 1.1], [-14, 14, 1], [14, -14, 0.9]], 'maple');
+  W.broadleaf([[-14, -14, 1], [14, 14, 1.1]], 'kusu'); W.broadleaf([[-14, 14, 0.9], [14, -14, 0.8]], 'tsubaki');
   for (const [x, z] of [[-27, -26], [27, -26], [-27, 26], [27, 26]]) W.bump(x, z, 9, 3);
   W.mist([[0, -26, 7], [0, 26, 7], [26, 0, 7], [-26, 0, 7]]); W.mistK = 0.5;
   W.terrainMesh(70, 70, groundColor(W, [0.36, 0.33, 0.24]));
-  ringOfPines(W, R, 27, 34, 50, [Math.PI / 2, -Math.PI / 2, 0, Math.PI]);
+  ringOfPines(W, R, 27, 34, 50, [Math.PI / 2, -Math.PI / 2, 0, Math.PI], [['keyaki', 0.35], ['kusu', 0.3], ['matsu', 0.25], ['tsubaki', 0.1]]);
   W.spawns = [[0, 26], [0, -26], [26, 0], [-26, 0]]; cfg.weathers = ['clear', 'rain', 'fog'];
-  return { setQuality: lit.setQuality, update: particles(g, 'momiji', 120) };
+  around(g, W, cfg, 'sv_trade');
+  return { setQuality: lit.setQuality, update: () => {} };   // no falling momiji here: red maples belong to Momiji Field
 }
 // ---------------------------------------------------------------- Bamboo Crossing
 // a stream through a bamboo forest: an arched bridge, a plank bridge and a ford of stepping stones are the only ways
@@ -249,8 +283,9 @@ function svBamboo(g, renderer, cfg, opts) {
   W.grassField(0, 4, 20, 8, 500, 248, (x, z) => Math.abs(z - rz(x)) < 3.5 || Math.abs(x - 1.5) < 2);
   W.mist([[-12, 2, 9], [12, 2, 9], [0, -20, 8], [0, 20, 8]]); W.mistK = 0.85;
   W.terrainMesh(70, 70, groundColor(W, [0.3, 0.4, 0.22]));
-  ringOfPines(W, R, 27, 34, 70, [Math.PI / 2, 0, Math.PI]);
+  ringOfPines(W, R, 27, 34, 70, [Math.PI / 2, 0, Math.PI], [['kusu', 0.35], ['matsu', 0.3], ['tsubaki', 0.2], ['keyaki', 0.15]]);
   W.spawns = [[0, 26], [26, -6], [-26, -6]]; cfg.weathers = ['fog', 'rain', 'clear', 'wind'];
+  around(g, W, cfg, 'sv_bamboo');
   return { setQuality: lit.setQuality, update: particles(g, 'fireflies', 120) };
 }
 // ---------------------------------------------------------------- Sunken Ruins
@@ -271,8 +306,9 @@ function svRuins(g, renderer, cfg, opts) {
   for (const [x, z] of [[-7, -2], [8, -1]]) W.prop('lantern', x, z, R() * 6);
   W.mist([[-12, 16, 9], [10, 18, 9], [0, -10, 8]]); W.mistK = 0.65;
   W.terrainMesh(70, 70, tintGround(W, (x, z, s) => s === 'stone' || s === 'wood' ? null : z > 5 ? [0.62, 0.55, 0.4] : z > 1 ? [0.5, 0.48, 0.32] : null));
-  { const pts = []; for (let i = 0; i < 46; i++) { const x = R() * 64 - 32, z = -32 + R() * 30; if (Math.abs(x) < 24 && z > -26) continue; pts.push([x, z, 0.9 + R() * 0.6]); } W.pines(pts); }   // pines on the hills only, never in the sea
+  { const pts = []; for (let i = 0; i < 46; i++) { const x = R() * 64 - 32, z = -32 + R() * 30; if (Math.abs(x) < 24 && z > -26) continue; pts.push([x, z, 0.9 + R() * 0.6]); } W.pines(pts, [['matsu', 0.45], ['bonsai', 0.25], ['kusu', 0.3]]); }   // wind-bent pines on the hills only, never in the sea
   W.spawns = [[0, -26], [-24, -10], [24, -10]]; cfg.weathers = ['fog', 'rain', 'wind', 'clear'];
+  around(g, W, cfg, 'sv_ruins');
   return { setQuality: lit.setQuality, update: particles(g, 'snow', 90) };
 }
 // castle courtyard: high walls, keep facade, main gate
@@ -293,6 +329,7 @@ function svCastle(g, renderer, cfg, opts) {
   W.shrubs([[-19, -16, 1], [-19, -12, 0.9], [19, -16, 1], [19, -12, 0.9], [-8, 18, 0.9], [8, 18, 0.9]]);
   W.terrainMesh(70, 70, groundColor(W, [0.36, 0.36, 0.3]));
   W.spawns = [[0, 26], [-21, -19], [21, -19]]; cfg.weathers = ['clear', 'wind', 'snow'];
+  around(g, W, cfg, 'sv_castle');
   return { setQuality: lit.setQuality, update: particles(g, 'petals', 150) };
 }
 // ruined fortress: broken walls with breaches, braziers, rubble, snow
@@ -311,6 +348,7 @@ function svFortress(g, renderer, cfg, opts) {
   W.terrainMesh(70, 70, groundColor(W, [0.3, 0.3, 0.28]));
   W.spawns = [[Math.cos(Math.PI / 6) * 24, Math.sin(Math.PI / 6) * 24], [Math.cos(Math.PI / 6 + 2.094) * 24, Math.sin(Math.PI / 6 + 2.094) * 24], [Math.cos(Math.PI / 6 + 4.189) * 24, Math.sin(Math.PI / 6 + 4.189) * 24]];
   cfg.weathers = ['snow', 'wind', 'clear', 'fog'];
+  around(g, W, cfg, 'sv_fortress');
   return { setQuality: lit.setQuality, update: particles(g, 'snow', 220) };
 }
 registerMap('sv_dojo', 'Dojo Court', svDojo);

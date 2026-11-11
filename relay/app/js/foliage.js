@@ -41,8 +41,19 @@ export const TREE_KINDS = {
   snowpine: { leaf: ['#1f3d2a', '#e9eef4', '#29492f', '#dfe7ee', '#f4f7fa'], shape: 'needle', bark: ['#3a2a22', '#47342a'], cards: 140, card: 1.55, crown: [2.2, 3.2], h: 6.2, branches: 7, spread: 0.6, droop: 0.3, conifer: true },
   momiji: { leaf: ['#7a1418', '#9a1c1e', '#5e1014', '#b02a24', '#6a1418'], shape: 'leaf', bark: ['#2a2024', '#3a2c2c'], cards: 160, card: 1.5, crown: [3.4, 1.8], h: 5.0, branches: 7, spread: 1.2, droop: 0.1 },
   bare: { leaf: ['#3a3030', '#3a3030', '#3a3030', '#3a3030'], shape: 'leaf', bark: ['#2c2626', '#3a3232'], cards: 0, card: 1, crown: [3.0, 1.6], h: 5.2, branches: 8, spread: 1.15, droop: 0.06 },
-  pine: { leaf: ['#1f3d2a', '#29492f', '#1a3424', '#335a39'], shape: 'needle', bark: ['#3a2a22', '#47342a'], cards: 140, card: 1.55, crown: [2.4, 3.6], h: 7.0, branches: 7, spread: 0.6, droop: 0.25, conifer: true },
+  pine: { leaf: ['#1f3d2a', '#29492f', '#1a3424', '#335a39'], shape: 'needle', bark: ['#3a2a22', '#47342a'], cards: 140, card: 1.55, crown: [2.4, 3.6], h: 7.0, branches: 7, spread: 0.6, droop: 0.25, conifer: true },   // spruce: winter maps only
+  // Japanese trees with their own forms (form: round default | pad = niwaki / bonsai cloud pads | vase = tall zelkova |
+  // spread = low umbrella crown; bend = S-curve / lean of the trunk, 0 straight .. 2 strongly crooked)
+  matsu: { leaf: ['#20402a', '#2b5232', '#1a3826', '#36603a'], shape: 'needle', bark: ['#3a2a22', '#4a3628'], cards: 150, card: 1.35, crown: [3.0, 1.1], h: 5.6, branches: 6, spread: 1.0, droop: 0, form: 'pad', bend: 1.1 },   // black pine, cloud-pruned
+  bonsai: { leaf: ['#244a2c', '#30583a', '#1c3e26', '#3c6840'], shape: 'needle', bark: ['#3c2c24', '#4e3a2c'], cards: 110, card: 1.25, crown: [3.4, 0.9], h: 3.2, branches: 5, spread: 1.15, droop: 0, form: 'pad', bend: 1.8, girth: 1.2 },   // low, crooked, wide pads
+  keyaki: { leaf: ['#4f7c34', '#5e8a3c', '#43702e', '#6b9446', '#557f3a'], shape: 'leaf', bark: ['#4a4038', '#5a5046'], cards: 200, card: 1.5, crown: [4.2, 2.4], h: 8.2, branches: 8, spread: 1.25, droop: 0, form: 'vase', bend: 0.3 },   // tall zelkova
+  kusu: { leaf: ['#355e2c', '#40692f', '#2c5226', '#4c7434', '#3a6430'], shape: 'leaf', bark: ['#3a3028', '#4a3e32'], cards: 190, card: 1.55, crown: [4.6, 1.9], h: 5.2, branches: 8, spread: 1.3, droop: 0.02, form: 'spread', bend: 0.6, girth: 1.3 },   // camphor: low wide dome
+  tsubaki: { leaf: ['#1f4426', '#28502c', '#183a20', '#2f5a32', '#9a1a22'], shape: 'leaf', bark: ['#3a3430', '#4a423a'], cards: 120, card: 1.2, crown: [1.9, 1.7], h: 2.8, branches: 6, spread: 0.75, droop: 0.02, bend: 0.4 },   // camellia: low dark glossy, a few red flowers
+  momijiLow: { leaf: ['#7a1418', '#9a1c1e', '#5e1014', '#b02a24', '#6a1418'], shape: 'leaf', bark: ['#2a2024', '#3a2c2c'], cards: 160, card: 1.45, crown: [3.8, 1.4], h: 3.6, branches: 7, spread: 1.35, droop: 0.12, form: 'spread', bend: 1.2 },   // low, crooked, wide
+  momijiTall: { leaf: ['#8a161a', '#a8201f', '#6a1216', '#c03226', '#7a161a'], shape: 'leaf', bark: ['#2a2024', '#3a2c2c'], cards: 190, card: 1.5, crown: [3.4, 2.4], h: 7.2, branches: 8, spread: 1.1, droop: 0.04, form: 'vase', bend: 0.7 },
 };
+// which kinds read as spruce / fir: the art rule says they grow on winter maps only
+export const CONIFERS = new Set(['pine', 'snowpine']);
 // ---------------------------------------------------------------- textures (cached)
 const TEX = {};
 const LEAF_UP = 0.5, LEAF_GLOW = 0.14;   // leaf normals bent toward the sky; fake translucency
@@ -142,33 +153,44 @@ const PROTO = {};
 export function treeProto(kind, variant = 0) {
   const key = kind + variant; if (PROTO[key]) return PROTO[key];
   const K = TREE_KINDS[kind], R = rng(kind.length * 131 + variant * 7919 + 17), wood = [], tips = [];
-  const H = K.h * (0.9 + R() * 0.2), lean = new V3(R() - 0.5, 0, R() - 0.5).multiplyScalar(0.5);
-  const trunkPts = [0, 0.33, 0.66, 1].map(u => new V3(lean.x * u * u + (R() - 0.5) * 0.15 * u, H * u, lean.z * u * u + (R() - 0.5) * 0.15 * u));
-  wood.push(tube(trunkPts, 0.36 * (K.conifer ? 0.8 : 1), 0.12, 5, 5));
+  const form = K.form || (K.conifer ? 'cone' : 'round'), H = K.h * (0.85 + R() * 0.3), bend = (K.bend || 0) * (0.6 + R() * 0.8);
+  // trunk: a lean that grows with height plus a sideways S-curve (bend), so no two variants stand alike
+  const la = R() * 6.283, L = new V3(Math.cos(la), 0, Math.sin(la)), Sd = new V3(-L.z, 0, L.x);
+  const trunkPts = [0, 0.2, 0.4, 0.6, 0.8, 1].map(u => new V3(0, H * u, 0).addScaledVector(L, (0.25 + bend * 0.9) * u * u * (form === 'pad' ? 1.4 : 1)).addScaledVector(Sd, bend * 0.45 * Math.sin(u * Math.PI * 1.5)).add(new V3((R() - 0.5) * 0.12 * u, 0, (R() - 0.5) * 0.12 * u)));
+  wood.push(tube(trunkPts, 0.36 * (K.conifer ? 0.8 : 1) * (K.girth || 1), 0.12, 10, 5));
   // root flare
-  for (let i = 0; i < 3; i++) { const a = i * Math.PI * 2 / 3 + R(); wood.push(tube([new V3(0, 0.5, 0), new V3(Math.cos(a) * 0.45, 0.12, Math.sin(a) * 0.45), new V3(Math.cos(a) * 0.8, -0.05, Math.sin(a) * 0.8)], 0.16, 0.05, 3, 4)); }
-  const top = trunkPts[3], nb = K.branches;
+  for (let i = 0; i < 3; i++) { const a = i * Math.PI * 2 / 3 + R(); wood.push(tube([new V3(0, 0.5, 0), new V3(Math.cos(a) * 0.45, 0.12, Math.sin(a) * 0.45), new V3(Math.cos(a) * 0.8, -0.05, Math.sin(a) * 0.8)], 0.16 * (K.girth || 1), 0.05, 3, 4)); }
+  const curve = new THREE.CatmullRomCurve3(trunkPts), top = trunkPts[5], nb = K.branches;
+  const BR = {   // per form: where on the trunk, how steep (dir.y), how long
+    cone: () => { const u = 0.3 + 0.65 * R(); return [u, -K.droop, (1 - u) * 2.6 + 0.4]; },
+    round: () => [0.55 + R() * 0.35, 0.55 + R() * 0.4, 1.6 + R() * 1.4],
+    pad: () => { const u = 0.35 + R() * 0.6; return [u, 0.05 + R() * 0.3, (1.3 + R() * 1.7) * (1.15 - u * 0.5)]; },
+    vase: () => [0.32 + R() * 0.25, 1.1 + R() * 0.6, 2.4 + R() * 1.8],
+    spread: () => [0.4 + R() * 0.3, 0.12 + R() * 0.3, 2.2 + R() * 1.8],
+  }[form];
+  const pads = [];
   for (let i = 0; i < nb; i++) {
-    const u = K.conifer ? 0.3 + 0.65 * i / nb : 0.55 + R() * 0.35, a = i * 2.39996 + R() * 0.5;
-    const o = new THREE.CatmullRomCurve3(trunkPts).getPointAt(u);
-    const len = (K.conifer ? (1 - u) * 2.6 + 0.4 : 1.6 + R() * 1.4) * K.spread;
-    const dir = new V3(Math.cos(a), K.conifer ? -K.droop : 0.55 + R() * 0.4, Math.sin(a)).normalize();
+    const [u, dy, l0] = BR(), a = i * 2.39996 + R() * 0.5, o = curve.getPointAt(u), len = l0 * K.spread;
+    const dir = new V3(Math.cos(a), dy, Math.sin(a)).normalize();
     const mid = o.clone().addScaledVector(dir, len * 0.55), end = o.clone().addScaledVector(dir, len); end.y -= len * K.droop;
-    wood.push(tube([o, mid, end], 0.12 * (1 - u * 0.5), 0.03, 4, 4));
-    tips.push(end);
-    if (!K.conifer) for (let j = 0; j < 1; j++) { const d2 = dir.clone().add(new V3(R() - 0.5, R() * 0.6, R() - 0.5)).normalize(); const e2 = mid.clone().addScaledVector(d2, len * 0.5); wood.push(tube([mid, mid.clone().lerp(e2, 0.5), e2], 0.05, 0.015, 3, 3)); tips.push(e2); }
+    if (form === 'pad' || form === 'spread') mid.y += len * 0.12 * (R() - 0.3);   // crooked limbs
+    wood.push(tube([o, mid, end], 0.12 * (1 - u * 0.5) * (K.girth || 1), 0.03, 4, 4));
+    tips.push(end); if (form === 'pad') pads.push(end);
+    if (form !== 'cone' && form !== 'pad') for (let j = 0; j < (form === 'round' ? 1 : 2); j++) { const d2 = dir.clone().add(new V3(R() - 0.5, R() * 0.6, R() - 0.5)).normalize(); const e2 = mid.clone().addScaledVector(d2, len * 0.5); wood.push(tube([mid, mid.clone().lerp(e2, 0.5), e2], 0.05, 0.015, 3, 3)); tips.push(e2); }
   }
-  tips.push(top.clone());
-  // canopy: leaf cards clustered around branch tips (cone of tiers for conifers)
+  tips.push(top.clone()); if (form === 'pad') pads.push(top.clone().add(new V3(0, 0.15, 0)));
+  // canopy: leaf cards clustered around branch tips (tiers for conifers, flat cloud pads for pruned pines)
   const out = { pos: [], nrm: [], uv: [], idx: [] }, center = new V3(top.x, K.conifer ? H * 0.55 : H - K.crown[1] * 0.2, top.z);
+  const flat = form === 'spread' || form === 'vase' ? 0.65 : 1;
   for (let i = 0; i < K.cards; i++) {
-    let p;
+    let p, c = center;
     if (K.conifer) { const u = R(), y = H * (0.25 + 0.8 * u), rr = K.crown[0] * (1 - u) * Math.sqrt(R()) + 0.2, a = R() * Math.PI * 2; p = new V3(top.x * u + Math.cos(a) * rr, y, top.z * u + Math.sin(a) * rr); }
-    else { const tp = tips[(R() * tips.length) | 0], r = K.crown[0] * 0.55; p = tp.clone().add(new V3((R() - 0.5) * r * 2, (R() - 0.35) * K.crown[1], (R() - 0.5) * r * 2)); }
-    card(out, p, K.card, center, R, (R() * 4) | 0);
+    else if (form === 'pad') { const pc = pads[i % pads.length], a = R() * 6.283, rr = Math.sqrt(R()) * K.crown[0] * 0.5 * (0.75 + 0.25 * ((i % pads.length) % 2)); p = pc.clone().add(new V3(Math.cos(a) * rr, (R() - 0.3) * K.crown[1] * 0.45 * (1 - rr / (K.crown[0] * 0.6)), Math.sin(a) * rr)); c = pc.clone().add(new V3(0, -0.6, 0)); }
+    else { const tp = tips[(R() * tips.length) | 0], r = K.crown[0] * 0.55; p = tp.clone().add(new V3((R() - 0.5) * r * 2, (R() - 0.35) * K.crown[1] * flat, (R() - 0.5) * r * 2)); }
+    card(out, p, K.card, c, R, (R() * 4) | 0);
   }
   const woodG = mergeGeometries(wood.map(g => g.index ? g.toNonIndexed() : g)); woodG.computeVertexNormals();
-  return PROTO[key] = { wood: woodG, leaves: cardsGeo(out), height: H, crown: K.crown };
+  return PROTO[key] = { wood: woodG, leaves: cardsGeo(out), height: H, crown: K.crown, trunk: trunkPts, tips, pads, form };
 }
 // far LOD: bare trunk + a few large cards in the same crown volume (~1/7 of the triangles)
 const LOW = {};
@@ -177,11 +199,13 @@ function treeLow(kind, v) {
   const K = TREE_KINDS[kind], P = treeProto(kind, v), R = rng(kind.length * 17 + v * 31 + 5), out = { pos: [], nrm: [], uv: [], idx: [] };
   const H = P.height, center = new V3(0, K.conifer ? H * 0.55 : H - K.crown[1] * 0.2, 0);
   for (let i = 0; i < Math.round(K.cards * 0.25); i++) {
-    let p; if (K.conifer) { const u = R(), rr = K.crown[0] * (1 - u) * 0.8 + 0.2, a = R() * 6.283; p = new V3(Math.cos(a) * rr, H * (0.3 + 0.75 * u), Math.sin(a) * rr); }
-    else { const a = R() * 6.283, rr = Math.sqrt(R()) * K.crown[0] * 0.95; p = center.clone().add(new V3(Math.cos(a) * rr, (R() - 0.4) * K.crown[1] * 1.3, Math.sin(a) * rr)); }
-    card(out, p, K.card * 2.1, center, R, (R() * 4) | 0);
+    let p, c = center;
+    if (K.conifer) { const u = R(), rr = K.crown[0] * (1 - u) * 0.8 + 0.2, a = R() * 6.283; p = new V3(Math.cos(a) * rr, H * (0.3 + 0.75 * u), Math.sin(a) * rr); }
+    else if (P.form === 'pad') { const pc = P.pads[i % P.pads.length], a = R() * 6.283, rr = Math.sqrt(R()) * K.crown[0] * 0.35; p = pc.clone().add(new V3(Math.cos(a) * rr, (R() - 0.3) * K.crown[1] * 0.3, Math.sin(a) * rr)); c = pc.clone().add(new V3(0, -0.6, 0)); }
+    else { const tp = P.tips[(R() * P.tips.length) | 0], r = K.crown[0] * 0.4; p = tp.clone().add(new V3((R() - 0.5) * r * 2, (R() - 0.35) * K.crown[1] * 0.8, (R() - 0.5) * r * 2)); }
+    card(out, p, K.card * 2.1, c, R, (R() * 4) | 0);
   }
-  const wood = tube([new V3(0, 0, 0), new V3(0, H * 0.5, 0), new V3(0, H * 0.85, 0)], 0.34, 0.1, 3, 5);
+  const wood = tube([P.trunk[0], P.trunk[2], P.trunk[4], P.trunk[5]], 0.34 * (K.girth || 1), 0.1, 4, 5);
   return LOW[key] = { wood, leaves: cardsGeo(out) };
 }
 // ---------------------------------------------------------------- placement

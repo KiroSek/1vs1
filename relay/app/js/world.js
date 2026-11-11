@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { torii as archTorii, lantern as archLantern, tiledRoof, lattice, grime, rockGeo, stoneWall, archBridge } from './arch.js';
 import { grass as grassClumps } from './foliage.js';
-import { forest, tuftGeo, foliageMat, foliageDepth } from './foliage.js';
+import { forest, tuftGeo, foliageMat, foliageDepth, TREE_KINDS } from './foliage.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // quality knobs set by main.js before a map is built
@@ -127,6 +127,7 @@ export class World {
   inWater(x, z) { if (!this.water) return false; if (this.onBridge(x, z)) return false; return Math.abs(this.riverDist(x, z)) < this.water.width * 0.55; }
   onBridge(x, z) { for (const b of this.bridges) { const dx = x - b.x, dz = z - b.z, la = dx * b.c - dz * b.s, lb = dx * b.s + dz * b.c; if (Math.abs(la) < b.len / 2 && Math.abs(lb) < b.w / 2) return true; } return false; }
   terrainMesh(size, seg, colorFn) {
+    this.colorFn = colorFn;   // vista.js blends the surroundings out of the same ground colours
     const g = new THREE.PlaneGeometry(size, size, seg, seg); g.rotateX(-Math.PI / 2);
     const P = g.attributes.position, col = new Float32Array(P.count * 3), c = new THREE.Color();
     for (let i = 0; i < P.count; i++) { const x = P.getX(i), z = P.getZ(i); P.setY(i, this.ground(x, z, true)); colorFn(x, z, c); col.set([c.r, c.g, c.b], i * 3); }
@@ -323,9 +324,15 @@ export class World {
   }
 
   // ---------- vegetation (instanced) ----------
-  pines(list) {   // list of [x,z,s]
-    const n = list.length; if (!n) return;
-    forest(this.group, 'pine', list.map(([x, z, s]) => [x, this.ground(x, z), z, s])); for (const [x, z, s] of list) this.circle(x, z, 0.35 * s, 7 * s); return;
+  // trees in groves: kinds = 'matsu' or [[kind, weight], ...] (foliage.js kinds). Art rule: spruce ('pine' / 'snowpine')
+  // only on winter maps — Japanese pines (matsu, bonsai), zelkova, camphor, camellia elsewhere.
+  pines(list, kinds = [['matsu', 0.5], ['bonsai', 0.15], ['kusu', 0.35]]) {   // list of [x,z,s]
+    const n = list.length; if (!n) return; if (typeof kinds === 'string') kinds = [[kinds, 1]];
+    const tot = kinds.reduce((a, k) => a + k[1], 0), by = kinds.map(() => []);
+    for (const [x, z, s] of list) { let u = ((Math.sin(x * 0.11 + 1.3) * Math.cos(z * 0.09 - 0.7) + Math.sin(x * 0.031 - z * 0.027) + 2) / 4 * 0.85 + ((x * 12.9898 + z * 78.233) % 1 + 1) % 1 * 0.15) * tot, i = 0;
+      for (; i < kinds.length - 1 && u > kinds[i][1]; i++) u -= kinds[i][1];
+      const k = kinds[i][0], sz = k === 'bonsai' || k === 'tsubaki' ? 0.85 : 1; by[i].push([x, this.ground(x, z), z, s * sz]); this.circle(x, z, 0.35 * s, (TREE_KINDS[k].h || 6) * s); }
+    kinds.forEach(([k], i) => { if (by[i].length) forest(this.group, k, by[i]); }); return;
     const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.16, 0.3, 4, 6), mat('bark'), n);
     const crowns = new THREE.InstancedMesh(new THREE.ConeGeometry(1.6, 2.2, 7), mat('pine'), n * 3);
     const M = new THREE.Matrix4(), q = new THREE.Quaternion(); let k = 0;
@@ -336,7 +343,7 @@ export class World {
   }
   broadleaf(list, matName = 'sakura') {
     const n = list.length; if (!n) return;
-    forest(this.group, matName === 'maple' ? 'maple' : matName === 'sakura' ? 'sakura' : 'green', list.map(([x, z, s]) => [x, this.ground(x, z), z, s])); for (const [x, z, s] of list) this.circle(x, z, 0.4 * s, 4 * s); return;
+    forest(this.group, TREE_KINDS[matName] ? matName : 'green', list.map(([x, z, s]) => [x, this.ground(x, z), z, s])); for (const [x, z, s] of list) this.circle(x, z, 0.4 * s, 4 * s); return;
     const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.2, 0.38, 3.6, 7), mat('bark'), n), crowns = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1), mat(matName), n * 6);
     const M = new THREE.Matrix4(), q = new THREE.Quaternion(); let k = 0; const R = rng(n * 7 + 3);
     list.forEach(([x, z, s], i) => { const y = this.ground(x, z); M.compose(new V3(x, y + 1.8 * s, z), q, new V3(s, s, s)); trunk.setMatrixAt(i, M);

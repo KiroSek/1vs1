@@ -28,31 +28,45 @@ export const SV = {
   dir: { gap: 0.9, holdMax: 3.2, cool: [1.8, 3.4], ring: 4.8, ring2: 0.8 },   // token handover gap (s), max time a token is held, cooldown after an attack, waiting ring radius (+ second ring)
   final: 10,                                              // the run ends when the wave-10 boss falls
 };
+// ---------------------------------------------------------------- AI skill
+// How smart a bot fights (0 weak .. 1 medium .. 2 strong) depends on the wave, never on its type or skin: the rank and
+// file of a wave roll in the 'base' range, 1-2 'leaders' a step above (medium early, strong late). Mini-bosses and the
+// final boss have their own skill and fight in a fixed, learnable pattern (ETYPES.*.pattern / phases[].ai.pattern).
+const SKILL = {
+  base: [[0, 0.1], [0, 0.2], [0.1, 0.3], [0.15, 0.4], [0.2, 0.45], [0.3, 0.6], [0.35, 0.7], [0.4, 0.75], [0.5, 0.9]],   // waves 1..9
+  lead: [[1, 0.5], [1, 0.6], [1, 0.8], [1, 1.0], [1, 0.8], [2, 1.1], [2, 1.3], [1, 1.2], [2, 1.6]],                         // [how many, skill]; mini-boss waves (5, 8) keep their escort a notch softer
+  mini: [1.0, 1.2], boss: 1.2,   // wave-5 general, wave-8 generals; the wave-10 shogun
+  hard: 0.35, hardLead: 0.25, endless: 0.08,   // hard difficulty bonus (rank and file / leaders & bosses); per wave past the table
+};
 // ---------------------------------------------------------------- enemy archetypes
-// look: [skin, weapon], tint (null = skin colours), ai: profile overrides, moves: AI move weights
+// look: [skin, weapon], tint (null = skin colours), ai: STYLE only (roles, spacing, mobility, aggression) — no skill;
+// styleK: multipliers <= 1 for things a type is bad at (brutes barely deflect); moves: AI move weights
 // the run, wave by wave: [normal bots, mini-bosses, final boss]
-const WAVES = [[3, 0, 0], [4, 0, 0], [5, 0, 0], [6, 0, 0], [5, 1, 0], [7, 0, 0], [8, 0, 0], [6, 2, 0], [10, 0, 0], [0, 0, 1]];
+const WAVES = [[3, 0, 0], [4, 0, 0], [5, 0, 0], [6, 0, 0], [5, 1, 0], [7, 0, 0], [8, 0, 0], [5, 2, 0], [10, 0, 0], [0, 0, 1]];
 export const ETYPES = {
-  ashigaru: { name: 'Ashigaru', look: ['ashina', 'standard'], hp: 60, post: 80, scale: 1, tempo: 1, speed: 1, dmg: 0.9, level: 0, cost: 1, from: 1,
-    ai: { aggr: 0.5, deflect: 0.25 }, moves: { slash: 6, heavy: 2, kick: 0.6 } },
-  swift: { name: 'Shinobi', look: ['shinobi', 'kuro'], tint: 0x2a2a34, hp: 42, post: 60, scale: 0.95, tempo: 1.25, speed: 1.35, dmg: 0.75, level: 1, cost: 1.4, from: 2, role: 'flank',
-    ai: { aggr: 0.7, mobility: 0.95, guard: 0.15, deflect: 0.2, think: [0.25, 0.6] }, moves: { slash: 5, dash: 2.5, uppercut: 1.5, sweep: 0.5 } },
-  spear: { name: 'Yari Guard', look: ['ronin', 'yari'], tint: 0x5a4a30, hp: 70, post: 90, scale: 1.02, tempo: 0.95, speed: 0.95, dmg: 1, level: 1, cost: 1.6, from: 3, role: 'keep', reach: 1.55,
+  ashigaru: { name: 'Ashigaru', look: ['ashina', 'standard'], hp: 60, post: 80, scale: 1, tempo: 1, speed: 1, dmg: 0.9, cost: 1, from: 1,
+    ai: { aggr: 0.5 }, moves: { slash: 6, heavy: 2, kick: 0.6 } },
+  swift: { name: 'Shinobi', look: ['shinobi', 'kuro'], tint: 0x2a2a34, hp: 42, post: 60, scale: 0.95, tempo: 1.25, speed: 1.35, dmg: 0.75, cost: 1.4, from: 2, role: 'flank',
+    ai: { aggr: 0.65, mobility: 0.95, guard: 0.15 }, styleK: { deflect: 0.5 }, moves: { slash: 5, dash: 2.5, uppercut: 1.5, sweep: 0.5 } },
+  spear: { name: 'Yari Guard', look: ['ronin', 'yari'], tint: 0x5a4a30, hp: 70, post: 90, scale: 1.02, tempo: 0.95, speed: 0.95, dmg: 1, cost: 1.6, from: 3, role: 'keep', reach: 1.55,
     ai: { prefDist: [3.6, 4.6], aggr: 0.45, mobility: 0.4 }, moves: { jab: 5, thrust: 2, sweep: 1.5 } },
-  brute: { name: 'Oni Brute', look: ['oni', 'crimson'], hp: 150, post: 170, scale: 1.18, tempo: 0.85, speed: 0.85, dmg: 1.4, level: 1, cost: 2.6, from: 4, role: 'pressure', armor: true,
-    ai: { react: 0.35, deflect: 0.05, guard: 0.6, aggr: 0.6, mobility: 0.1 }, moves: { heavy: 4, heavyB: 2, leap: 2, kick: 2, sweep: 1 } },
-  elite: { name: 'Shadow Elite', look: ['kage', 'mortal'], hp: 120, post: 130, scale: 1.02, tempo: 1.1, speed: 1.1, dmg: 1.15, level: 2, cost: 3.2, from: 6,
-    ai: { deflect: 0.75, react: 0.9, feint: 0.4, punish: 0.9, mobility: 0.6 }, moves: { slash: 5, heavyB: 1.5, thrust: 1.5, uppercut: 1.2, dash: 1, sweep: 0.8 } },
-  oniGeneral: { name: 'Golden Dragon General', boss: 'mini', look: ['dragonGold', 'bisento'], tint: null, reach: 1.35, hp: 420, post: 240, scale: 1.3, tempo: 0.95, speed: 0.95, dmg: 1.5, level: 2, armor: 'attack',
-    ai: { react: 0.78, deflect: 0.6, aggr: 0.6, feint: 0.3, punish: 0.8 }, moves: POLE_MOVES,   // naginata/bisento set: jab chain, rising cut, spin, overhead slam, low sweep
-    phases: [{ at: 0.5, tempo: 1.18, ai: { aggr: 0.8, feint: 0.45 }, moves: { pSlam: 2.5, pSpin: 2.5, sweep: 2, dash: 2.5 }, aura: 0xff3010 }] },
-  oniGeneral2: { name: 'Black Dragon General', boss: 'mini', look: ['dragonBlack', 'bisento'], tint: null, reach: 1.35, hp: 420, post: 240, scale: 1.3, tempo: 1, speed: 1, dmg: 1.45, level: 2, armor: 'attack',
-    ai: { react: 0.78, deflect: 0.6, aggr: 0.6, feint: 0.3, punish: 0.8 }, moves: POLE_MOVES,   // naginata/bisento set: jab chain, rising cut, spin, overhead slam, low sweep
-    phases: [{ at: 0.5, tempo: 1.18, ai: { aggr: 0.8, feint: 0.45 }, moves: { pSlam: 2.5, pSpin: 2.5, sweep: 2, dash: 2.5 }, aura: 0xff3010 }] },
-  sawSaint: { name: 'Skeleton Shogun', boss: 'major', look: ['skullLord', 'naginata'], tint: null, reach: 1.45, hp: 1100, post: 320, scale: 1.22, tempo: 1, speed: 1.05, dmg: 1.45, level: 2, armor: 'attack',
-    ai: { react: 0.85, deflect: 0.7, aggr: 0.6, feint: 0.35, punish: 0.9, mobility: 0.55 }, moves: { ...POLE_MOVES, boss1: 1.5, pSlam: 1 },
-    phases: [{ at: 0.66, tempo: 1.12, ai: { aggr: 0.7, feint: 0.45 }, moves: { flameSweep: 2, boss1: 2, pSpin: 2, dash: 2 }, aura: 0xff9a3a },
-      { at: 0.33, tempo: 1.25, ai: { aggr: 0.82, deflect: 0.8, feint: 0.55, mobility: 0.8 }, moves: { flameSweep: 2.5, pJab: 2.5, pSlam: 2, boss1: 2.5 }, aura: 0xff2a1a }] },
+  brute: { name: 'Oni Brute', look: ['oni', 'crimson'], hp: 150, post: 170, scale: 1.18, tempo: 0.85, speed: 0.85, dmg: 1.4, cost: 2.6, from: 4, role: 'pressure', armor: true,
+    ai: { guard: 0.6, aggr: 0.55, mobility: 0.1 }, styleK: { react: 0.6, deflect: 0.15 }, moves: { heavy: 4, heavyB: 2, leap: 2, kick: 2, sweep: 1 } },
+  elite: { name: 'Shadow Elite', look: ['kage', 'mortal'], hp: 120, post: 130, scale: 1.02, tempo: 1.1, speed: 1.1, dmg: 1.15, cost: 3.2, from: 6,
+    ai: { feint: 0.25, mobility: 0.6 }, moves: { slash: 5, heavyB: 1.5, thrust: 1.5, uppercut: 1.2, dash: 1, sweep: 0.8 } },
+  oniGeneral: { name: 'Golden Dragon General', boss: 'mini', look: ['dragonGold', 'bisento'], tint: null, reach: 1.35, hp: 420, post: 240, scale: 1.3, tempo: 0.95, speed: 0.95, dmg: 1.25, armor: 'attack',
+    ai: { aggr: 0.6, feint: 0.15, think: [0.55, 0.9], gap: [1.2, 1.6], pattern: [['pJab', 'pJab2'], ['pSlam', 'pBack'], ['sweep']] }, moves: POLE_MOVES,   // fixed order: thrusts, cleave + backhand, low sweep (jump it)
+    phases: [{ at: 0.5, tempo: 1.1, ai: { feint: 0.25, gap: [1, 1.3], pattern: [['pJab', 'pJab2', 'pRise'], ['pSpin'], ['pSlam', 'pBack'], ['sweep', 'pJab']] }, aura: 0xff3010 }] },
+  oniGeneral2: { name: 'Black Dragon General', boss: 'mini', look: ['dragonBlack', 'bisento'], tint: null, reach: 1.35, hp: 420, post: 240, scale: 1.3, tempo: 1, speed: 1, dmg: 1.2, armor: 'attack',
+    ai: { aggr: 0.6, feint: 0.15, think: [0.55, 0.9], gap: [1.2, 1.6], pattern: [['pJab', 'pJab2'], ['pSlam', 'pBack'], ['sweep']] }, moves: POLE_MOVES,   // fixed order: thrusts, cleave + backhand, low sweep (jump it)
+    phases: [{ at: 0.5, tempo: 1.1, ai: { feint: 0.25, gap: [1, 1.3], pattern: [['pJab', 'pJab2', 'pRise'], ['pSpin'], ['pSlam', 'pBack'], ['sweep', 'pJab']] }, aura: 0xff3010 }] },
+  sawSaint: { name: 'Skeleton Shogun', boss: 'major', look: ['skullLord', 'naginata'], tint: null, reach: 1.45, hp: 1100, post: 320, scale: 1.22, tempo: 1, speed: 1.05, dmg: 1.3, armor: 'attack',
+    // the final boss fights in a fixed rhythm the player can learn: the same combos in the same order, each followed by an
+    // opening (gap, s) where it backs off and barely defends; every phase adds a new element and shortens the openings
+    ai: { aggr: 0.6, feint: 0.15, mobility: 0.5, think: [0.5, 0.85], gap: [1.4, 1.8], openReact: 0.2,
+      pattern: [['pJab', 'pJab2'], ['pSlam', 'pBack'], ['sweep'], ['pJab', 'pJab2', 'pRise']] }, moves: { ...POLE_MOVES, boss1: 1.5, pSlam: 1 },
+    phases: [{ at: 0.66, tempo: 1.06, ai: { feint: 0.25, gap: [1.1, 1.5], pattern: [['pSlam', 'pBack', 'pRise'], ['flameSweep'], ['pJab', 'pJab2'], ['boss1', 'boss2'], ['pSpin']] }, aura: 0xff9a3a },
+      { at: 0.33, tempo: 1.14, ai: { feint: 0.35, mobility: 0.7, gap: [0.9, 1.2], pattern: [['pJab', 'pJab2', 'pRise'], ['flameSweep', 'pSpin'], ['pSlam', 'pBack'], ['sweep', 'pJab'], ['boss1', 'boss2', 'boss3']] }, aura: 0xff2a1a }] },
 };
 // ---------------------------------------------------------------- upgrades
 // stat: applied to the player's fighter by apply(). team: affects the partner too.
@@ -119,8 +133,15 @@ export class Survival {
     }
     return out;
   }
+  skillsFor(n, queue) {   // one skill per queued bot (see SKILL)
+    const i = Math.min(n, SKILL.base.length) - 1, extra = Math.max(0, n - SKILL.base.length) * SKILL.endless, hard = this.p.diff === 'hard';
+    const [b0, b1] = SKILL.base[i], [nl, ls] = SKILL.lead[i], plain = queue.map((k, j) => ETYPES[k].boss ? -1 : j).filter(j => j >= 0), leads = new Set();
+    while (leads.size < Math.min(nl, plain.length)) leads.add(plain[Math.random() * plain.length | 0]);
+    return queue.map((k, j) => { const T = ETYPES[k], top = !!T.boss || leads.has(j); let s = T.boss === 'major' ? SKILL.boss : T.boss ? SKILL.mini[n >= 8 ? 1 : 0] : leads.has(j) ? ls : rnd(b0, b1);
+      if (hard) s += top ? SKILL.hardLead : SKILL.hard; return Math.min(2, s + extra); });
+  }
   beginWave(n) {
-    const c = this.c; c.fx.clearStains(); this.wave = n; this.phase = 'intro'; this.phaseT = 0; this.queue = this.composition(n); this.spawnT = 1.5; this.stats.waves = n - 1;
+    const c = this.c; c.fx.clearStains(); this.wave = n; this.phase = 'intro'; this.phaseT = 0; this.queue = this.composition(n); this.qSkill = this.skillsFor(n, this.queue); this.spawnT = 1.5; this.stats.waves = n - 1;
     if (n > 1 && (n - 1) % 3 === 0) this.weather.set(pick(this.cfg.weathers || ['clear']));
     this.respawnDead(); this.healUp();
     const boss = this.queue.some(k => ETYPES[k].boss);
@@ -133,24 +154,23 @@ export class Survival {
     const me = this.c.G.me;
     if (me.dead || me.downed) { me.dead = false; me.rise(SV.respawnHp); this.c.toast(this.c.t('sv.back')); }
   }
-  spawnEnemy(type, at) {
+  spawnEnemy(type, at, skill) {
     const c = this.c, T = ETYPES[type], n = this.wave, id = this.nextId++;
     const sp = at || pick(this.W.spawns); const x = sp[0] + rnd(-1.5, 1.5), z = sp[1] + rnd(-1.5, 1.5);
     const scale = Math.max(0, n - 10), hpK = (1 + 0.07 * scale) * (this.online ? 1.35 : 1) * (this.p.diff === 'hard' ? 1.25 : 1), dmgK = (1 + 0.045 * scale) * (this.p.diff === 'hard' ? 1.2 : 1);
-    const e = this.makeEnemy(id, type, x, z, Math.atan2(-x, -z), Math.round(T.hp * hpK), dmgK, Math.min(1.45, T.tempo * (1 + 0.015 * scale)));
+    const e = this.makeEnemy(id, type, x, z, Math.atan2(-x, -z), Math.round(T.hp * hpK), dmgK, Math.min(1.45, T.tempo * (1 + 0.015 * scale)), skill);
     if (this.online) c.net.send('sv', { t: 'spawn', id, type, x, z, yaw: e.f.yaw, hp: e.f.maxHp, dk: dmgK, tempo: e.f.tempo });
     if (T.boss) this.bossIntro(e);
     return e;
   }
-  makeEnemy(id, type, x, z, yaw, hp, dmgK, tempo) {
+  makeEnemy(id, type, x, z, yaw, hp, dmgK, tempo, skill = 0.5) {
     const c = this.c, T = ETYPES[type], f = c.newFighter(T.look[0], T.look[1], T.name);
     f.restyle(T.tint ?? null, T.scale); f.spawn(x, z, yaw); f.maxHp = f.hp = hp; f.maxPosture = Math.round(T.post * (1 + 0.04 * Math.max(0, this.wave - 10)));
     f.tempo = tempo; f.speedMul = T.speed; f.dmgMul = T.dmg * dmgK; f.reach = T.reach || 1; f.superArmor = T.armor || false; f.lives = 1;
     f.remote = !this.host; f.hitTargets = () => this.players(); f.onStrike = (a, k, v) => this.onStrike(a, k, v);
-    const lvl = Math.min(2, T.level + (this.wave >= 4 ? 1 : 0) + (this.wave >= 8 ? 1 : 0) + (this.p.diff === 'hard' ? 1 : 0));   // smarter every few waves
-    const ai = this.host ? new AI(f, lvl, { ...T.ai, moves: T.moves }) : null;
-    if (ai) { ai.P.moves = { ...T.moves }; const g = Math.max(0, this.wave - 1) * 0.018; ai.P.react = Math.min(0.95, ai.P.react + g); ai.P.deflect = Math.min(0.85, ai.P.deflect + g * 0.8); }
-    const e = { id, type, T, f, ai, role: T.role || 'any', target: null, deadT: 0, phase: 0, lastHitBy: null, aura: null };
+    const ai = this.host ? new AI(f, skill, { ...T.ai, moves: T.moves }) : null;   // skill from the wave (SKILL), style from the type
+    if (ai) { ai.P.moves = { ...T.moves }; for (const k in T.styleK || {}) ai.P[k] *= T.styleK[k]; }
+    const e = { id, type, T, f, ai, skill, role: T.role || 'any', target: null, deadT: 0, phase: 0, lastHitBy: null, aura: null };
     this.enemies.set(id, e); return e;
   }
   // walk around cover: when the straight line to the goal (anchor or target) is blocked by walls, carts, rocks or water,
@@ -277,7 +297,7 @@ export class Survival {
     const ph = e.T.phases; if (!ph || e.phase >= ph.length) return;
     const P = ph[e.phase]; if (e.f.hp / e.f.maxHp > P.at) return;
     e.phase++; const c = this.c;
-    e.f.tempo = e.T.tempo * P.tempo; if (e.ai) { Object.assign(e.ai.P, P.ai); e.ai.P.moves = { ...e.ai.P.moves, ...P.moves }; }
+    e.f.tempo = e.T.tempo * P.tempo; if (e.ai) { Object.assign(e.ai.P, P.ai); e.ai.P.moves = { ...e.ai.P.moves, ...(P.moves || {}) }; if (P.ai && P.ai.pattern) { e.ai.pi = 0; e.ai.combo = null; e.ai.opening = 1.2; } }
     e.f.posture = 0; e.f.setAct('roar'); e.f.invuln = true; e.f.invulnT = 1.5;
     this.shockwave(e.f.pos, 5); sfx.roar(); c.banner(e.phase === 2 ? '鬼' : '怒', '#ff4a2a', true);
     if (P.aura) this.setAura(e, P.aura);
@@ -347,7 +367,7 @@ export class Survival {
       this.spawnT -= rawDt;
       if (this.queue.length && this.spawnT <= 0 && aliveN < SV.maxAlive + (this.online ? 1 : 0)) {
         const at = pick(this.W.spawns), n = Math.min(this.queue.length, Math.round(rnd(...SV.groupSize)));
-        for (let i = 0; i < n; i++) this.spawnEnemy(this.queue.shift(), at);
+        for (let i = 0; i < n; i++) this.spawnEnemy(this.queue.shift(), at, (this.qSkill || []).shift());
         this.spawnT = rnd(...SV.spawnGap);
       }
       if (!this.queue.length && aliveN === 0 && this.enemies.size === 0) { this.phase = 'clear'; this.phaseT = 0; this.waveCleared(); }

@@ -37,7 +37,7 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPrefer
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.45;
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(52, 1, 0.08, 400);
+const camera = new THREE.PerspectiveCamera(52, 1, 0.08, 900);   // far: past the vista's distant ranges (vista.js) and the sky (SKY_R)
 // soft fill that rides with the camera: keeps both fighters readable in the dark hall (no shadows)
 const camFill = new THREE.DirectionalLight(0xffd8b0, 0.55);   // per-map intensity: cfg.camFill camFill.position.set(0.6, 0.4, 1); camera.add(camFill); camFill.target.position.set(0, 0, -5); camera.add(camFill.target); scene.add(camera);
 const arena = buildArena(scene, renderer);
