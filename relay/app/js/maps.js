@@ -12,15 +12,42 @@ const TOD = {
   night: { top: 0x0a1428, mid: 0x1c3058, hor: 0x34486a, sun: [-0.4, 0.55, 0.6], sunCol: 0xb8ccff, sunI: 1.8, hemi: [0x7a8ac0, 0x2a2018, 1.05], fog: 0x18223a, fogD: [16, 75], exp: 1.6, night: true },
   fog: { top: 0x8a96a4, mid: 0xb0b8c0, hor: 0xc8ccd0, sun: [0.3, 0.5, -0.8], sunCol: 0xfff0e0, sunI: 1.4, hemi: [0xd8e0e8, 0x5a5a52, 1.05], fog: 0xb8bec4, fogD: [6, 42], exp: 0.85, night: false },
 };
+// Shadow Hunt day: the match runs on a clock from the dead of night to noon (lighting, fog and mist follow it).
+// [hour, preset]: lerped between neighbours. 12:30 = the hour of the duel (hunt.js).
+const DAWN = { top: 0x34508e, mid: 0xd88c7a, hor: 0xffbe84, sun: [0.9, 0.12, -0.3], sunCol: 0xffbc8a, sunI: 2.2, hemi: [0xffd6c6, 0x46382c, 0.95], fog: 0xc8988c, fogD: [16, 95], exp: 1.05, night: false };
+const PREDAWN = { top: 0x141e3e, mid: 0x3a4474, hor: 0x8a6e84, sun: [0.75, 0.3, -0.1], sunCol: 0xc0b0d8, sunI: 1.5, hemi: [0x8a92c0, 0x2a2420, 0.95], fog: 0x3e4662, fogD: [12, 70], exp: 1.4, night: true };
+const NOON = { ...TOD.day, sun: [0.18, 0.95, -0.22], exp: 0.82, fogD: [45, 170] };
+export const DAY = { start: 3.5, duel: 12.5, keys: [[3.5, TOD.night], [4.8, PREDAWN], [6.0, DAWN], [7.6, TOD.fog], [9.0, TOD.day], [12.5, NOON]],
+  mist: [[3.5, 0.55], [5.0, 0.9], [6.5, 1], [8.0, 0.8], [9.5, 0.25], [10.5, 0]],                    // thickness of the ground mist through the morning
+  sense: h => h < 5.2 ? 'night' : h < 6.6 ? 'dusk' : h < 8.4 ? 'fog' : 'day' };                       // sight model (stealth.js SENSE.range) for the hour
+const _ca = new THREE.Color(), _cb = new THREE.Color(), _va = new V3(), _vb = new V3();
+function keyAt(list, h) { let i = 0; while (i < list.length - 2 && h > list[i + 1][0]) i++; const [h0, A] = list[i], [h1, B] = list[i + 1]; return [A, B, Math.min(1, Math.max(0, (h - h0) / (h1 - h0)))]; }
+export function mistAt(h) { const [a, b, u] = keyAt(DAY.mist, h); return a + (b - a) * u; }
+function dayCycle(g, cfg, renderer) {
+  const col = (k, A, B, u, out) => out.copy(_ca.set(A[k])).lerp(_cb.set(B[k]), u), num = (k, A, B, u) => A[k] + (B[k] - A[k]) * u;
+  cfg.setHour = h => {
+    const [A, B, u] = keyAt(DAY.keys, h), S = cfg.skyMat.uniforms, sm = (A.night ? 1 : 0) + ((B.night ? 1 : 0) - (A.night ? 1 : 0)) * u;
+    col('hor', A, B, u, S.a.value); col('mid', A, B, u, S.b.value); col('top', A, B, u, S.c.value); col('sunCol', A, B, u, S.sc.value);
+    const dir = _va.set(...A.sun).normalize().lerp(_vb.set(...B.sun).normalize(), u).normalize(); S.s.value.copy(dir); S.sp.value = 500 + 1000 * sm; S.gl.value = 0.8 - 0.5 * sm;
+    col('sunCol', A, B, u, cfg.sun.color); cfg.sun.intensity = num('sunI', A, B, u); cfg.sunOff.copy(dir).multiplyScalar(40);
+    _ca.set(A.hemi[0]).lerp(_cb.set(B.hemi[0]), u); cfg.hemiL.color.copy(_ca); _ca.set(A.hemi[1]).lerp(_cb.set(B.hemi[1]), u); cfg.hemiL.groundColor.copy(_ca); cfg.hemiL.intensity = A.hemi[2] + (B.hemi[2] - A.hemi[2]) * u;
+    col('fog', A, B, u, cfg.fog.color); cfg.background.copy(cfg.fog.color); cfg.fog.near = A.fogD[0] + (B.fogD[0] - A.fogD[0]) * u; cfg.fog.far = cfg.fog0 = A.fogD[1] + (B.fogD[1] - A.fogD[1]) * u; cfg.fogFar = cfg.fog.far;
+    renderer.toneMappingExposure = cfg.baseExposure = cfg.exposure = num('exp', A, B, u);
+    if (g.parent) g.parent.environmentIntensity = 0.45 + 0.35 * (1 - sm);
+    if (cfg.moon) { cfg.moon.material.opacity = Math.max(0, 1 - (h - 4.6) / 1.2); cfg.moon.visible = cfg.moon.material.opacity > 0.01; }
+    cfg.night = sm > 0.5; cfg.bloom = { strength: 0.4 + 0.2 * sm, threshold: 1.2 - 0.2 * sm }; cfg.camFill = 0.15 + 0.2 * sm;
+    const W = cfg.world; if (W) { W.mistK = mistAt(h); if (W.mistMat) W.mistMat.color.copy(cfg.fog.color).lerp(_ca.set(0xffffff), 0.45); }
+  };
+}
 function lighting(g, cfg, tod, half) {
   const T = TOD[tod] || TOD.dusk;
   cfg.background = new THREE.Color(T.fog); cfg.fog = new THREE.Fog(T.fog, T.fogD[0], T.fogD[1]); cfg.exposure = T.exp; cfg.envI = T.night ? 0.45 : 0.8;
-  skyAndEnv(g, cfg, gradSky(T.top, T.mid, T.hor, T.sun, T.sunCol, T.night ? 1500 : 500, T.night ? 0.3 : 0.8));
-  g.add(new THREE.HemisphereLight(T.hemi[0], T.hemi[1], T.hemi[2]));
+  const skyMat = gradSky(T.top, T.mid, T.hor, T.sun, T.sunCol, T.night ? 1500 : 500, T.night ? 0.3 : 0.8); skyAndEnv(g, cfg, skyMat); cfg.skyMat = skyMat;
+  const hemi = new THREE.HemisphereLight(T.hemi[0], T.hemi[1], T.hemi[2]); g.add(hemi); cfg.hemiL = hemi;
   const sun = new THREE.DirectionalLight(T.sunCol, T.sunI); const off = new V3(...T.sun).normalize().multiplyScalar(40);
   sun.position.copy(off); sun.castShadow = true; Object.assign(sun.shadow.camera, { left: -24, right: 24, top: 24, bottom: -24, near: 1, far: 120 }); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
   g.add(sun, sun.target); cfg.sun = sun; cfg.sunOff = off; cfg.tod = tod; cfg.night = T.night; cfg.fogFar = T.fogD[1];
-  if (T.night) { const big = new THREE.Mesh(new THREE.CircleGeometry(7, 32), new THREE.MeshBasicMaterial({ color: 0xeef2ff, fog: false })); big.position.copy(off.clone().normalize().multiplyScalar(190)); big.lookAt(0, 0, 0); g.add(big); }
+  if (T.night) { const big = new THREE.Mesh(new THREE.CircleGeometry(7, 32), new THREE.MeshBasicMaterial({ color: 0xeef2ff, fog: false, transparent: true })); big.position.copy(off.clone().normalize().multiplyScalar(190)); big.lookAt(0, 0, 0); big.userData.dynamic = true; g.add(big); cfg.moon = big; }
   cfg.bloom = { strength: T.night ? 0.6 : 0.4, threshold: T.night ? 1.0 : 1.2 }; cfg.camFill = T.night ? 0.35 : 0.15;
   return { sun, setQuality(q) { sun.shadow.mapSize.setScalar(q === 'high' ? 2048 : 1024); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } } };
 }
@@ -34,8 +61,9 @@ const groundColor = (W, base = [0.4, 0.5, 0.26]) => (x, z, c) => {
 
 // =====================================================================================  SAMURAI HUNT: Kirigakure Valley
 function buildHunt(g, renderer, cfg, opts = {}) {
-  const tod = opts.tod || 'dusk', W = new World(g, { half: 70 }); cfg.world = W; cfg.amb = null;
+  const cycle = opts.tod === 'cycle', tod = cycle ? 'night' : opts.tod || 'dusk', W = new World(g, { half: 70 }); cfg.world = W; cfg.amb = null;
   const lit = lighting(g, cfg, tod, 70);
+  if (cycle) dayCycle(g, cfg, renderer);
   const R = rng(1337);
   // relief: shrine hill (NW), ridge (SW), knoll (E), rolling ground
   W.bump(-40, -42, 24, 6.5); W.bump(-48, 34, 18, 4); W.bump(42, -14, 14, 3); W.bump(10, -55, 16, 2.5); W.bump(-15, 52, 14, 2);
@@ -53,9 +81,11 @@ function buildHunt(g, renderer, cfg, opts = {}) {
   W.prop('rack', -9, -12.5, 0.2); W.prop('rack', -27, -9, 1.4);
   // ---- shrine on the NW hill ----
   const sy = W.ground(-40, -44); W.flat(-40, -46, 7, 6, sy);
-  W.house(-40, -48, 0, 8, 6, { lit: tod !== 'day' }); W.torii(-40, -36, 0, 1.1); W.torii(-36, -24, 0.4, 0.9);
-  for (const [x, z] of [[-44, -40], [-36, -40], [-44, -52], [-36, -52]]) W.stoneLantern(x, z);
+  W.keep(-40, -49, 0, 3, 9, 6.5, { lit: tod !== 'day' }); W.torii(-40, -36, 0, 1.1); W.torii(-36, -24, 0.4, 0.9);   // the castle keep crowns the hill
+  for (const [x, z] of [[-44, -40], [-36, -40], [-49, -50], [-31, -50]]) W.stoneLantern(x, z);
   W.broadleaf([[-48, -44, 1.2], [-31, -47, 1.1], [-46, -33, 1]], 'maple');
+  // ---- a pagoda above the east road, with cherries around it ----
+  W.keep(22, -18, 0.35, 4, 4.2, 4.2, { base: 0.9, lit: tod !== 'day' }); W.broadleaf([[17, -22, 0.9], [27, -21, 0.9]], 'sakura'); W.stoneLantern(19, -13); W.stoneLantern(25, -14);
   // ---- bamboo forest (NE) with a path through it ----
   const bambooPath = (x, z) => Math.abs((x - 35) * 0.45 - (z + 40)) < 2.2;
   W.bambooGrove(36, -40, 22, 900, 77, bambooPath);
@@ -79,11 +109,21 @@ function buildHunt(g, renderer, cfg, opts = {}) {
   const pines = [];
   for (let i = 0; i < 230; i++) { const x = R() * 136 - 68, z = R() * 136 - 68, edge = Math.max(Math.abs(x), Math.abs(z)) > 58;
     if (!edge && R() < 0.62) continue; if (W.inWater(x, z) || W.solidAt(x, W.ground(x, z) + 1, z)) continue;
-    if (Math.hypot(x + 12, z + 4) < 22 || Math.hypot(x - 36, z + 40) < 23 || Math.hypot(x + 40, z + 46) < 9 || Math.abs(W.riverDist(x, z)) < 6) continue; pines.push([x, z, 0.8 + R() * 0.7]); }
+    if (Math.hypot(x + 12, z + 4) < 22 || Math.hypot(x - 36, z + 40) < 23 || Math.hypot(x + 40, z + 46) < 9 || Math.hypot(x - 22, z + 18) < 9 || Math.abs(W.riverDist(x, z)) < 6) continue; pines.push([x, z, 0.8 + R() * 0.7]); }
   W.pines(pines);
   W.broadleaf([[-30, 14, 1.1], [14, 12, 1], [-50, -14, 1.2], [8, -46, 1], [-56, 52, 1.1], [26, -10, 0.9]], 'sakura');
   for (let i = 0; i < 26; i++) { const x = R() * 120 - 60, z = R() * 120 - 60; if (W.inWater(x, z) || Math.hypot(x + 12, z + 4) < 16) continue; W.rock(x, z, 0.4 + R() * 0.8); }
+  // ---- bushes: cover to crouch in along the village, paths, river banks, shrine slopes and ruins ----
+  const shrubs = [], RB = rng(4242);
+  for (const [cx, cz, n] of [[-30, -14, 4], [-31, 8, 4], [-18, 15, 3], [6, 12, 4], [15, -11, 3], [4, -23, 3], [-7, -23, 3], [-48, -36, 4], [-32, -36, 3], [-52, -26, 3],
+    [-20, 15.5, 3], [10, 30, 3], [32, 14, 4], [-40, 17, 4], [-56, 24, 3], [30, 40, 3], [44, 47, 4], [20, 53, 3], [26, -30, 3], [47, -28, 3], [55, 4, 3], [-58, -18, 3], [-6, 40, 4], [40, -2, 3], [-24, 40, 3], [12, 45, 3]])
+    for (let i = 0; i < n; i++) { const x = cx + (RB() - 0.5) * 6, z = cz + (RB() - 0.5) * 6, y = W.ground(x, z); if (W.inWater(x, z) || W.solidAt(x, y + 0.6, z) || W.surfaceAt(x, z) === 'stone') continue; shrubs.push([x, z, 0.85 + RB() * 0.45]); }
+  W.shrubs(shrubs);
+  // ---- ground mist: the river valley and the low fields (thick before dawn, gone by mid-morning) ----
+  W.mist([[-50, 20, 10], [-26, 24, 11], [0, 22, 10], [24, 20, 11], [50, 24, 10], [6, -34, 10], [-46, 8, 9], [36, 46, 10]]);
+  W.mistK = cycle ? mistAt(DAY.start) : tod === 'fog' ? 1 : tod === 'night' ? 0.5 : tod === 'dusk' ? 0.35 : 0;
   W.terrainMesh(150, 150, groundColor(W));
+  W.duelSpot = [-12, -6];   // the village square: where the hunters must face each other at 12:30
   // spawn points (opposite pairs) and bot waypoints
   W.spawns = [[-56, -56], [52, 58], [58, -58], [-58, 52], [-62, -8], [62, 6]];
   W.waypoints = [[-12, -6], [-40, -44], [36, -40], [6, -34], [0, 22], [52, 22], [36, 46], [-46, 8], [28, 6], [-28, 30], [-24, -20], [10, -6], [48, -52], [-50, 34], [22, 49]];

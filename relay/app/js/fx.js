@@ -2,6 +2,17 @@ import * as THREE from 'three';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
 function tex(size, draw) { const c = document.createElement('canvas'); c.width = c.height = size; draw(c.getContext('2d'), size); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; }
+const DECAL = { max: 40, life: 45, fade: 6 };   // ground marks: how many at once, seconds they last, seconds of fading
+// irregular blood splat (alpha): a core blob, satellite drops, a few streaks along +x (the spray direction)
+function splatT() {
+  return tex(128, (x, n) => {
+    const r = n / 2; x.fillStyle = '#fff';
+    const blob = (cx, cy, rr) => { x.beginPath(); for (let i = 0; i <= 18; i++) { const a = i / 18 * Math.PI * 2, k = rr * (0.75 + Math.random() * 0.4); x.lineTo(cx + Math.cos(a) * k, cy + Math.sin(a) * k); } x.fill(); };
+    blob(r, r, r * 0.42);
+    for (let i = 0; i < 14; i++) { const a = (Math.random() - 0.5) * 2.4, d = r * (0.45 + Math.random() * 0.45); blob(r + Math.cos(a) * d, r + Math.sin(a) * d, r * (0.04 + Math.random() * 0.09)); }
+    for (let i = 0; i < 4; i++) { const a = (Math.random() - 0.5) * 0.9; x.lineWidth = 2 + Math.random() * 4; x.strokeStyle = '#fff'; x.beginPath(); x.moveTo(r, r); x.lineTo(r + Math.cos(a) * r * 0.95, r + Math.sin(a) * r * 0.95); x.stroke(); }
+  });
+}
 const glowT = () => tex(64, (x, s) => { const g = x.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2); g.addColorStop(0, '#fff'); g.addColorStop(0.3, 'rgba(255,255,255,.75)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, s, s); });
 const starT = () => tex(256, (x, s) => {
   let g = x.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.1, 'rgba(255,245,220,.95)'); g.addColorStop(0.35, 'rgba(255,180,80,.35)'); g.addColorStop(1, 'rgba(255,120,30,0)');
@@ -57,7 +68,24 @@ export class FX {
     const ag = new THREE.BufferGeometry(); ag.setAttribute('position', new THREE.BufferAttribute(ap, 3));
     this.amb = new THREE.Points(ag, new THREE.PointsMaterial({ size: 0.05, color: 0xffc890, map: glow, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending }));
     this.amb.frustumCulled = false; scene.add(this.amb);
+    // ---- ground marks: blood splats left by hits, one instanced mesh (1 draw), ring buffer of DECAL.max, fade with age ----
+    const dm = new THREE.MeshLambertMaterial({ color: 0xffffff, alphaMap: splatT(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    this.decals = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), dm, DECAL.max); this.decals.count = 0; this.decals.frustumCulled = false;
+    this.decals.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(DECAL.max * 3), 3); this.decals.renderOrder = -1; scene.add(this.decals);
+    this.dAge = new Float32Array(DECAL.max).fill(-1); this.dSize = new Float32Array(DECAL.max); this.dHead = 0; this.dM = new THREE.Matrix4(); this.dQ = new THREE.Quaternion(); this.dS = new THREE.Vector3(); this.dP = new THREE.Vector3();
   }
+  // blood on the ground at (x, y, z), smeared along dir (xz), size ~ metres; heavier blows leave bigger marks
+  stain(pos, dir, size = 0.6) {
+    if (this.density < 0.3) return;
+    const i = this.dHead; this.dHead = (this.dHead + 1) % DECAL.max;
+    const a = dir ? Math.atan2(-dir.z, dir.x) : Math.random() * 6.28, k = size * (0.8 + Math.random() * 0.4);
+    this.dP.set(pos.x + (dir ? dir.x * k * 0.3 : 0), pos.y + 0.012 + (i % 7) * 0.0008, pos.z + (dir ? dir.z * k * 0.3 : 0));
+    this.dQ.setFromAxisAngle(new THREE.Vector3(0, 1, 0), a); this.dSize[i] = k; this.dAge[i] = 0;
+    this.dM.compose(this.dP, this.dQ, this.dS.set(k * 1.5, 1, k)); this.decals.setMatrixAt(i, this.dM);
+    const c = 0.1 + Math.random() * 0.05; this.decals.instanceColor.setXYZ(i, c, c * 0.05, c * 0.04);
+    this.decals.count = Math.max(this.decals.count, i + 1); this.decals.instanceMatrix.needsUpdate = true; this.decals.instanceColor.needsUpdate = true;
+  }
+  clearStains() { this.dAge.fill(-1); this.decals.count = 0; this.dHead = 0; }
   // sparks: dir biases the spray (e.g. away from the blade contact), spread 0..1
   spark(pos, n, speed, color, life = 0.45, dir = null, spread = 1, grav = 9) {
     n = Math.ceil(n * this.density); const P = this.sparks.geometry.attributes.position, c = new THREE.Color(color);
@@ -103,6 +131,7 @@ export class FX {
     this.spark(pos, heavy ? 70 : 45, heavy ? 7 : 5, 0x8a0808, 0.6, dir, 0.55, 12);
     this.puff(pos, heavy ? 26 : 16, 1.6, 0x5a0606, 0.9, 1, 0.1, 3);
     this.flare(pos, heavy ? 0.5 : 0.35, 0.06, 0xff6050); this.light(pos, 0xff3020, 6, 0.08);
+    if (heavy) this.ring(pos, 0.9, 0.22, 0x8a1010);   // heavy blow: a short crimson shock ring
   }
   mikiri(pos) { this.spark(pos, 180, 10, 0xffe2a0, 0.5); this.flare(pos, 1.2, 0.3, 0xfff6e0); this.ring(pos, 1.6, 0.35, 0xffffff); this.lensStreak(pos, 3.5, 0.3, 0xffffff); this.light(pos, 0xffffff, 40, 0.3); }
   finisher(pos, dir) {
@@ -118,6 +147,13 @@ export class FX {
 
   update(dt, cam) {
     this.t += dt;
+    if (this.decals.count) {   // old marks dry out and vanish: the floor never fills up
+      let changed = false;
+      for (let i = 0; i < this.decals.count; i++) { if (this.dAge[i] < 0) continue; this.dAge[i] += dt; const left = DECAL.life - this.dAge[i];
+        if (left < DECAL.fade) { const k = Math.max(0, left / DECAL.fade); this.decals.getMatrixAt(i, this.dM); this.dM.decompose(this.dP, this.dQ, this.dS); const s0 = this.dSize[i] * Math.max(0.001, k);
+          this.dM.compose(this.dP, this.dQ, this.dS.set(s0 * 1.5, 1, s0)); this.decals.setMatrixAt(i, this.dM); changed = true; if (left <= 0) this.dAge[i] = -1; } }
+      if (changed) this.decals.instanceMatrix.needsUpdate = true;
+    }
     // particle pools are only walked (and re-uploaded to the GPU) while something in them is alive; one extra pass parks the dead
     const P = this.sparks.geometry.attributes.position, C = this.sparks.geometry.attributes.color, LP = this.streaks.geometry.attributes.position, LC = this.streaks.geometry.attributes.color;
     const sparksOn = this.sparkAlive || this.t <= (this.sparkUntil || 0), mistOn = this.mistAlive || this.t <= (this.mistUntil || 0);

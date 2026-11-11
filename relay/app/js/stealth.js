@@ -16,12 +16,15 @@ export const SENSE = {
   aware: 0.6,               // awareness at which a surprise attack is no longer possible
   noiseCap: 0.7,            // hearing alone can raise awareness only up to this
   hearR: 26,                // metres of hearing radius per unit of loudness
-  grassDens: 1.25, bambooDens: 0.55,
+  grassDens: 1.25, bambooDens: 0.55, bushDens: 1.3,   // sight lost per metre of foliage on the line of sight (mist: world.js MIST)
+  bushHide: true,           // crouched inside a bush = invisible from outside closeSense
   elevation: 1.5,           // height advantage (m) giving the overlook bonus
 };
 export const GAIT = { still: 0.45, crouch: 0.6, walk: 0.8, run: 1, sprint: 1.25, attack: 1.45 };
 export const LOUD = { crouch: 0.12, walk: 0.32, run: 0.62, sprint: 0.95 };
-export const SURF = { stone: 1.25, wood: 1.35, water: 1.7, dirt: 0.8, grass: 0.95, bamboo: 1.15 };
+export const SURF = { stone: 1.25, wood: 1.35, water: 1.7, dirt: 0.8, grass: 0.95, bamboo: 1.15, bush: 1.1 };
+// is a point inside a bush (low foliage of kind 'bush')
+export function inBush(W, x, z) { const cell = W.cellAt(x, z); if (cell) for (const k of cell.f) { const f = W.foliage[k]; if (f.kind === 'bush' && (x - f.x) ** 2 + (z - f.z) ** 2 < f.r * f.r) return true; } return false; }
 export const STEP = { walk: 0.62, run: 0.36, sprint: 0.3, crouch: 0.8 };
 
 export function gaitOf(f) {
@@ -36,6 +39,7 @@ export class Senses {
   visibility(obs, viewYaw, tgt) {
     const W = this.W, d = Math.hypot(tgt.pos.x - obs.pos.x, tgt.pos.z - obs.pos.z);
     if (d < SENSE.closeSense) return 1;
+    if (SENSE.bushHide && tgt.crouch && inBush(W, tgt.pos.x, tgt.pos.z) && !MOVES[tgt.act]) return 0;   // crouched in a bush: hidden (attacking gives it away)
     const elev = obs.pos.y - tgt.pos.y > SENSE.elevation;
     const range = SENSE.range[this.tod] * (this.weather ? this.weather.visMul : 1) * (elev ? 1.25 : 1);
     if (d > range) return 0;
@@ -46,7 +50,7 @@ export class Senses {
     for (const h of tgt.crouch ? [0.55, 0.9] : [0.9, 1.5]) {
       const L = W.los(eye, new V3(tgt.pos.x, tgt.pos.y + h, tgt.pos.z));
       if (L.blocked) continue;
-      best = Math.max(best, Math.exp(-(L.grass * SENSE.grassDens + L.bamboo * SENSE.bambooDens)));
+      best = Math.max(best, Math.exp(-(L.grass * SENSE.grassDens + L.bamboo * SENSE.bambooDens + L.bush * SENSE.bushDens + L.mist)));
     }
     if (best <= 0) return 0;
     const light = W.lightAt(tgt.pos.x, tgt.pos.z), lf = this.tod === 'night' ? 0.4 + light * 1.1 : this.tod === 'dusk' || this.tod === 'fog' ? 0.75 + light * 0.4 : 1;

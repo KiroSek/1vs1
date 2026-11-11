@@ -98,10 +98,25 @@ export class CameraRig {
       this.pos.lerp(p, 1 - Math.exp(-3 * dt)); this.look.lerp(new V3(f.pos.x, f.pos.y + (c.type === 'death' ? 0.4 : 0.9 + Math.min(0.5, this.cineT * 0.4)), f.pos.z), 1 - Math.exp(-4 * dt));
     } else if (c.type === 'intro') {
       const { me, opp } = ctx, mid = me.pos.clone().lerp(opp.pos, 0.5), d = opp.pos.clone().sub(me.pos).setY(0).normalize(), side = new V3(-d.z, 0, d.x);
-      const u = Math.min(1, this.cineT / c.dur), a = -0.9 + u * 0.9;
-      const p = mid.clone().addScaledVector(side, Math.cos(a) * 5.2).addScaledVector(d, Math.sin(a) * 5.2); p.y = me.pos.y + 1.25 + u * 0.4;
-      this.pos.lerp(p, 1 - Math.exp(-4 * dt)); this.look.lerp(mid.setY(me.pos.y + 1.2), 1 - Math.exp(-5 * dt));
-      if (u >= 1) { this.cine = null; this.snapBehind(me); }
+      // shots (s): 0 me close (slow push-in) | 1.5 the opponent close | 3.0 wide profile of both (the bow) | 4.4 over my shoulder (the draw)
+      const T = this.cineT, sh = T < 1.5 ? 0 : T < 3.0 ? 1 : T < 4.4 ? 2 : 3, sub = sh; let p, look;
+      if (sh < 2) { const f = sh ? opp : me, fd = f.fwd, fs = new V3(-fd.z, 0, fd.x), u = (T - sh * 1.5) / 1.5;
+        p = f.pos.clone().addScaledVector(fd, 2.3 - u * 0.5).addScaledVector(fs, 0.85); p.y = f.pos.y + 1.6 - u * 0.1; look = f.pos.clone().setY(f.pos.y + 1.35); }
+      else if (sh === 2) { const gap = me.pos.distanceTo(opp.pos);   // the bow: a wide profile with both full-length, slow push-in
+        const u = (T - 3.0) / 1.4; p = mid.clone().addScaledVector(side, Math.max(4, gap * 1.05) - u * 0.6); p.y = me.pos.y + 1.5 - u * 0.15; look = mid.clone().setY(me.pos.y + 0.95); }
+      else { p = me.pos.clone().addScaledVector(d, -3.1).addScaledVector(side, -0.9); p.y = me.pos.y + 1.9; look = mid.clone().setY(me.pos.y + 1.2); }
+      const k = sub === this.introShot ? 3.2 : 2.2; this.introShot = sub;   // soft glides between shots, never a hard cut
+      this.pos.lerp(p, 1 - Math.exp(-k * dt)); this.look.lerp(look, 1 - Math.exp(-(k + 1) * dt));
+      if (T >= c.dur) { this.cine = null; this.introShot = -1; this.snapBehind(me); }
+    } else if (c.type === 'teams') {   // 2 vs 2 first round: my team from the front, theirs, a wide profile for the bow, over my shoulder for the draw
+      const cen = l => l.reduce((a, f) => a.add(f.pos), new V3()).divideScalar(Math.max(1, l.length)), A = cen(c.mine), B = cen(c.foes), mid = A.clone().lerp(B, 0.5);
+      const d = B.clone().sub(A).setY(0).normalize(), side = new V3(-d.z, 0, d.x), T = this.cineT, sh = T < 1.4 ? 0 : T < 2.7 ? 1 : T < 4.3 ? 2 : 3; let p, look;
+      if (sh < 2) { const C = sh ? B : A, dd = sh ? d.clone().negate() : d, u = (T - sh * 1.35) / 1.35; p = C.clone().addScaledVector(dd, 4.2 - u * 0.6).addScaledVector(side, sh ? -0.6 : 0.6); p.y = C.y + 1.55; look = C.clone().setY(C.y + 1.1); }
+      else if (sh === 2) { const u = (T - 2.7) / 1.6; p = mid.clone().addScaledVector(side, Math.max(5.5, A.distanceTo(B) * 0.85) - u * 0.6); p.y = mid.y + 1.7; look = mid.clone().setY(mid.y + 0.9); }
+      else { const me = c.me; p = me.pos.clone().addScaledVector(d, -3.1).addScaledVector(side, -0.9); p.y = me.pos.y + 1.9; look = B.clone().setY(B.y + 1.1); }
+      const k = sh === this.introShot ? 3.2 : 2.2; this.introShot = sh;
+      this.pos.lerp(p, 1 - Math.exp(-k * dt)); this.look.lerp(look, 1 - Math.exp(-(k + 1) * dt));
+      if (T >= c.dur) { this.cine = null; this.introShot = -1; this.snapBehind(c.me); }
     } else if (c.type === 'orbit') {   // boss intro / phase change: slow low orbit around a fighter
       const f = c.f, a = c.ang + this.cineT * 0.35, r = c.r || 4.2; const p = new V3(f.pos.x + Math.sin(a) * r, f.pos.y + 0.9 + this.cineT * 0.15, f.pos.z + Math.cos(a) * r);
       this.pos.lerp(p, 1 - Math.exp(-3 * dt)); this.look.lerp(new V3(f.pos.x, f.pos.y + 1.5 * (f.scaleF || 1), f.pos.z), 1 - Math.exp(-4 * dt));

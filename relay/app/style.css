@@ -163,3 +163,95 @@ body.surv #mateCard{position:absolute;left:38px;bottom:118px;width:220px;font-si
 table.stats{margin:10px auto;border-collapse:collapse;font-size:13px;letter-spacing:.05em}table.stats td{padding:3px 10px;border-bottom:1px solid #2a2620;text-align:left}table.stats td:last-child{text-align:right;color:#f2ead8}
 #hint.mini>div:not(:first-child){display:none}#hint.mini{opacity:.75}
 #hint.mini::after{content:'H';position:absolute;right:6px;bottom:4px;font:600 9px sans-serif;color:#776}
+.item.locked { opacity: .55; filter: grayscale(.6); }
+
+/* ================= patch 1.1 interface: main menu, Play, Options, Achievements, Armory ================= */
+:root{--serif:"Cinzel","Trajan Pro","Palatino Linotype","Book Antiqua",Palatino,"Yu Mincho",Georgia,serif;--line:#3e2c24;--ember:#e0823c;--crim:#9c1a1e}
+#menu{background:radial-gradient(120% 90% at 0% 50%,rgba(6,4,4,.92) 0%,rgba(8,5,5,.7) 32%,rgba(0,0,0,.15) 60%,transparent 80%),linear-gradient(0deg,rgba(0,0,0,.55),transparent 30%);padding:0 0 0 5vw;align-items:center;gap:0}
+#menu .mcol{display:flex;flex-direction:column;justify-content:center;height:100%;gap:3.2vh;min-width:min(440px,40vw)}
+.brand{position:relative;width:340px;font-family:var(--serif);text-align:center}
+.brand .enso{position:absolute;left:50%;top:-34px;width:230px;height:230px;transform:translateX(-58%);pointer-events:none}
+.brand .kanji{position:relative;font-family:"Yu Mincho","Hiragino Mincho ProN","Noto Serif CJK JP",serif;font-size:118px;line-height:1;color:#ece2d0;text-shadow:3px 3px 0 rgba(0,0,0,.6),0 0 30px rgba(0,0,0,.8);transform:translateX(-12%) rotate(-4deg);font-weight:700;padding-top:22px}
+.brand h1{font-family:var(--serif);font-size:58px;letter-spacing:.32em;margin:6px 0 0;font-weight:400;color:#efe6d6;text-shadow:0 3px 18px #000}
+.brand .sub{font-family:var(--serif);color:var(--crim);letter-spacing:1em;font-size:18px;margin:-2px 0 0 .9em;text-shadow:0 0 12px rgba(0,0,0,.9)}
+.brand .sub::after{content:"";display:block;height:1px;margin:14px auto 0;width:78%;background:linear-gradient(90deg,transparent,#7a2a22,transparent)}
+.list.nav{gap:4px;min-width:min(420px,38vw)}
+.list.nav button{position:relative;font-family:var(--serif);font-size:25px;letter-spacing:.16em;text-transform:uppercase;padding:11px 18px 11px 58px;border:0;border-top:1px solid transparent;border-bottom:1px solid transparent;color:#e3d8c4;background:none;transition:background .18s,color .18s,padding .18s}
+.list.nav button small{display:block;font-size:15px;letter-spacing:.14em;color:#a99b85;margin-top:2px;text-transform:uppercase}
+.list.nav .dia{position:absolute;left:18px;top:calc(50% - 11px);width:22px;height:22px;opacity:0;transition:.18s}
+.list.nav .dia::before,.list.nav .dia::after{content:"";position:absolute;inset:0;border:2px solid #f0d8b8;transform:rotate(45deg)}
+.list.nav .dia::after{inset:6px;border-width:1.5px}
+.list.nav button.sel,.list.nav button:hover{color:#fff;background:linear-gradient(90deg,rgba(140,18,22,.92) 0%,rgba(120,16,20,.55) 55%,rgba(90,10,14,0) 100%);border-top-color:rgba(230,140,110,.35);border-bottom-color:rgba(230,140,110,.35);padding-left:64px}
+.list.nav button.sel .dia,.list.nav button:hover .dia{opacity:1}
+.motto{font-family:var(--serif);letter-spacing:.42em;font-size:13px;color:#9a8e7a;text-transform:uppercase;margin-top:2vh}
+#menu .rec{position:absolute;left:auto;bottom:auto;right:30px;top:62px;text-align:right}#menu .coins{position:absolute;right:30px;top:24px}
+#menu .mapsel{position:absolute;left:50%;bottom:20px;transform:translateX(-50%)}
+.keyfoot{position:absolute;right:30px;bottom:22px;display:flex;gap:22px;font-family:var(--serif);letter-spacing:.18em;font-size:14px;color:#d8ccb6;text-transform:uppercase;z-index:3}
+.keyfoot span{display:flex;align-items:center;gap:9px}.keyfoot b{font-weight:400}
+.keyfoot kbd{min-width:24px;height:26px;padding:0 6px;display:grid;place-items:center;border:1.5px solid #cbbda4;border-radius:3px;font:600 13px var(--serif);color:#efe4d0;background:rgba(0,0,0,.35);box-shadow:0 2px 0 rgba(0,0,0,.6)}
+/* framed panels (Play / Options / Achievements) */
+.frame{position:relative;margin:auto;width:min(1180px,95vw);height:min(720px,92vh);display:flex;flex-direction:column;padding:26px 34px 70px;box-sizing:border-box;
+  background:radial-gradient(90% 70% at 70% 30%,rgba(60,24,20,.35),transparent 70%),radial-gradient(60% 60% at 10% 100%,rgba(70,20,18,.3),transparent 70%),linear-gradient(160deg,rgba(20,14,12,.97),rgba(10,7,7,.97));
+  border:1px solid var(--line);box-shadow:0 0 0 1px rgba(0,0,0,.8),inset 0 0 0 6px rgba(0,0,0,.25),inset 0 0 0 7px rgba(120,80,60,.18),0 30px 90px #000}
+.frame::before,.frame::after{content:"";position:absolute;width:150px;height:150px;pointer-events:none;opacity:.8;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cg fill='%23a31b1b'%3E%3Cpath id='m' d='M20 30l3-9 3 6 5-5-1 8 7-2-5 6 6 3-8 1 1 6-6-4-3 6-1-7-7 2 4-6-6-3 7-1z'/%3E%3Cuse href='%23m' transform='translate(46 -12) rotate(40 23 30) scale(.8)'/%3E%3Cuse href='%23m' transform='translate(58 30) rotate(-25 23 30) scale(.55)' opacity='.8'/%3E%3Cuse href='%23m' transform='translate(10 50) rotate(70 23 30) scale(.45)' opacity='.6'/%3E%3C/g%3E%3C/svg%3E") no-repeat center/contain}
+.frame::before{right:-14px;top:-14px}.frame::after{left:-24px;bottom:-26px;transform:rotate(180deg);opacity:.55}
+.hd{display:flex;align-items:center;gap:14px;font-family:var(--serif);font-weight:400;font-size:32px;letter-spacing:.16em;text-transform:uppercase;color:#eee3cf;margin:0 0 14px;padding-bottom:14px;border-bottom:1px solid;border-image:linear-gradient(90deg,#6a4a3a,transparent 70%) 1}
+.hd small{margin-left:auto;font-size:13px;letter-spacing:.2em;color:#a99b85}
+.mon{width:42px;height:42px;color:#d9c9ae;flex:none}
+/* Play */
+.playgrid{flex:1;display:grid;grid-template-columns:minmax(300px,380px) 1fr;gap:26px;min-height:0}
+.modes{border-right:1px solid;border-image:linear-gradient(transparent,#4a342a,transparent) 1;padding-right:18px;justify-content:center;min-width:0}
+.modes button{font-size:22px}
+.modes .chips{display:flex;gap:6px;align-items:center}
+.modes .chips em{font-style:normal;padding:0 4px;cursor:pointer}.modes .chips em:hover{color:#fff;text-shadow:0 0 8px var(--ember)}
+.preview{display:flex;flex-direction:column;gap:16px;min-height:0}
+.pvimg{flex:1;min-height:0;background:#120c0b center/cover no-repeat;border:1px solid #4a342a;box-shadow:inset 0 0 60px rgba(0,0,0,.75),0 10px 30px rgba(0,0,0,.6);transition:background-image .2s}
+.preview p{font-family:var(--serif);font-size:19px;line-height:1.55;color:#dcd0bb;margin:0 auto;max-width:620px;min-height:3.2em;text-align:center}
+/* tabs */
+.tabs2{display:flex;gap:4px;margin:0 0 14px}
+.t2{font-family:var(--serif);font-size:15px;letter-spacing:.14em;text-transform:uppercase;padding:9px 18px;color:#cfc2aa;border-bottom:2px solid transparent;transition:.15s}
+.t2:hover{color:#fff}.t2.on{color:#fff;background:linear-gradient(0deg,rgba(150,20,24,.85),rgba(110,14,18,.35));border-bottom-color:#e05a3c;box-shadow:0 6px 16px -8px rgba(230,80,50,.8)}
+/* Options */
+.stbody{flex:1;min-height:0;position:relative}
+.stbody section{display:none;height:100%;gap:30px}.stbody section.on{display:flex}
+.keysplit{display:grid;grid-template-columns:minmax(380px,1fr) 1fr;gap:30px;width:100%;min-height:0}
+.keysplit>div:first-child{display:flex;flex-direction:column;min-height:0;border-right:1px solid #3a2a22;padding-right:24px}
+#settings #bindList{max-height:none;flex:1;overflow:auto;gap:6px}
+#settings .bind{font-family:var(--serif);font-size:15px;grid-template-columns:1fr 96px 96px;color:#dcd0bb}
+#settings .slot{font:600 12px var(--serif);height:28px;background:rgba(0,0,0,.4);border:1.5px solid #8a7a62;color:#f0e6d4}
+.hint2{font-size:12px;letter-spacing:.12em;color:#8c8070;margin:0 0 10px;text-transform:uppercase}
+.devs{flex:1;display:flex;align-items:center;justify-content:center;gap:40px;color:#6a564a;opacity:.6}.devart{width:min(200px,40%);height:auto}
+.opts{flex:1;max-width:560px}.opts label{font-family:var(--serif);font-size:14px;letter-spacing:.12em;color:#cfc2aa;margin:18px 0 8px;display:block;text-transform:uppercase}
+.opts select{font-family:var(--serif)}
+/* Achievements */
+.achgrid{flex:1;display:grid;grid-template-columns:auto 1fr;gap:34px;min-height:0;align-items:center}
+#achTiles{display:grid;grid-template-columns:repeat(6,78px);grid-auto-rows:78px;gap:12px;padding-right:30px;border-right:1px solid #3a2a22}
+.atile{position:relative;border:1px solid #4a3a30;background:radial-gradient(circle at 50% 40%,#2a201c,#120d0c);display:grid;place-items:center;cursor:pointer;transition:.15s}
+.atile svg{width:30px;height:30px;color:#8e8478;opacity:.8}
+.atile b{font-family:"Yu Mincho","Hiragino Mincho ProN",serif;font-size:38px;color:#f2e6d0;text-shadow:0 0 10px rgba(200,40,30,.6)}
+.atile.got{border-color:#8a3a26;background:radial-gradient(circle at 50% 40%,#5a1a16,#1a0c0a)}
+.atile.sel,.atile:hover{border-color:#ffb070;box-shadow:0 0 0 1px #ffb070,0 0 22px rgba(255,140,60,.55)}
+.achcard{height:100%;max-height:520px;display:flex;flex-direction:column;justify-content:flex-end;padding:28px;border:1px solid #3a2a22;position:relative;overflow:hidden;background:radial-gradient(70% 60% at 50% 35%,#3a2c26,#140e0c 70%)}
+.achcard .art{position:absolute;inset:0 0 34%;display:grid;place-items:center;font-family:"Yu Mincho","Hiragino Mincho ProN",serif;font-size:190px;color:rgba(20,12,10,.85);text-shadow:0 0 2px rgba(255,220,180,.15),6px 6px 30px rgba(0,0,0,.6)}
+.achcard.got .art{color:#a8211c;text-shadow:0 0 40px rgba(255,90,40,.35)}
+.achcard .art svg{position:absolute;width:56px;height:56px;color:#e6dccb}
+.achcard h3{font-family:var(--serif);font-weight:400;font-size:26px;letter-spacing:.06em;margin:0 0 6px;color:#efe4d0;position:relative}
+.achcard p{margin:0 0 14px;color:#cfc2aa;font-size:15px;position:relative}
+.achcard .pg{position:relative;font-family:var(--serif);letter-spacing:.2em;color:#d8ccb6}
+.achcard .bar{position:relative;height:3px;background:#2a201c;margin-top:8px}.achcard .bar i{position:absolute;inset:0 auto 0 0;background:linear-gradient(90deg,#8c1a1a,#ff8a40)}
+/* Armory (3D behind) */
+#shop.armory{background:linear-gradient(180deg,rgba(0,0,0,.55),transparent 22%,transparent 80%,rgba(0,0,0,.6))}
+.armtop{position:absolute;left:34px;top:22px;right:34px;display:flex;align-items:flex-end;gap:30px}
+.armtop .hd{border:0;margin:0;padding:0}.armtop .tabs2{margin:0 0 4px}.armtop .coins{margin-left:auto;align-self:center}
+.armnav{position:absolute;top:44%;font-size:74px;line-height:1;color:#e8dcc6;opacity:.75;padding:10px 18px;font-family:var(--serif);text-shadow:0 0 16px #000;z-index:2}
+.armnav:hover{opacity:1;color:#fff;text-shadow:0 0 18px var(--ember)}.armnav.l{left:3vw}.armnav.r{right:calc(3vw + 330px)}
+.arminfo{position:absolute;right:34px;top:50%;transform:translateY(-50%);width:290px;padding:24px;background:linear-gradient(160deg,rgba(24,16,14,.93),rgba(12,8,8,.93));border:1px solid #4a342a;box-shadow:inset 0 0 0 5px rgba(0,0,0,.3),0 20px 50px rgba(0,0,0,.7)}
+.arminfo h3{font-family:var(--serif);font-weight:400;font-size:24px;margin:0 0 10px;color:#f0e6d4;padding-bottom:10px;border-bottom:1px solid #4a342a}
+.arminfo p{color:#cfc2aa;font-size:14.5px;line-height:1.5;margin:0 0 16px;min-height:3em}
+.armprice{font-family:var(--serif);font-size:18px;color:#f0d8a8;letter-spacing:.06em;padding:10px 0;border-top:1px solid #3a2a22;margin-bottom:6px}
+.armprice .cn{display:inline-block;width:16px;height:16px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#ffe2a0,#b07a20);vertical-align:-2px;margin-right:8px;box-shadow:0 0 6px rgba(255,190,80,.6)}
+#armLocks .lk{position:absolute;transform:translate(-50%,-50%);width:38px;height:38px;color:#e8dccb;opacity:.85;pointer-events:none;filter:drop-shadow(0 2px 6px #000)}
+@media (max-width:900px){.playgrid{grid-template-columns:1fr}.preview{display:none}.keysplit{grid-template-columns:1fr}.devs{display:none}#achTiles{grid-template-columns:repeat(6,48px);grid-auto-rows:48px}.achgrid{grid-template-columns:1fr}.achcard{display:none}}
+#shop.armory{cursor:grab}#shop.armory.drag{cursor:grabbing}#shop.armory button,#shop.armory .arminfo{cursor:pointer}
+@media (max-height:640px){.brand .kanji{font-size:78px;padding-top:12px}.brand .enso{width:160px;height:160px;top:-22px}.brand h1{font-size:40px}.brand .sub{font-size:14px}
+  .list.nav button{font-size:19px;padding-top:7px;padding-bottom:7px}#menu .mcol{gap:2vh}.frame{padding:18px 24px 60px}.hd{font-size:24px;margin-bottom:8px;padding-bottom:8px}.modes button{font-size:17px}.preview p{font-size:15px}}

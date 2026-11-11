@@ -20,6 +20,7 @@ const PLAY = {
   swing: [0.05, 1.5, 0.06, 3], swingheavy: [0.04, 1.5, 0.08, 2], cloth: [0.06, 2, 0.04, 3], armorfoley: [0.06, 2, 0.04, 2],
   dodge: [0.05, 1.5, 0.06, 2], jump: [0.05, 1.5, 0.06, 2], land: [0.04, 1.5, 0.1, 2], slam: [0.03, 1, 0.22, 1], bodyfall: [0.04, 1, 0.18, 2],
   draw: [0.015, 1, 0.24, 2], sheathe: [0.015, 1, 0.2, 2], broken: [0.01, 0.5, 0.35, 1], perilous: [0, 0, 0.4, 1], mikiri: [0.03, 1, 0.24, 1],
+  boom: [0.04, 1, 0.3, 2], fuse: [0.05, 1, 0.08, 2], crackle: [0.08, 2, 0.12, 3], chain: [0.04, 1.5, 0.15, 2], hookbite: [0.03, 1, 0.15, 2], burn: [0.06, 1.5, 0.08, 2],
   begin: [0, 0, 0.45, 1], victory: [0, 0, 0.45, 1], death: [0, 0, 0.45, 1], revive: [0, 0, 0.45, 1], bell: [0, 0, 0.5, 2], ui: [0.03, 1, 0.05, 2], coin: [0.02, 1, 0.2, 2],
 };
 const DEF = [0.04, 1.5, 0.18, 3];   // footsteps, world details
@@ -223,6 +224,7 @@ const BANKED = {
   draw: () => play('draw'), sheathe: () => play('sheathe'),
   revive: () => play('revive'), death: () => play('death'), victory: () => play('victory'), begin: () => play('begin'),
   ui: () => play('ui'), coin: () => play('coin'), bell: () => play('bell'), cue: () => play('cue'), roar: () => play('roar', 1, { duck: 0.7 }), wave: () => play('wave'),
+  boom: (k = 1) => play('boom', k, { duck: 0.6 }), fuse: (k = 1) => play('fuse', k), crackle: (k = 1) => play('crackle', k), chain: (k = 1) => play('chain', k), hookbite: (k = 1) => play('hookbite', k, { duck: 0.8 }), burn: () => play('burn'),
   rustle: (k = 1) => play('rustle', k), breakWood: () => play('breakWood'), breakPaper: () => play('breakPaper'), pebble: () => play('pebble'), revive2: () => play('revive2'),
 };
 for (const k in BANKED) { const f = BANKED[k]; sfx[k] = (...a) => { if (!f(...a) && SYN[k]) SYN[k](...a); }; }

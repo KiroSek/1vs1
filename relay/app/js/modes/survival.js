@@ -6,6 +6,8 @@ import { MOVES } from '../moves.js';
 import { AI } from '../ai.js';
 import { sfx, music } from '../audio.js';
 import { SV_MAPS } from '../maps.js';
+import { Flasks, Shuriken, ITEMS } from './svitems.js';
+import { BossAbilities } from './svabil.js';
 
 const V3 = THREE.Vector3;
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -15,10 +17,13 @@ const pickW = w => { let s = 0; for (const k in w) s += w[k]; let r = Math.rando
 export const SV = {
   netRate: 1 / 15, maxAlive: 6, spawnGap: [3.5, 6], groupSize: [1, 3], clearPause: 2.2, pickTime: 25, introTime: 3.2,
   reviveTime: 3.2, reviveRange: 1.8, riseHp: 0.4, respawnHp: 0.5, bossEvery: 10, miniEvery: 5, removeAfter: 3.5,
-  tokens: (n) => Math.min(3, 1 + Math.floor(n / 6)),     // simultaneous attackers per player
+  tokens: (n) => n <= 3 ? 1 : n <= 7 ? 2 : 3,              // simultaneous attackers per player: the rest circle, flank and wait their turn
+  final: 10,                                              // the run ends when the wave-10 boss falls
 };
 // ---------------------------------------------------------------- enemy archetypes
 // look: [skin, weapon], tint (null = skin colours), ai: profile overrides, moves: AI move weights
+// the run, wave by wave: [normal bots, mini-bosses, final boss]
+const WAVES = [[3, 0, 0], [4, 0, 0], [5, 0, 0], [6, 0, 0], [5, 1, 0], [7, 0, 0], [8, 0, 0], [6, 2, 0], [10, 0, 0], [0, 0, 1]];
 export const ETYPES = {
   ashigaru: { name: 'Ashigaru', look: ['ashina', 'standard'], hp: 60, post: 80, scale: 1, tempo: 1, speed: 1, dmg: 0.9, level: 0, cost: 1, from: 1,
     ai: { aggr: 0.5, deflect: 0.25 }, moves: { slash: 6, heavy: 2, kick: 0.6 } },
@@ -30,13 +35,16 @@ export const ETYPES = {
     ai: { react: 0.35, deflect: 0.05, guard: 0.6, aggr: 0.6, mobility: 0.1 }, moves: { heavy: 4, heavyB: 2, leap: 2, kick: 2, sweep: 1 } },
   elite: { name: 'Shadow Elite', look: ['kage', 'mortal'], hp: 120, post: 130, scale: 1.02, tempo: 1.1, speed: 1.1, dmg: 1.15, level: 2, cost: 3.2, from: 6,
     ai: { deflect: 0.75, react: 0.9, feint: 0.4, punish: 0.9, mobility: 0.6 }, moves: { slash: 5, heavyB: 1.5, thrust: 1.5, uppercut: 1.2, dash: 1, sweep: 0.8 } },
-  oniGeneral: { name: 'Oni General', boss: 'mini', look: ['oni', 'kuro'], tint: 0x3a0a0a, hp: 420, post: 240, scale: 1.3, tempo: 0.95, speed: 0.95, dmg: 1.5, level: 2, armor: 'attack',
-    ai: { react: 0.6, deflect: 0.35, aggr: 0.6, feint: 0.25 }, moves: { heavy: 3, heavyB: 2, kick: 1.5, sweep: 1, slash: 2 },
-    phases: [{ at: 0.5, tempo: 1.18, ai: { aggr: 0.8, feint: 0.45 }, moves: { leap: 2.5, sweep: 2, kick: 2 }, aura: 0xff3010 }] },
-  sawSaint: { name: 'Ashen Sword Saint', boss: 'major', look: ['kage', 'frost'], tint: 0xd8d8e0, hp: 720, post: 280, scale: 1.18, tempo: 1, speed: 1.05, dmg: 1.45, level: 2, armor: 'attack',
+  oniGeneral: { name: 'Golden Dragon General', boss: 'mini', look: ['dragonGold', 'bisento'], tint: null, reach: 1.35, hp: 420, post: 240, scale: 1.3, tempo: 0.95, speed: 0.95, dmg: 1.5, level: 2, armor: 'attack',
+    ai: { react: 0.78, deflect: 0.6, aggr: 0.6, feint: 0.3, punish: 0.8 }, moves: { heavy: 2, heavyB: 2, sweep: 2, thrust: 1.5, dash: 2.5, slash: 1.5 },   // reads timings, parries well, quick lunges
+    phases: [{ at: 0.5, tempo: 1.18, ai: { aggr: 0.8, feint: 0.45 }, moves: { leap: 2.5, sweep: 2.5, dash: 3 }, aura: 0xff3010 }] },
+  oniGeneral2: { name: 'Black Dragon General', boss: 'mini', look: ['dragonBlack', 'bisento'], tint: null, reach: 1.35, hp: 420, post: 240, scale: 1.3, tempo: 1, speed: 1, dmg: 1.45, level: 2, armor: 'attack',
+    ai: { react: 0.78, deflect: 0.6, aggr: 0.6, feint: 0.3, punish: 0.8 }, moves: { heavy: 2, heavyB: 2, sweep: 2, thrust: 1.5, dash: 2.5, slash: 1.5 },   // reads timings, parries well, quick lunges
+    phases: [{ at: 0.5, tempo: 1.18, ai: { aggr: 0.8, feint: 0.45 }, moves: { leap: 2.5, sweep: 2.5, dash: 3 }, aura: 0xff3010 }] },
+  sawSaint: { name: 'Skeleton Shogun', boss: 'major', look: ['skullLord', 'naginata'], tint: null, reach: 1.45, hp: 1100, post: 320, scale: 1.22, tempo: 1, speed: 1.05, dmg: 1.45, level: 2, armor: 'attack',
     ai: { react: 0.85, deflect: 0.7, aggr: 0.6, feint: 0.35, punish: 0.9, mobility: 0.55 }, moves: { slash: 4, boss1: 2.5, thrust: 1.2, uppercut: 1, dash: 1 },
     phases: [{ at: 0.66, tempo: 1.12, ai: { aggr: 0.7, feint: 0.45 }, moves: { flameSweep: 2, boss1: 3, dash: 2 }, aura: 0xff9a3a },
-      { at: 0.33, tempo: 1.25, ai: { aggr: 0.82, deflect: 0.8, feint: 0.55, mobility: 0.8 }, moves: { flameSweep: 2.5, thrust: 2.5, leap: 2, boss1: 3 }, aura: 0xff2a1a, summon: ['swift', 'swift'] }] },
+      { at: 0.33, tempo: 1.25, ai: { aggr: 0.82, deflect: 0.8, feint: 0.55, mobility: 0.8 }, moves: { flameSweep: 2.5, thrust: 2.5, leap: 2, boss1: 3 }, aura: 0xff2a1a }] },
 };
 // ---------------------------------------------------------------- upgrades
 // stat: applied to the player's fighter by apply(). team: affects the partner too.
@@ -62,6 +70,7 @@ export class Survival {
     this.reviveP = 0; this.lastHitT = -9; this.res = this.o.resurrections ?? 1;
     this.stats = { waves: 0, kills: 0, deathblows: 0, deflects: 0, rescues: 0, dealt: 0, taken: 0, bosses: 0, time: 0, byType: {} };
     this.over = false; this.mate = null; this.t = 0; this.tandemMarks = new Map(); this.phoenixUsed = false;
+    this.flasks = new Flasks(ctx.scene); this.shuris = []; this.shuriCd = 0; this.abil = new BossAbilities(this);
   }
   // ================= setup =================
   start() {
@@ -83,6 +92,11 @@ export class Survival {
   }
   // ================= waves (host) =================
   composition(n) {
+    const W = WAVES[n - 1];   // fixed run: [normal bots, mini-bosses, final boss]
+    if (W) { const out = []; if (W[2]) out.push('sawSaint'); for (let i = 0; i < W[1]; i++) out.push(i % 2 ? 'oniGeneral2' : 'oniGeneral');
+      const th = n < 3 ? { ashigaru: 1 } : [{ ashigaru: 3, swift: 1 }, { spear: 3, ashigaru: 1 }, { swift: 3, ashigaru: 1 }, { brute: 2, ashigaru: 2 }, { ashigaru: 1, swift: 1, spear: 1, brute: 1, elite: 1 }, { elite: 2, swift: 1 }][(n * 7) % 6];
+      for (let i = 0; i < W[0]; i++) { const w = {}; for (const k in th) if (ETYPES[k].from <= n) w[k] = th[k]; if (!Object.keys(w).length) w.ashigaru = 1; out.push(pickW(w)); }
+      return out; }
     const out = [], boss = n % SV.bossEvery === 0, mini = !boss && n % SV.miniEvery === 0;
     if (boss) { out.push('sawSaint'); if (n > 10) out.push('elite'); return out; }
     if (mini) { out.push('oniGeneral'); for (let i = 0; i < 1 + Math.floor(n / 10); i++) out.push(pick(['ashigaru', 'spear'])); return out; }
@@ -98,14 +112,15 @@ export class Survival {
     return out;
   }
   beginWave(n) {
-    const c = this.c; this.wave = n; this.phase = 'intro'; this.phaseT = 0; this.queue = this.composition(n); this.spawnT = 1.5; this.stats.waves = n - 1;
+    const c = this.c; c.fx.clearStains(); this.wave = n; this.phase = 'intro'; this.phaseT = 0; this.queue = this.composition(n); this.spawnT = 1.5; this.stats.waves = n - 1;
     if (n > 1 && (n - 1) % 3 === 0) this.weather.set(pick(this.cfg.weathers || ['clear']));
-    this.respawnDead();
+    this.respawnDead(); this.healUp();
     const boss = this.queue.some(k => ETYPES[k].boss);
     c.banner(boss ? '首' : '波', boss ? '#ff5a3a' : '#e8dcc4', true); c.toast(c.t('sv.wave', { n }) + (boss ? ' · ' + c.t('sv.boss') : '')); sfx.wave();
     music.set(boss ? 'boss' : 'combat');
     if (this.online) c.net.send('sv', { t: 'wave', n, weather: this.weather.kind, boss });
   }
+  healUp() { const me = this.c.G.me; if (!me.dead && !me.downed) { me.hp = me.maxHp; me.posture = 0; } this.flasks.clear(); this.abil.clear(); }   // every wave starts at full health
   respawnDead() {   // players who bled out return at the start of the next wave with half health
     const me = this.c.G.me;
     if (me.dead || me.downed) { me.dead = false; me.rise(SV.respawnHp); this.c.toast(this.c.t('sv.back')); }
@@ -124,9 +139,9 @@ export class Survival {
     f.restyle(T.tint ?? null, T.scale); f.spawn(x, z, yaw); f.maxHp = f.hp = hp; f.maxPosture = Math.round(T.post * (1 + 0.04 * Math.max(0, this.wave - 10)));
     f.tempo = tempo; f.speedMul = T.speed; f.dmgMul = T.dmg * dmgK; f.reach = T.reach || 1; f.superArmor = T.armor || false; f.lives = 1;
     f.remote = !this.host; f.hitTargets = () => this.players(); f.onStrike = (a, k, v) => this.onStrike(a, k, v);
-    const lvl = Math.min(2, T.level + (this.wave >= 12 ? 1 : 0) + (this.p.diff === 'hard' ? 1 : 0));
+    const lvl = Math.min(2, T.level + (this.wave >= 4 ? 1 : 0) + (this.wave >= 8 ? 1 : 0) + (this.p.diff === 'hard' ? 1 : 0));   // smarter every few waves
     const ai = this.host ? new AI(f, lvl, { ...T.ai, moves: T.moves }) : null;
-    if (ai) { ai.P.moves = { ...T.moves }; const g = Math.max(0, this.wave - 8) * 0.02; ai.P.react = Math.min(0.95, ai.P.react + g); ai.P.deflect = Math.min(0.85, ai.P.deflect + g * 0.8); }
+    if (ai) { ai.P.moves = { ...T.moves }; const g = Math.max(0, this.wave - 1) * 0.018; ai.P.react = Math.min(0.95, ai.P.react + g); ai.P.deflect = Math.min(0.85, ai.P.deflect + g * 0.8); }
     const e = { id, type, T, f, ai, role: T.role || 'any', target: null, deadT: 0, phase: 0, lastHitBy: null, aura: null };
     this.enemies.set(id, e); return e;
   }
@@ -203,6 +218,8 @@ export class Survival {
   onKill(e, by) {
     this.stats.kills++; this.stats.byType[e.type] = (this.stats.byType[e.type] || 0) + 1;
     if (e.T.boss) { this.stats.bosses++; this.bossDeath(e); }
+    if (this.host && !e.T.boss && Math.random() < ITEMS.flaskChance && this.flasks.list.size < ITEMS.flaskMax) {
+      const id = this.flasks.nextId, p = e.f.pos; this.flasks.add(id, p.x, p.y, p.z); if (this.online) this.c.net.send('sv', { t: 'fl', id, x: p.x, y: p.y, z: p.z }); }
     if (by === 'host' && this.mods.lust) this.buffs.lust = 5;
     if (this.online && by === 'guest') this.c.net.send('sv', { t: 'killed', id: e.id, type: e.type });
   }
@@ -222,7 +239,6 @@ export class Survival {
     e.f.posture = 0; e.f.setAct('roar'); e.f.invuln = true; e.f.invulnT = 1.5;
     this.shockwave(e.f.pos, 5); sfx.roar(); c.banner(e.phase === 2 ? '鬼' : '怒', '#ff4a2a', true);
     if (P.aura) this.setAura(e, P.aura);
-    if (P.summon && this.host) for (const k of P.summon) this.spawnEnemy(k);
     if (this.online) c.net.send('sv', { t: 'phase', id: e.id, phase: e.phase });
   }
   setAura(e, color) {
@@ -259,6 +275,8 @@ export class Survival {
     // enemies
     if (this.host) this.hostStep(dt, rawDt); else for (const e of this.enemies.values()) { e.f.update(dt, null, e.f.lastTgt || me); c.fighterEvents(e.f); }
     for (const e of this.enemies.values()) if (e.f.act === 'flameSweep' && e.f.inActive() && e.f.bladeTip) { c.fx.spark(e.f.bladeTip, 6, 2.5, 0xff7a20, 0.5, new V3(0, 1, 0), 0.5, -1); c.fx.puff(e.f.bladeTip.clone().setY(e.f.pos.y + 0.1), 2, 0.5, 0xff5a10, 0.6, 1, 0.8); }
+    this.items(rawDt, live);
+    this.abil.update(dt);
     this.separate();
     this.rescue(rawDt);
     this.downedFlow(rawDt);
@@ -273,7 +291,7 @@ export class Survival {
       const f = e.f;
       if (f.dead) { e.deadT += rawDt; if (e.deadT > SV.removeAfter) this.removeEnemy(e); f.update(dt, null, null); continue; }
       const tgt = e.target && !e.target.dead && !e.target.downed ? e.target : this.alivePlayers()[0];
-      const inp = tgt && this.phase !== 'over' ? e.ai.think(dt, tgt) : c.noInput;
+      const inp = tgt && this.phase !== 'over' ? (this.abil.step(e, dt, tgt) ? c.noInput : e.ai.think(dt, tgt)) : c.noInput;   // a boss busy with an ability (or holding after a Hook Pull) does not attack
       f.update(dt, inp, tgt || null); f.lastTgt = tgt;
       for (const k of ['light', 'heavy', 'dodge', 'finisher', 'jump']) if (inp[k]) inp[k] = Math.max(0, inp[k] - dt);
       c.fighterEvents(f);
@@ -303,6 +321,8 @@ export class Survival {
     if (this.online) c.net.send('sv', { t: 'clear', n: this.wave });
     const best = c.REC.svBest || {}; if (this.wave > (best[this.p.map] || 0)) { best[this.p.map] = this.wave; c.REC.svBest = best; c.saveRec(); }
     c.addCoins(10 + this.wave * 4);
+    c.ach.max('svWave', this.wave);
+    if (this.wave >= SV.final) { c.ach.max('svCleared', 1); c.REC.svCleared = true; if (!c.REC.weapons.includes('onisbane')) { c.REC.weapons.push('onisbane'); c.toast(c.t('sv.reward')); } c.saveRec(); setTimeout(() => this.end(c.t('sv.victory')), 1500); }   // run complete
   }
   removeEnemy(e) {
     this.enemies.delete(e.id); e.f.dispose();
@@ -409,8 +429,13 @@ export class Survival {
   onMsg(m) {
     const c = this.c, G = c.G, me = G.me;
     switch (m.t) {
+      case 'fl': this.flasks.add(m.id, m.x, m.y, m.z); break;
+      case 'ab': this.abil.onMsg(m); break;
+      case 'abr': this.abil.onResult(m); break;
+      case 'flt': this.flasks.remove(m.id); break;
+      case 'shu': { const tg = m.tid != null ? (this.enemies.get(m.tid) || {}).f : null; if (tg && this.mate) this.shuris.push(new Shuriken(c.scene, this.mate.hitPoint, tg, null, true)); break; }
       // ---- guest side ----
-      case 'wave': this.wave = m.n; this.phase = 'intro'; this.weather.set(m.weather); this.respawnDead(); c.banner(m.boss ? '首' : '波', m.boss ? '#ff5a3a' : '#e8dcc4', true); c.toast(c.t('sv.wave', { n: m.n })); sfx.wave(); music.set(m.boss ? 'boss' : 'combat'); this.closePicks(); break;
+      case 'wave': this.c.fx.clearStains(); this.healUp(); this.wave = m.n; this.phase = 'intro'; this.weather.set(m.weather); this.respawnDead(); c.banner(m.boss ? '首' : '波', m.boss ? '#ff5a3a' : '#e8dcc4', true); c.toast(c.t('sv.wave', { n: m.n })); sfx.wave(); music.set(m.boss ? 'boss' : 'combat'); this.closePicks(); break;
       case 'spawn': { if (this.enemies.has(m.id)) break; const e = this.makeEnemy(m.id, m.type, m.x, m.z, m.yaw, m.hp, m.dk, m.tempo); if (e.T.boss) this.bossIntro(e); break; }
       case 'es': this.phase = m.ph; this.wave = m.w; this.queueLeft = m.q;
         for (const a of m.l) { const e = this.enemies.get(a[0]); if (!e) continue; const f = e.f; f.setRemote({ x: a[1], z: a[2], yaw: a[3], act: a[4], t: a[5], seq: a[6], hp: a[7], po: a[8], g: a[9], vy: a[10], lv: 1 }); f.lastTgt = a[11] ? me : this.mate; if (a[4] === 'die' || a[4] === 'dieFwd') f.dead = true; }
@@ -437,6 +462,27 @@ export class Survival {
   }
   breakProps(ids, local) { for (const id of ids) { const p = this.W.breakProp(id, this.c.fx); if (p) { sfx[p.kind === 'lantern' ? 'breakPaper' : 'breakWood'](); if (local && this.online) this.c.net.send('sv', { t: 'prop', id }); } } }
   // ================= HUD =================
+  // ================= items: flasks on the ground, the shuriken =================
+  items(dt, live) {
+    const c = this.c, me = c.G.me, alive = !me.dead && !me.downed;
+    const got = this.flasks.update(dt, alive ? me.pos : null);
+    if (got != null) { me.hp = Math.min(me.maxHp, me.hp + me.maxHp * ITEMS.flaskHeal); this.flasks.remove(got); sfx.revive2(); c.fx.puff(me.pos.clone().setY(me.pos.y + 1), 14, 1.2, 0xffc070, 0.6, 1, 0.1, -1); c.toast(c.t('sv.flask'));
+      c.ach.add('flasks'); if (this.online) c.net.send('sv', { t: 'flt', id: got }); }
+    this.shuriCd = Math.max(0, this.shuriCd - dt);
+    if (c.inp.shuriken > 0) { c.inp.shuriken = 0;
+      if (!live || !alive) {}
+      else if (this.shuriCd > 0) c.toast(c.t('sv.shuriCd', { s: Math.ceil(this.shuriCd) }));
+      else if (!c.inp.lock || !this.lockF || this.lockF.dead) c.toast(c.t('sv.shuriNoTgt'));   // only the locked (Focus) target, never a soft auto-pick   // no lock: no throw (never a random target)
+      else { const e = this.enemyOf(this.lockF), from = me.hitPoint.clone().addScaledVector(me.fwd, 0.4);
+        const s = new Shuriken(c.scene, from, this.lockF, (a, b) => this.W.los(a, b)); s.eid = e && e.id; this.shuris.push(s); this.shuriCd = ITEMS.shuriCd; sfx.at('swing', 0, 0.5);
+        if (this.online && e) c.net.send('sv', { t: 'shu', tid: e.id }); } }
+    for (const s of this.shuris) {
+      const r = s.update(dt); if (!r) continue;
+      if (r === 'wall') { sfx.pebble(); c.fx.spark(s.m.position.clone(), 6, 2, 0xd0c8b0, 0.3); }
+      if (r === 'hit' && !s.visual) { const e = this.enemies.get(s.eid); if (e && !e.f.dead) { c.ach.add('shurikenHits'); this.onStrike(me, 'shuriken', e.f); } }
+    }
+    this.shuris = this.shuris.filter(s => !s.done);
+  }
   hud() {
     const c = this.c, me = c.G.me, alive = [...this.enemies.values()].filter(e => !e.f.dead);
     const left = alive.length + (this.host ? this.queue.length : (this.queueLeft || 0));
@@ -482,7 +528,7 @@ export class Survival {
   }
   requestRematch() { this.c.$('result').classList.add('hidden'); this.c.restartMode(); }
   dispose() {
-    const c = this.c; for (const e of this.enemies.values()) e.f.dispose(); this.enemies.clear(); if (this.mate) { this.mate.dispose(); this.mate = null; }
+    const c = this.c; this.flasks.clear(); this.abil.clear(); for (const s of this.shuris) if (!s.done) s.finish(); this.shuris = []; for (const e of this.enemies.values()) e.f.dispose(); this.enemies.clear(); if (this.mate) { this.mate.dispose(); this.mate = null; }
     document.body.classList.remove('surv'); c.$('ebars').innerHTML = ''; c.$('bossBar').style.display = 'none'; c.$('prompt').style.display = 'none'; c.$('upgrades').classList.add('hidden');
     music.set('off'); c.G.targets = null; const o = c.G.dummy || c.G.opp; o.group.visible = true; o.katana.visible = true; o.dead = false; c.G.opp = o;
   }

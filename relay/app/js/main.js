@@ -19,6 +19,8 @@ import { Hunt } from './modes/hunt.js';
 import { Survival } from './modes/survival.js';
 import { Team } from './modes/team.js';
 import { foliageTick, setFoliageQuality, foliageCull } from './foliage.js';
+import { ACH, ach, initAch, progress } from './achievements.js';
+import { Armory } from './armory.js';
 import './tune.js';   // F9: live tuning panel
 const { sfx } = audio;
 
@@ -76,7 +78,7 @@ const keys = {}; window.__inp = inp;
 function banner(text, color, big) {
   const b = $('banner'); b.textContent = text; b.style.color = color || '#fff'; b.classList.toggle('big', !!big); b.classList.remove('show'); void b.offsetWidth; b.classList.add('show');
 }
-function showScreen(id) { for (const s of document.querySelectorAll('.screen')) s.classList.toggle('hidden', s.id !== id); $('hud').classList.add('hidden'); }
+function showScreen(id) { for (const s of document.querySelectorAll('.screen')) s.classList.toggle('hidden', s.id !== id); $('hud').classList.add('hidden'); if (id !== 'shop' && armory && armory.active) armory.close(); navSel(0, true); }
 function showHud() { for (const s of document.querySelectorAll('.screen')) s.classList.add('hidden'); $('hud').classList.remove('hidden'); }
 function screenFlash(color, op, ms) { const f = $('flash'); f.style.background = color; f.style.transition = 'none'; f.style.opacity = op; void f.offsetWidth; f.style.transition = 'opacity ' + ms + 'ms ease-out'; f.style.opacity = 0; }
 const toScreen = p => { const v = p.clone().project(camera); return new THREE.Vector2(v.x * 0.5 + 0.5, v.y * 0.5 + 0.5); };
@@ -116,12 +118,14 @@ function showResult(r, att, vic, quiet = false) {
   const meet = ['deflect', 'clash', 'block'].includes(r.res) ? bladeMeet(att, vic) : null;
   if (meet) { vic.meetBlade(meet, att, false, r.res); att.meetBlade(meet, vic, true, r.res); }
   if (!r || r.res === 'miss') return;
+  if (att === G.me && (r.killed || r.kill || vic.dead) && !vic.achK) { vic.achK = true; ach.add('kills'); }   // achievements
+  if (r.res === 'mikiri' && vic === G.me) ach.add('mikiri');
   const mine = att === G.me || vic === G.me, dir = new V3(vic.pos.x - att.pos.x, 0, vic.pos.z - att.pos.z).normalize();
   const camDir = dir.clone(); camDir.y = 0;
   switch (r.res) {
     case 'deflect': {
       const p = meet, sprayDir = dir.clone().negate().add(new V3(0, 0.6, 0)).normalize();
-      if (vic === G.me) REC.parries++;
+      if (vic === G.me) { REC.parries++; ach.add('deflects'); }
       fx.deflect(p, sprayDir, r.heavy); sfx.deflect(r.heavy); HS(r.heavy ? 0.16 : 0.12); rig.shake(0.38); rig.punch(5); rig.tilt((Math.random() < .5 ? -1 : 1) * 0.6); rig.kick(camDir, -1.2);
       post.impact({ aberr: 0.012, radial: 0.012, flash: 0.06, flashCol: 0xfff2d0, center: toScreen(p) });
       break;
@@ -130,7 +134,7 @@ function showResult(r, att, vic, quiet = false) {
     case 'block': { const p = meet; fx.block(p, r.heavy, dir.clone().negate().add(new V3(0, .5, 0)).normalize()); sfx.block(r.heavy); HS(r.heavy ? 0.07 : 0.045); rig.shake(r.heavy ? 0.28 : 0.14); rig.punch(r.heavy ? 2.5 : 1); break; }
     case 'hit': {
       let p = bladeContact(att, vic); if (!p) { p = vic.hitPoint.clone(); p.y = 1.2 + Math.random() * 0.3; }
-      fx.hit(p, dir.clone().add(new V3(0, 0.3, 0)).normalize(), r.heavy); fx.spark(p, r.heavy ? 26 : 14, 6, 0xffc080, 0.25, dir, 0.7); sfx.hit(r.heavy, vic.armored); if (att.trail && att.trail.cutFlash) att.trail.cutFlash();
+      fx.hit(p, dir.clone().add(new V3(0, 0.3, 0)).normalize(), r.heavy); fx.stain(vic.pos, dir, r.heavy ? 0.75 : 0.5); fx.spark(p, r.heavy ? 26 : 14, 6, 0xffc080, 0.25, dir, 0.7); sfx.hit(r.heavy, vic.armored); if (att.trail && att.trail.cutFlash) att.trail.cutFlash();
       vic.flashT = 0.08; HS(r.heavy ? HITSTOP.heavy : HITSTOP.light); rig.shake(r.heavy ? 0.4 : 0.22); rig.punch(r.heavy ? 3 : 1.5); if (vic === G.me) { screenFlash('#a00000', 0.22, 350); rig.kick(camDir, 1.5); post.impact({ aberr: 0.02 }); }
       break;
     }
@@ -146,8 +150,8 @@ function showResult(r, att, vic, quiet = false) {
     case 'jumped': { const p = vic.pos.clone().setY(0.25); fx.dust(vic.pos, 18); fx.spark(p, 30, 6, 0xffd090, 0.35); sfx.mikiri(); HS(0.14); rig.shake(0.3); rig.punch(3); if (vic === G.me) banner('跳', '#fff4dc', true); break; }
     case 'mikiri': { const p = att.hitPoint.clone().lerp(vic.hitPoint, 0.5); fx.mikiri(p); sfx.mikiri(); HS(0.22); rig.shake(0.5); rig.punch(5); banner('見切り', '#fff4dc', true); post.impact({ radial: 0.03, flash: 0.2, center: toScreen(p) }); break; }
     case 'finisher': {
-      if (att === G.me) REC.deathblows++;
-      const p = vic.hitPoint.clone(); fx.finisher(p, dir); HS(r.killed ? 0.45 : 0.28); rig.shake(0.7); rig.punch(5); screenFlash('#ff0000', 0.35, 700);
+      if (att === G.me) { REC.deathblows++; ach.add('deathblows'); }
+      const p = vic.hitPoint.clone(); fx.finisher(p, dir); fx.stain(vic.pos, dir, 1.05); HS(r.killed ? 0.45 : 0.28); rig.shake(0.7); rig.punch(5); screenFlash('#ff0000', 0.35, 700);
       post.impact({ radial: 0.04, aberr: 0.03, center: toScreen(p) }); banner(r.killed ? '死' : '忍殺', '#ff3030', true); break;
     }
   }
@@ -164,10 +168,12 @@ function kickLeaves(pos, n) { if (arena.amb === 'petals') fx.leaves(pos, n, 0xa8
 function fighterEvents(f) {
   for (const e of f.events) {
     if (e.type === 'perilous') { fx.perilous(f); sfx.perilous(); }
+    else if (e.type === 'lunge') { fx.dust(f.pos, 12); kickLeaves(f.pos, 6); }   // sprint lunge kicks off the ground
     else if (e.type === 'broken') { if (f !== G.me || G.mode === 'online') {} }
     else if (e.type === 'revive') { fx.revive(new V3(f.pos.x, 1, f.pos.z)); sfx.revive(); }
     else if (e.type === 'dodge') { fx.dust(f.pos, 8); kickLeaves(f.pos, 7); }
-    else if (e.type === 'land' || e.type === 'fall') { const d = camera.position.distanceTo(f.pos), k = Math.max(0, 1 - d / 22) * (e.data && e.data.k || 1); if (k > 0.02) { e.type === 'land' ? sfx.land() : sfx.bodyfall(); const surf = G.ctl && G.ctl.W ? G.ctl.W.surfaceAt(f.pos.x, f.pos.z) : ARENA_SURF[G.mapName] || 'stone'; sfx.step(1.3 * k, surf); } }
+    if (e.type === 'fall' && f.dead) fx.stain(f.pos, null, 0.95);   // a pool under the fallen body
+    if (e.type === 'land' || e.type === 'fall') { const d = camera.position.distanceTo(f.pos), k = Math.max(0, 1 - d / 22) * (e.data && e.data.k || 1); if (k > 0.02) { e.type === 'land' ? sfx.land() : sfx.bodyfall(); const surf = G.ctl && G.ctl.W ? G.ctl.W.surfaceAt(f.pos.x, f.pos.z) : ARENA_SURF[G.mapName] || 'stone'; sfx.step(1.3 * k, surf); } }
     else if (e.type === 'step') { const d = camera.position.distanceTo(f.pos); if (d < 14) sfx.step((e.data && e.data.sprint ? 1.6 : 1) * (1 - d / 14), G.ctl && G.ctl.W ? G.ctl.W.surfaceAt(f.pos.x, f.pos.z) : ARENA_SURF[G.mapName] || 'stone'); if (e.data && e.data.sprint) fx.dust(f.pos, 3); }
     else if (e.type === 'slam') { fx.dust(f.pos, 34); kickLeaves(f.pos, 16); fx.ring(new V3(f.pos.x, 0.06, f.pos.z), 1.4, 0.35, 0xc8b49a); sfx.slam(); const near = G.me && Math.hypot(G.me.pos.x - f.pos.x, G.me.pos.z - f.pos.z); rig.shake(f === G.me ? 0.45 : near < 6 ? 0.25 : 0.1); if (f === G.me) rig.punch(2.5); }
   }
@@ -177,7 +183,7 @@ function fighterEvents(f) {
 // ---------- wallet, skins, weapons ----------
 const coinFmt = n => '◎ ' + Math.round(n).toLocaleString();
 function showCoins() { $('coinMenu').textContent = coinFmt(REC.coins); $('coinShop').textContent = coinFmt(REC.coins); const h = $('coinHud'); h.textContent = G.mode === 'gauntlet' && G.run ? coinFmt(G.run.coins) + '  (run)' : ''; }
-function addCoins(n) { n = Math.round(n); if (n <= 0) return 0; REC.coins += n; if (G.run && G.mode === 'gauntlet') G.run.coins += n; saveRec(); showCoins(); toast('+' + n + ' ◎'); sfx.coin(); return n; }
+function addCoins(n) { n = Math.round(n); if (n <= 0) return 0; REC.coins += n; ach.add('earned', n); if (G.run && G.mode === 'gauntlet') G.run.coins += n; saveRec(); showCoins(); toast('+' + n + ' ◎'); sfx.coin(); return n; }
 function toast(t) { const e = $('toast'); e.textContent = t; e.classList.remove('show'); void e.offsetWidth; e.classList.add('show'); }
 const FCOPY = ['pos', 'yaw', 'maxHp', 'hp', 'lives', 'posture', 'remote', 'onStrike', 'tempo', 'dmgMul', 'fMul', 'parryWin', 'iExtra', 'postRegen', 'dead', 'invuln'];
 // swap a fighter's look (skin / weapon) by rebuilding it; gameplay state is carried over
@@ -198,6 +204,7 @@ function placeStart(slot) {
   me.spawn(0, z, slot === 0 ? 0 : Math.PI); opp.spawn(0, -z, slot === 0 ? Math.PI : 0);
 }
 function startMatch(mode) {
+  fx.clearStains();   // a fresh floor every match
   G.mode = mode; G.over = false; G.started = true; G.rematch = [false, false];
   const slot = mode === 'online' ? G.net.slot : 0;
   setLook(true, REC.skin, REC.weapon);
@@ -218,13 +225,15 @@ function startMatch(mode) {
   showHud(); sfx.ui();
   if (mode === 'training') { G.phase = 'fight'; G.phaseT = 0; rig.snapBehind(me); me.invuln = opp.invuln = false; }
   else {
-    // intro: both fighters draw their blades while the camera sweeps around them
-    me.sheathed = opp.sheathed = true; me.setAct('draw'); if (!opp.remote) opp.setAct('draw');
-    G.phase = 'intro'; G.phaseT = 0; rig.startCine({ type: 'intro', dur: 2.4 });
+    // intro: camera on each fighter, both bow, both draw, then the fight (same timeline on both clients of an online duel)
+    me.sheathed = opp.sheathed = true; G.introStep = 0;
+    G.phase = 'intro'; G.phaseT = 0; rig.startCine({ type: 'intro', dur: INTRO.end });
     $('title').innerHTML = `<small>${mode === 'online' ? 'ONLINE DUEL' : gaunt ? 'STAGE ' + (G.run.stage + 1) : 'DUEL'}</small>${$('oppName').textContent}`; $('title').classList.add('show');
   }
   tryLock();
 }
+// pre-duel ceremony timeline (s): camera on me -> on the opponent -> wide shot as both bow -> both draw -> fight
+const INTRO = { bow: 3.05, draw: 4.55, end: 5.7, fight: 5.9 };
 function beginFight() { G.phase = 'fight'; G.phaseT = 0; G.me.invuln = G.opp.invuln = false; $('title').classList.remove('show'); banner('斬', '#fff', true); sfx.begin(); rig.endCine(G.me); rig.snapBehind(G.me); }
 // a fighter lost a life but has more: dramatic fall, then resurrection where they lie; the survivor steps back
 function startDowned(f) {
@@ -236,7 +245,7 @@ function doRevive(f) {
   G.phase = 'revive'; G.phaseT = 0;
   const other = f === G.me ? G.opp : G.me;
   if (!other.remote) { const d = new V3(other.pos.x - f.pos.x, 0, other.pos.z - f.pos.z); if (d.length() < 0.1) d.set(0, 0, 1); d.normalize(); const p = f.pos.clone().addScaledVector(d, 5); other.pos.copy(p); other.vel.set(0, 0, 0); other.locoV.set(0, 0, 0); other.yaw = Math.atan2(-d.x, -d.z); if (other.act !== 'idle') other.setAct('idle'); other.guard = false; }
-  if (!f.remote) f.revive(); other.invuln = true;
+  fx.clearStains(); if (!f.remote) f.revive(); other.invuln = true; if (!other.remote) other.posture = 0;   // new round: both concentrations start empty
   rig.startCine({ type: 'revive', f, ang: Math.atan2(other.pos.x - f.pos.x, other.pos.z - f.pos.z) + 0.6 });
   banner('回生', '#ffd27a', true); screenFlash('#ffcc66', 0.25, 900);
 }
@@ -265,8 +274,9 @@ function endMatch(win) {
   let earned = 0;
   if (G.mode === 'gauntlet') {
     if (win) { const D = GDIFF[G.run.diff], n = G.run.stage, flawless = G.me.lives >= 2 + G.extraLife; earned = addCoins((45 + 20 * n) * D.coin * (flawless ? 1.3 : 1)); G.run.stage++; REC.wins++; REC.bestBy[G.run.diff] = Math.max(REC.bestBy[G.run.diff] || 0, G.run.stage); REC.best = Math.max(REC.best, G.run.stage); }
-  } else if (G.mode === 'ai') { earned = addCoins(win ? [30, 60, 110][+S.diff] : 10); if (win) REC.wins++; }
-  else if (G.mode === 'online') { earned = addCoins(win ? 80 : 25); if (win) REC.wins++; }
+  } else if (G.mode === 'ai') { earned = addCoins(win ? [30, 60, 110][+S.diff] : 10); if (win) { REC.wins++; ach.add('aiWins'); if (+S.diff === 2) ach.add('saintWins'); } }
+  else if (G.mode === 'online') { earned = addCoins(win ? 80 : 25); if (win) { REC.wins++; ach.add('onlineWins'); } }
+  if (G.mode === 'gauntlet' && G.run) ach.max('gauntletStage', G.run.stage);
   saveRec();
   setTimeout(() => {
     if (G.mode === 'menu') return;
@@ -305,6 +315,7 @@ try { Object.assign(REC, JSON.parse(localStorage.getItem(REC_KEY) || '{}')); } c
 if (!OUTFITS[REC.skin]) REC.skin = 'shinobi'; if (!WEAPONS[REC.weapon]) REC.weapon = 'standard';
 function showRec() { $('rec').textContent = REC.runs || REC.wins ? `Best run: ${REC.best} bosses · duels won ${REC.wins} · deflects ${REC.parries} · deathblows ${REC.deathblows}` : ''; }
 function saveRec() { try { localStorage.setItem(REC_KEY, JSON.stringify(REC)); } catch (e) { } showRec(); }
+initAch(REC, () => { try { localStorage.setItem(REC_KEY, JSON.stringify(REC)); } catch (e) { } }, id => { toast('◆ ' + t('ach.got') + ': ' + t('ach.' + id)); sfx.bell(); });
 const cap = (v, m) => Math.min(m, v);
 function bossFor(n, diff) {
   const b = BOSSES[n % BOSSES.length], loop = Math.floor(n / BOSSES.length), D = GDIFF[diff];
@@ -398,13 +409,14 @@ document.addEventListener('click', e => {
   audio.resume(); sfx.ui();
   const t = go.dataset.go;
   if (t === 'menu') { net.close(); for (const l of ['lobby', 'hLobby', 'sLobby', 'tLobby']) $(l).classList.add('hidden'); toMenu(); }
-  else if (t === 'duelMenu') showScreen('duelMenu');
+  else if (t === 'play') { net.close(); for (const l of ['lobby', 'hLobby', 'sLobby', 'tLobby']) $(l).classList.add('hidden'); if (G.mode !== 'menu') toMenu(); showScreen('play'); preview('gauntlet'); }
+  else if (t === 'ach') { renderAch(); showScreen('ach'); }
   else if (t === 'huntSetup') { syncSrv(); showScreen('huntSetup'); }
   else if (t === 'svSetup') { syncSrv(); showScreen('svSetup'); }
   else if (t === 'teamSetup') { syncSrv(); renderTeamMaps(); showScreen('teamSetup'); }
   else if (t === 'ai') startMatch('ai');
   else if (t === 'gauntlet') { renderGDiff(); showScreen('gdiff'); }
-  else if (t === 'shop') { renderShop(); showScreen('shop'); }
+  else if (t === 'shop') { showScreen('shop'); openArmory(); }
   else if (t === 'training') startMatch('training');
   else if (t === 'online') { $('lobby').classList.add('hidden'); $('onMsg').textContent = ''; $('serverUrl').value = S.serverUrl; showScreen('online'); }
   else if (t === 'settings') showScreen('settings');
@@ -438,6 +450,7 @@ function renderHelp(mode) {
   $('hint').innerHTML = `<div>${k('light')} ${t('h.keys')} · ${k('heavy')} ${t('h.heavy')} · ${k('guard')} ${t('h.guard')} · ${k('dodge')} ${t('h.dodge')} · ${k('jump')} ${t('h.jump')} · ${k('sprint')} ${t('h.sprint')} · ${k('walk')} ${t('h.walk')} · ${k('lock')} ${t('h.lock')}</div>`
     + `<div>${t('h.parry')} · ${t('h.posture', { F: k('finisher') })}</div><div>${t('h.peril')}</div><div class="dim">${t('h.links')}</div>`
     + (mode === 'training' ? `<div class="dim">${t('h.train')}</div>` : '')
+    + (mode === 'survival' ? `<div>${k('shuriken')} ${t('act.shuriken')}</div>` : '')
     + (mode === 'hunt' ? `<div>${k('crouch')} ${t('h.crouch')} · ${k('lure')} ${t('h.lure')}</div><div class="dim">${t('h.ambush')}</div>` : '')
     + (mode === 'survival' ? `<div>${k('interact')} ${t('h.interact')}</div><div class="dim">${t('h.coop')}</div>` : '');
 }
@@ -493,28 +506,6 @@ function renderGDiff() {
     b.onclick = () => { sfx.ui(); startRun(k); }; box.appendChild(b);
   }
 }
-let shopTab = 'skins';
-function renderShop() {
-  showCoins();
-  for (const t of document.querySelectorAll('.tab')) t.classList.toggle('on', t.dataset.tab === shopTab);
-  const list = $('shopList'); list.innerHTML = '';
-  const isSkin = shopTab === 'skins', DB = isSkin ? OUTFITS : WEAPONS, owned = isSkin ? REC.skins : REC.weapons, eq = isSkin ? REC.skin : REC.weapon;
-  for (const [k, it] of Object.entries(DB)) {
-    if (it.hidden) continue;
-    const have = owned.includes(k), on = eq === k, b = document.createElement('div'); b.className = 'item' + (on ? ' on' : '');
-    const sw = isSkin ? '' : `<i class="sw" style="background:#${it.trail.toString(16).padStart(6, '0')}"></i>`;
-    b.innerHTML = `<div><b>${sw}${it.name}</b><span>${it.desc}</span></div>`;
-    const btn = document.createElement('button'); btn.className = 'big buy';
-    btn.textContent = on ? 'Equipped' : have ? 'Equip' : it.price + ' ◎'; btn.disabled = on || (!have && REC.coins < it.price);
-    btn.onclick = () => {
-      if (!have) { if (REC.coins < it.price) return; REC.coins -= it.price; owned.push(k); sfx.coin(); }
-      if (isSkin) REC.skin = k; else REC.weapon = k; saveRec(); setLook(true, REC.skin, REC.weapon); menuPose(); sfx.ui(); renderShop();
-    };
-    b.appendChild(btn); list.appendChild(b);
-  }
-  $('shopNote').textContent = isSkin ? 'Skins only change the look.' : 'All blades share the same length, damage and timing; only the look and the slash trail differ.';
-}
-for (const t of document.querySelectorAll('.tab')) t.onclick = () => { shopTab = t.dataset.tab; sfx.ui(); renderShop(); };
 function renderMapSel() { $('mapName').textContent = S.map === 'random' ? 'Random' : MAPS[S.map] || MAPS.dojo; }
 const MAP_CYCLE = [...MAP_KEYS, 'random'];
 const stepMap = d => { S.map = MAP_CYCLE[(MAP_CYCLE.indexOf(S.map) + d + MAP_CYCLE.length) % MAP_CYCLE.length]; save(); renderMapSel(); if (G.mode === 'menu') useMap(S.map === 'random' ? MAP_KEYS[Math.random() * MAP_KEYS.length | 0] : S.map); sfx.ui(); };
@@ -529,6 +520,7 @@ function press(code, e) {
     else if (a === 'dodge') inp.dodge = 0.25; else if (a === 'jump') inp.jump = 0.25; else if (a === 'finisher') inp.finisher = 0.4;
     else if (a === 'lock') toggleLock();
     else if (a === 'lure') CTX.wantLure = true;
+    else if (a === 'shuriken') inp.shuriken = 0.3;
   }
   if (e && (code === 'Space' || /^Alt|^Control/.test(code) || code === 'Mouse1')) e.preventDefault();
 }
@@ -536,6 +528,7 @@ function release(code) { keys[code] = false; if (BINDS.guard.includes(code) && !
 addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT') return;
   if (isWaiting()) { e.preventDefault(); captureBind(e.code); return; }
+  if (menuKey(e)) { e.preventDefault(); return; }
   if (e.repeat) return;
   if (e.code === 'KeyH' && !actionsOf('KeyH').length) $('hint').classList.toggle('mini');
   press(e.code, e);
@@ -616,7 +609,9 @@ function step(rawDt) {
   if (G.hs > 0) { G.hs -= rawDt; dt *= 0.06; }
   if (G.slowT > 0) { G.slowT -= rawDt; dt *= G.slow; }
   const { me, opp } = G;
-  const dbA = me && (me.act === 'deathblow' ? me : opp && opp.act === 'deathblow' ? opp : null);
+  let dbA = me && (me.act === 'deathblow' ? me : opp && opp.act === 'deathblow' ? opp : null);
+  if (dbA && !dbA.dbTarget) dbA.dbTarget = dbA === me ? opp : me.pos.distanceTo(dbA.pos) < 1.8 ? me : null;   // remote attacker: whom is he finishing
+  if (dbA && dbA !== me && dbA.dbTarget !== me) dbA = null;   // 2v2: someone else's deathblow -> no camera / slow-mo / grade for me
   if (dbA && G.phase === 'fight') {
     if (!rig.cine) rig.startCine({ type: 'deathblow', att: dbA, vic: dbA === me ? opp : me, sign: Math.random() < .5 ? 1 : -1 });
     if (dbA.t > 0.35 && dbA.t < 0.95) dt *= 0.35;
@@ -651,7 +646,11 @@ function step(rawDt) {
         for (const k of ['light', 'heavy', 'dodge', 'finisher', 'jump']) ii[k] = Math.max(0, (ii[k] || 0) - dt);
       }
       fighterEvents(me); fighterEvents(opp);
-      if (G.phase === 'intro' && G.phaseT > 2.5) beginFight();
+      if (G.phase === 'intro') {
+        if (G.introStep === 0 && G.phaseT > INTRO.bow) { G.introStep = 1; G.me.bow(); G.opp.bow(); }
+        if (G.introStep === 1 && G.phaseT > INTRO.draw) { G.introStep = 2; G.me.setAct('draw'); if (!G.opp.remote) G.opp.setAct('draw'); }
+        if (G.phaseT > INTRO.fight) beginFight();
+      }
       checkLives();
       if (opp.broken && ((G.bt = (G.bt || 0) - dt) < 0)) { G.bt = 0.35; fx.spark(new V3(opp.pos.x, 1.75 * opp.scaleF, opp.pos.z), 6, 2, 0xff6a20, 0.5); }
       updateHud();
@@ -665,14 +664,15 @@ function step(rawDt) {
   rig.update(rawDt, { me: G.me, opp: G.opp, locked: G.lock && G.mode !== 'menu' && (!G.ctl || inp.lock), mode: G.mode, crowd });
   const mono = rig.cine && rig.cine.type === 'deathblow' && dbA && dbA.t > 0.55 && dbA.t < 0.85 ? 0.85 : 0;
   const dof = rig.cine ? rig.pos.distanceTo(rig.look) : 0;
-  if (!G.noRender) post.frame(rawDt, { hp: me && G.mode !== 'menu' ? me.hp / me.maxHp : 1, sat: G.phase === 'downed' ? 0.35 : 1, mono, dof });
+  if (armory.active) { armory.update(rawDt); if (!G.noRender) armory.render(); armLocks(); }
+  else if (!G.noRender) post.frame(rawDt, { hp: me && G.mode !== 'menu' ? me.hp / me.maxHp : 1, sat: G.phase === 'downed' ? 0.35 : 1, mono, dof });
 }
 // ---------- Samurai Hunt / Survival ----------
 const weather = new Weather(scene, camera);
 // duel arenas roll their own weather (open maps: the mode decides). Cosmetic only, so online peers may see different skies
 G.applyWx = () => { if (arena.world) return; const list = arena.cfg.weathers || ['clear'], k = list[Math.random() * list.length | 0]; weather.set(k); arena.setWeather(k); weather.leaves.material.color.set(G.mapName === 'sakura' ? 0x9a1c1e : 0xb06a2a); };
 const WX_WIND = new V3(0.8, 0, 0.35);
-const CTX = { G, scene, camera, rig, fx, post, arena, net, inp, keys, S, REC, $, t, banner, toast, showResult, screenFlash, fighterEvents, noInput, weather, wantLure: false,
+const CTX = { ach, G, scene, camera, rig, fx, post, arena, net, inp, keys, S, REC, $, t, banner, toast, showResult, screenFlash, fighterEvents, noInput, weather, wantLure: false,
   setLook: (...a) => setLook(...a), newFighter: (style, weapon, name) => new Fighter(scene, G.base, style, name, weapon), showHud, showScreen, saveRec: () => saveRec(), addCoins: n => addCoins(n),
   tryLock, pickTarget: foes => pickTarget(foes), hint: m => renderHelp(m), useMap: m => useMap(m), isDown: a => isDown(a, keys), keyOf, restartMode: () => restartMode() };
 function startMode(kind, opts) {
@@ -733,12 +733,98 @@ $('sHost').onclick = () => hostMode('survival', svParams(), 's');
 $('sJoin').onclick = () => joinMode('s');
 window.__snap = async (name, dt = 0.0001) => { step(dt); const url = canvas.toDataURL('image/png'); await fetch('/__shot?n=' + name, { method: 'POST', body: url }); return name; };
 
+// ---------- patch 1.1 menus: Play previews, Options tabs, Achievements, Armory, keyboard navigation ----------
+function preview(k) {
+  $('pvImg').style.backgroundImage = `url(assets/ui/pv_${k}.jpg)`; $('pvDesc').textContent = t('p.' + k + '.d');
+  for (const b of document.querySelectorAll('#play [data-pv]')) b.classList.toggle('sel', b.dataset.pv === k);
+}
+for (const b of document.querySelectorAll('.list.nav > button')) b.addEventListener('mouseenter', () => { for (const x of b.parentNode.children) x.classList.toggle('sel', x === b); });
+for (const b of document.querySelectorAll('#play [data-pv]')) { b.addEventListener('mouseenter', () => preview(b.dataset.pv)); b.addEventListener('focus', () => preview(b.dataset.pv)); }
+for (const b of document.querySelectorAll('.t2[data-st]')) b.onclick = () => { sfx.ui(); for (const x of document.querySelectorAll('.t2[data-st]')) x.classList.toggle('on', x === b); for (const s of document.querySelectorAll('.stbody section')) s.classList.toggle('on', s.dataset.sec === b.dataset.st); };
+const LOCK_SVG = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5zm-3 8V7a3 3 0 0 1 6 0v3zm3 4a1.6 1.6 0 0 1 .8 3v2h-1.6v-2a1.6 1.6 0 0 1 .8-3z"/></svg>';
+let achSel = 0;
+function renderAch() {
+  const box = $('achTiles'); box.innerHTML = ''; const got = ACH.filter(a => progress(a[0]).done).length;
+  $('achCount').textContent = t('ach.count', { n: got, m: ACH.length });
+  ACH.forEach(([id, kanji], i) => {
+    const p = progress(id), el = document.createElement('div'); el.className = 'atile' + (p.done ? ' got' : '') + (i === achSel ? ' sel' : '');
+    el.innerHTML = p.done ? `<b>${kanji}</b>` : LOCK_SVG; el.title = t('ach.' + id);
+    el.onmouseenter = el.onclick = () => { achSel = i; for (const x of box.children) x.classList.toggle('sel', x === el); achCard(); };
+    box.appendChild(el);
+  });
+  achCard();
+}
+function achCard() {
+  const [id, kanji] = ACH[achSel], p = progress(id), c = $('achCard'); c.className = 'achcard' + (p.done ? ' got' : '');
+  c.innerHTML = `<div class="art">${kanji}${p.done ? '' : LOCK_SVG}</div><h3>${t('ach.' + id)}</h3><p>${t('ach.' + id + '.d')}</p><div class="pg">${p.done ? t('ach.done') : p.have + ' / ' + p.goal}</div><div class="bar"><i style="width:${Math.round(100 * p.have / p.goal)}%"></i></div>`;
+}
+// Armory: 3D podiums (armory.js) + the info card; E buys or equips, A/D or the arrows browse, Tab switches weapons / characters
+const armory = new Armory(renderer, scene, (sc, style, weapon) => new Fighter(sc, G.base, style, OUTFITS[style].name, weapon));
+function openArmory(tab) { armory.open(REC, tab || armory.tab); armUI(); }
+function armUI() {
+  const e = armory.current; showCoins(); for (const b of document.querySelectorAll('.t2[data-arm]')) b.classList.toggle('on', b.dataset.arm === armory.tab);
+  if (!e) return; const it = e.it, locked = it.unlock && !e.have;
+  $('armName').textContent = it.name; $('armDesc').textContent = it.desc;
+  $('armPrice').innerHTML = e.have ? t('arm.owned') : locked ? '🔒 ' + t('arm.svOnly') : `<i class="cn"></i>${it.price.toLocaleString()}`;
+  const b = $('armBuy'); b.textContent = e.eq ? t('k.equipped') : e.have ? t('k.equip') : locked ? t('ach.locked') : t('k.purchase'); b.disabled = e.eq || locked || (!e.have && REC.coins < it.price);
+  $('armKey').textContent = e.have ? t('k.equip') : t('k.purchase');
+}
+function armAct() {
+  const e = armory.current; if (!e) return; const it = e.it, W = armory.tab === 'weapons', owned = W ? REC.weapons : REC.skins;
+  if (e.eq || (it.unlock && !e.have)) return;
+  if (!e.have) { if (REC.coins < it.price) { sfx.ui(); return; } REC.coins -= it.price; owned.push(e.key); sfx.coin(); if (W) ach.max('blades', REC.weapons.length); }
+  if (W) REC.weapon = e.key; else REC.skin = e.key; saveRec(); setLook(true, REC.skin, REC.weapon); menuPose(); sfx.ui(); armory.refresh(); armUI();
+}
+{ let dr = null;   // drag on the showroom to turn the piece on the centre podium in 3D
+  $('shop').addEventListener('pointerdown', e => { if (e.target.closest('button,.arminfo')) return; dr = { x: e.clientX, y: e.clientY }; $('shop').setPointerCapture(e.pointerId); $('shop').classList.add('drag'); });
+  $('shop').addEventListener('pointermove', e => { if (!dr) return; armory.drag(e.clientX - dr.x, e.clientY - dr.y); dr.x = e.clientX; dr.y = e.clientY; });
+  const end = () => { dr = null; $('shop').classList.remove('drag'); }; $('shop').addEventListener('pointerup', end); $('shop').addEventListener('pointercancel', end); }
+$('armPrev').onclick = () => { armory.step(-1); sfx.ui(); armUI(); }; $('armNext').onclick = () => { armory.step(1); sfx.ui(); armUI(); }; $('armBuy').onclick = armAct;
+for (const b of document.querySelectorAll('.t2[data-arm]')) b.onclick = () => { sfx.ui(); armory.setTab(b.dataset.arm); armUI(); };
+function armLocks() {   // lock badges over the podiums of what is not owned yet
+  const box = $('armLocks'), n = armory.entries.length; let k = 0;
+  for (let i = 0; i < n; i++) {
+    let o = i - armory.pos; if (o > n / 2) o -= n; if (o < -n / 2) o += n; if (Math.abs(o) > 2.3 || armory.entries[i].have) continue;
+    const [x, y, ok] = armory.screenAt(o, armory.tab === 'chars' ? 1.05 : 1.05); if (!ok) continue;
+    let el = box.children[k]; if (!el) { el = document.createElement('div'); el.className = 'lk'; el.innerHTML = LOCK_SVG; box.appendChild(el); }
+    el.style.display = 'block'; el.style.left = x + 'px'; el.style.top = y + 'px'; el.style.opacity = Math.abs(o) < 0.5 ? 0.9 : 0.6; k++;
+  }
+  for (; k < box.children.length; k++) box.children[k].style.display = 'none';
+}
+// keyboard: W/S or arrows move the highlight, E / Enter selects, Esc goes back (menus only)
+const BACK = { play: 'menu', settings: 'menu', ach: 'menu', shop: 'menu', huntSetup: 'play', svSetup: 'play', teamSetup: 'play', online: 'play', gdiff: 'play' };
+const visibleScreen = () => [...document.querySelectorAll('.screen')].find(s => !s.classList.contains('hidden'));
+function navSel(d, reset) {
+  const sc = visibleScreen(); if (!sc) return; const list = [...sc.querySelectorAll('.list.nav > button')]; if (!list.length) return;
+  let i = list.findIndex(b => b.classList.contains('sel')); i = reset ? 0 : (i + d + list.length) % list.length;
+  list.forEach((b, j) => b.classList.toggle('sel', j === i)); if (list[i].dataset.pv) preview(list[i].dataset.pv);
+}
+function menuKey(e) {
+  if (G.mode !== 'menu' || document.pointerLockElement) return false;
+  const tag = e.target.tagName; if (tag === 'SELECT' || tag === 'TEXTAREA') return false;
+  const sc = visibleScreen(); if (!sc) return false; const id = sc.id, c = e.code;
+  if (c === 'Escape' && BACK[id]) { sfx.ui(); const b = BACK[id]; if (b === 'menu') toMenu(); else document.querySelector(`[data-go="${b}"]`).click(); return true; }
+  if (id === 'shop') {
+    if (c === 'KeyA' || c === 'ArrowLeft') { $('armPrev').click(); return true; } if (c === 'KeyD' || c === 'ArrowRight') { $('armNext').click(); return true; }
+    if (c === 'KeyE' || c === 'Enter') { armAct(); return true; } if (c === 'Tab' || c === 'KeyQ') { armory.setTab(armory.tab === 'weapons' ? 'chars' : 'weapons'); armUI(); sfx.ui(); return true; }
+    return false;
+  }
+  if (id === 'settings' && (c === 'KeyE' || c === 'Enter')) { sfx.ui(); toMenu(); return true; }   // settings apply as you change them: E confirms and leaves
+  if (id === 'settings' && c === 'Tab') { const tb = [...document.querySelectorAll('.t2[data-st]')], i = tb.findIndex(b => b.classList.contains('on')); tb[(i + (e.shiftKey ? -1 : 1) + tb.length) % tb.length].click(); return true; }
+  if (id === 'ach') { const n = ACH.length, d = c === 'ArrowLeft' || c === 'KeyA' ? -1 : c === 'ArrowRight' || c === 'KeyD' ? 1 : c === 'ArrowUp' || c === 'KeyW' ? -6 : c === 'ArrowDown' || c === 'KeyS' ? 6 : 0; if (d) { achSel = (achSel + d + n) % n; renderAch(); return true; } return false; }
+  if (tag === 'INPUT') return false;
+  const list = sc.querySelectorAll('.list.nav > button'); if (!list.length) return false;
+  if (c === 'ArrowDown' || c === 'KeyS') { navSel(1); sfx.ui(); return true; }
+  if (c === 'ArrowUp' || c === 'KeyW') { navSel(-1); sfx.ui(); return true; }
+  if (c === 'KeyE' || c === 'Enter') { const b = sc.querySelector('.list.nav > button.sel'); if (b) b.click(); return true; }
+  return false;
+}
 // ---------- boot ----------
 const loader = new GLTFLoader();
 Promise.all([loader.loadAsync('/assets/kd_ual1.glb'), loader.loadAsync('/assets/kd_ual2.glb'), loader.loadAsync('/assets/kd_mixamo.glb')]).then(([a, b, c]) => { try {
   prepareClips(a, b, c); G.base = a;
   G.me = new Fighter(scene, a, REC.skin, 'You', REC.weapon); G.opp = new Fighter(scene, a, 'ashina', 'Enemy');
-  applyQuality(); useMap(S.map); menuPose(); showScreen('menu'); refreshTexts();
+  applyQuality(); useMap(S.map); menuPose(); showScreen('menu'); refreshTexts(); ach.max('blades', REC.weapons.length); if (REC.svCleared) ach.max('svCleared', 1);
   $('loading').style.opacity = 0; setTimeout(() => $('loading').remove(), 700);
   last = performance.now(); requestAnimationFrame(frame);
 } catch (e) { $('loading').textContent = 'Error: ' + e.stack; console.error(e); } }).catch(err => { $('loading').textContent = 'Failed to load: ' + err.message; console.error(err); });

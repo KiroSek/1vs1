@@ -7,6 +7,9 @@ import { Senses, Footsteps, SENSE } from '../stealth.js';
 import { MOVES } from '../moves.js';
 import { AI } from '../ai.js';
 import { sfx, music } from '../audio.js';
+import { Stone } from './huntitems.js';
+import { DAY } from '../maps.js';
+import { inBush } from '../stealth.js';
 
 const V3 = THREE.Vector3;
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -14,6 +17,7 @@ const angDiff = (a, b) => { let d = (b - a) % (Math.PI * 2); if (d > Math.PI) d 
 export const HUNT = {
   respawnDelay: 4.5, respawnGuard: 3, overtime: 180, pingEvery: 10, lureCooldown: 5, lureDist: 13, noiseNet: 0.12,
   combatDist: 7, tensionDist: 28, lockMemory: 2, ambushCue: 8,
+  weapon: 'tanto', duelGap: 8, duelGuard: 1.5, lightRate: 0.25,   // the hunt is stalked with the tanto; at 12:30 both draw their own katana and duel in the square
 };
 
 // ---------------------------------------------------------------- practice opponent (no second player)
@@ -76,7 +80,7 @@ export class Hunt {
     this.c = ctx; this.o = opts; this.online = !!opts.online; this.p = opts.params;
     this.t = 0; this.left = this.p.duration * 60; this.overtime = false; this.over = false; this.phase = 'hunt';
     this.stats = { start: 0, firstSpot: null, ambush: 0, attacks: 0, deflects: 0, blocks: 0, hitsTaken: 0, dealt: 0, taken: 0, props: 0, time: 0 };
-    this.noiseT = 0; this.lureT = 0; this.pingT = HUNT.pingEvery; this.dmgLast = { me: 100, opp: 100 }; this.myAtkSeq = -1; this.respawnT = -1; this.oppRespawnT = -1; this.cueSeq = -1; this.waiting = false;
+    this.noiseT = 0; this.lureT = 0; this.pingT = HUNT.pingEvery; this.dmgLast = { me: 100, opp: 100 }; this.myAtkSeq = -1; this.respawnT = -1; this.oppRespawnT = -1; this.cueSeq = -1; this.waiting = false; this.stones = []; this.throwAt = null;
   }
   // ---- setup ----
   start() {
@@ -84,8 +88,9 @@ export class Hunt {
     c.arena.setMap('hunt_valley', { tod: p.tod });
     this.W = c.arena.world; this.weather = c.weather; this.weather.set(p.weather || 'clear');
     this.senses = new Senses(this.W, this.weather, p.tod); this.steps = new Footsteps(this.W, this.weather); this.oppSteps = new Footsteps(this.W, this.weather);
-    c.setLook(true, c.REC.skin, c.REC.weapon);
-    if (!this.online) c.setLook(false, ...[['ronin', 'kuro'], ['ashina', 'standard'], ['kage', 'mortal']][p.bot ?? 1]);
+    c.setLook(true, c.REC.skin, HUNT.weapon); this.botLook = [['ronin', 'kuro'], ['ashina', 'standard'], ['kage', 'mortal']][p.bot ?? 1];
+    if (!this.online) c.setLook(false, this.botLook[0], HUNT.weapon);
+    this.phase = 'hunt'; this.total = p.duration * 60; this.hourT = 0;
     const { me, opp } = G;
     const pair = this.W.spawns.length ? c.arena.cfg.huntStart[p.pair % c.arena.cfg.huntStart.length] : [0, 1];
     const mySp = this.W.spawns[pair[this.online ? c.net.slot : 0]], opSp = this.W.spawns[pair[this.online ? 1 - c.net.slot : 1]];
@@ -102,11 +107,12 @@ export class Hunt {
     c.banner('狩', '#e8dcc4', true); c.toast(c.t('hunt.begin')); sfx.bell(); music.set('explore');
     c.hint('hunt');
     if (this.online) this.bindNet();
+    this.dayStep(0, true);
   }
   // ---- networking ----
   bindNet() {
     const c = this.c, net = c.net, G = c.G;
-    net.on('state', s => { if (G.opp) G.opp.setRemote(s); });
+    net.on('state', s => { if (!G.opp) return; if (s.lk && s.lk !== G.opp.style + '|' + G.opp.weapon) { const [st, wp] = s.lk.split('|'); c.setLook(false, st, wp); G.opp.remote = true; G.opp.onStrike = null; } G.opp.setRemote(s); });   // the rival drew his katana
     net.on('strike', d => {
       if (this.over) return;
       const r = G.me.resolveStrike(d.kind, { x: d.x, z: d.z }, d.mul || 1, d.fmul || 1, { pmul: d.pm || 1, ambushOk: !this.senses.isAware });
@@ -125,6 +131,7 @@ export class Hunt {
   onMsg(m) {
     const c = this.c;
     if (m.t === 'noise') this.hearNoise(m);
+    else if (m.t === 'stone') this.stones.push(new Stone(c.scene, this.W, new V3(...m.p), 0, 0, new V3(...m.v)));   // their stone in flight (its noise comes separately)
     else if (m.t === 'prop') this.breakProps([m.id], false);
     else if (m.t === 'clock') { this.left = m.left; this.overtime = m.overtime; }
     else if (m.t === 'needSync' && c.net.slot === 0) this.sendSync();
@@ -142,7 +149,7 @@ export class Hunt {
   }
   tally(r, mine) {
     const s = this.stats;
-    if (mine) { if (r.res === 'hit' && r.amb) { s.ambush++; this.c.banner('奇襲', '#ffd0a0', true); } }
+    if (mine) { if (r.res === 'hit' && r.amb) { s.ambush++; this.c.ach.add('ambushes'); this.c.banner('奇襲', '#ffd0a0', true); } }
     else { if (r.res === 'deflect') s.deflects++; if (r.res === 'block') s.blocks++; if (r.res === 'hit') { s.hitsTaken++; if (r.amb) this.c.banner('奇襲', '#ff6a50', true); } }
     // any exchange alerts the defender completely
     if (!mine && r.res !== 'miss') { this.senses.aware = Math.max(this.senses.aware, 1.1); this.senses.lastSeen = this.t; }
@@ -159,7 +166,7 @@ export class Hunt {
     const me = this.c.G.me, k = this.senses.hear(n, me); if (k <= 0) return;
     const pan = this.pan(n.x, n.z);
     if (n.kind === 'step') sfx.at('foot', pan, Math.min(1, k * 1.4), n.surface, n.loud); else if (n.kind === 'pebble') sfx.at('pebble', pan, k); else if (n.kind === 'paper') sfx.at('breakPaper', pan, k); else if (n.kind === 'wood') sfx.at('breakWood', pan, k);
-    if (n.surface === 'grass' || n.surface === 'bamboo') sfx.at('rustle', pan, k * 0.8);
+    if (n.surface === 'grass' || n.surface === 'bamboo' || n.surface === 'bush') sfx.at('rustle', pan, k * (n.surface === 'bush' ? 1 : 0.8));
     this.indicate(n.x, n.z, k);
   }
   pan(x, z) { const cam = this.c.rig, a = Math.atan2(x - cam.pos.x, z - cam.pos.z); return Math.sin(angDiff(cam.yaw, a)) * -1; }
@@ -168,11 +175,26 @@ export class Hunt {
     const el = document.createElement('i'); el.style.transform = `rotate(${-a}rad)`; el.style.opacity = Math.min(1, 0.25 + k); if (danger) el.className = 'danger';
     box.appendChild(el); setTimeout(() => el.remove(), 1300);
   }
+  // throw a stone where the camera looks: a real arc, it knocks on walls and makes its noise where it lands (lures the enemy)
   lure() {
-    const c = this.c, me = c.G.me; if (this.lureT > 0 || me.dead) return; this.lureT = HUNT.lureCooldown;
-    const F = new V3(Math.sin(c.rig.yaw), 0, Math.cos(c.rig.yaw)), p = me.pos.clone().addScaledVector(F, HUNT.lureDist); this.W.bounds(p, 0.3); p.y = this.W.ground(p.x, p.z);
-    c.fx.spark(p.clone().setY(p.y + 0.1), 10, 2, 0xc8c0b0, 0.3); sfx.at('pebble', 0, 0.4);
-    this.emitNoise({ x: p.x, z: p.z, loud: 0.9, kind: 'pebble' });
+    const c = this.c, me = c.G.me; if (this.lureT > 0 || me.dead || me.act !== 'idle') return; this.lureT = HUNT.lureCooldown;
+    me.setAct('toss'); this.throwAt = { t: 0.42, yaw: c.rig.yaw, pitch: c.rig.pitch };   // released at the forward snap of the arm
+  }
+  throwStone(yaw, pitch) {
+    const c = this.c, me = c.G.me, from = me.b && me.b.handL ? me.b.handL.getWorldPosition(new V3()) : me.hitPoint;
+    const s = new Stone(c.scene, this.W, from, yaw, pitch); s.mine = true; this.stones.push(s); sfx.at('swing', 0, 0.35);
+    if (this.online) c.net.send('hunt', { t: 'stone', p: from.toArray().map(v => +v.toFixed(2)), v: s.v0.toArray().map(v => +v.toFixed(2)) });
+  }
+  stonesStep(dt) {
+    const c = this.c, me = c.G.me;
+    if (this.throwAt && (this.throwAt.t -= dt) <= 0) { const T = this.throwAt; this.throwAt = null; if (me.act === 'toss') this.throwStone(T.yaw, T.pitch); }
+    for (const s of this.stones) {
+      const r = s.update(dt); if (!r) continue;
+      const p = s.land, d = Math.hypot(p.x - me.pos.x, p.z - me.pos.z);
+      c.fx.spark(p.clone().setY(p.y + 0.05), r === 'wall' ? 8 : 5, 2, 0xc8c0b0, 0.3); sfx.at('pebble', this.pan(p.x, p.z), Math.max(0.15, 1 - d / 30));
+      if (s.mine) this.emitNoise({ x: p.x, z: p.z, loud: 0.9, kind: 'pebble' });
+    }
+    this.stones = this.stones.filter(s => !s.done);
   }
   // ---- frame ----
   step(dt, rawDt, live) {
@@ -182,11 +204,12 @@ export class Hunt {
     // senses: my view = camera direction
     const newSpot = this.senses.update(dt, me, c.rig.yaw, opp, this.t);
     if (newSpot) { if (this.stats.firstSpot === null) this.stats.firstSpot = this.t; c.toast(c.t('hunt.spotted')); sfx.at('cue', this.pan(opp.pos.x, opp.pos.z), 0.35); }
-    const canLock = this.senses.spotted && (this.senses.vis > 0 || this.t - this.senses.lastSeen < HUNT.lockMemory) && !opp.dead;
+    const canLock = this.phase === 'duel' ? !opp.dead : this.senses.spotted && (this.senses.vis > 0 || this.t - this.senses.lastSeen < HUNT.lockMemory) && !opp.dead;
     if (!canLock && G.lock) { G.lock = false; inp.lock = false; }
     inp.lock = G.lock && canLock;
     // input + fighters
     if (c.wantLure && live) { c.wantLure = false; this.lure(); }
+    this.stonesStep(dt);
     if (MOVES[me.act] && me.seq !== this.myAtkSeq) { this.myAtkSeq = me.seq; this.stats.attacks++; }
     let myInp = live && !me.dead ? inp : c.noInput;
     if (G.auto && live) { myInp = G.auto.think(dt, opp); for (const k of ['light', 'heavy', 'dodge', 'finisher', 'jump']) if (myInp[k]) myInp[k] = Math.max(0, myInp[k] - dt); }   // test harness: AI drives the player
@@ -213,10 +236,28 @@ export class Hunt {
   clock(dt) {
     const c = this.c; this.left -= dt;
     if (this.online && c.net.slot === 0 && ((this.syncT = (this.syncT || 0) - dt) < 0)) { this.syncT = 5; c.net.send('hunt', { t: 'clock', left: this.left, overtime: this.overtime }); }
-    if (this.left <= 0 && !this.overtime) { this.overtime = true; this.left = HUNT.overtime; c.banner('決戦', '#ff8a60', true); c.toast(c.t('hunt.overtime')); sfx.bell(); }
-    else if (this.left <= 0 && this.overtime) this.decide();
+    this.dayStep(dt);
+    if (this.left <= 0 && this.phase === 'hunt') this.startDuel();
     if (this.overtime && (this.pingT -= dt) <= 0) { this.pingT = HUNT.pingEvery; const o = c.G.opp; sfx.at('bell', this.pan(o.pos.x, o.pos.z), 0.6); this.indicate(o.pos.x, o.pos.z, 1, true);
       if (this.bot) { const s = this.bot.senses; s.lastKnown = c.G.me.pos.clone(); s.aware = Math.max(s.aware, 0.5); if (this.bot.state === 'patrol') this.bot.state = 'investigate'; } }
+  }
+  // the clock runs from the dead of night to 12:30 (maps.js DAY): lighting, mist and the sight model follow the hour
+  get hour() { return DAY.start + (DAY.duel - DAY.start) * Math.min(1, Math.max(0, 1 - this.left / this.total)); }
+  dayStep(dt, now = false) {
+    if ((this.hourT -= dt) > 0 && !now) return; this.hourT = HUNT.lightRate;
+    const cfg = this.c.arena.cfg; if (!cfg.setHour) return;
+    const h = this.hour; cfg.setHour(h); const tod = DAY.sense(h); this.senses.tod = tod; if (this.bot) this.bot.senses.tod = tod;
+  }
+  // 12:30: the hunt is over. Both stand in the village square, draw their katana and fight to the death.
+  startDuel() {
+    const c = this.c, G = c.G; if (this.phase === 'duel') return; this.phase = 'duel'; this.overtime = true; this.left = 0;
+    c.banner('決闘', '#ff8a60', true); c.toast(c.t('hunt.duel')); sfx.bell(); music.set('combat');
+    for (const s of this.stones) s.finish(); this.stones = []; this.throwAt = null; this.respawnT = this.oppRespawnT = -1;
+    c.setLook(true, c.REC.skin, c.REC.weapon); const me = G.me; me.onProp = ids => this.breakProps(ids, true); me.canAmbush = false; me.remote = false; me.onStrike = (a, k, v) => this.onStrike(a, k, v);
+    if (!this.online) { c.setLook(false, this.botLook[0], this.botLook[1]); const o = G.opp; o.remote = false; o.canAmbush = false; o.onStrike = (a, k, v) => this.onStrike(a, k, v); o.onProp = ids => this.breakProps(ids, true); this.bot.f = o; this.bot.ai.f = o; this.bot.state = 'duel'; this.bot.senses.aware = 1.3; }
+    const P = this.W.duelSpot || [0, 0], place = (f, side) => { const lives = f.lives; f.spawn(P[0] + side * HUNT.duelGap / 2, P[1], side < 0 ? Math.PI / 2 : -Math.PI / 2); f.lives = lives; f.invuln = true; f.invulnT = HUNT.duelGuard; };
+    const side = this.online && c.net.slot === 1 ? 1 : -1; place(me, side); if (!this.online) place(G.opp, -side);
+    this.senses.aware = 1.3; this.senses.spotted = true; this.senses.lastSeen = this.t; G.lock = true; c.inp.lock = true; c.rig.snapBehind(me);
   }
   decide() {
     const { me, opp } = this.c.G;
@@ -225,6 +266,7 @@ export class Hunt {
   lives(dt) {
     const c = this.c, { me, opp } = c.G;
     if (this.over) return;
+    if (this.phase === 'duel') { if (me.dead) this.end(false); else if (opp.dead) this.end(true); return; }   // the duel: first to fall loses
     if (me.dead && me.lives <= 0) { this.end(false); return; }
     if (opp.dead && opp.lives <= 0) { this.end(true); return; }
     if (me.dead) { if (this.respawnT < 0) { this.respawnT = HUNT.respawnDelay; c.banner('死', '#ff2a2a', true); } else if ((this.respawnT -= dt) <= 0) { this.respawnT = -1; this.respawn(me, opp); } }
@@ -238,16 +280,18 @@ export class Hunt {
   hud() {
     const c = this.c, s = this.senses, { me, opp } = c.G;
     c.$('oppBars').style.opacity = s.spotted && !opp.dead ? 1 : 0;
-    const m = Math.max(0, this.left), mm = Math.floor(m / 60), ss = Math.floor(m % 60);
-    c.$('huntInfo').innerHTML = `<b class="${this.overtime ? 'ot' : ''}">${this.overtime ? '決戦 ' : ''}${mm}:${String(ss).padStart(2, '0')}</b><span>${c.t('hunt.lives')} ${'◆'.repeat(Math.max(0, me.lives))}${'◇'.repeat(Math.max(0, this.p.lives - me.lives))}</span>`;
+    const m = Math.max(0, this.left), mm = Math.floor(m / 60), ss = Math.floor(m % 60), h = this.hour, hh = Math.floor(h), hm = Math.floor((h - hh) * 60);
+    const rem = `${mm}:${String(ss).padStart(2, '0')}`, clock = this.phase === 'duel' ? '決闘 ' + c.t('hunt.duelT') : !c.arena.cfg.setHour ? rem : `${String(hh).padStart(2, '0')}:${String(hm).padStart(2, '0')} <small>· ${mm}:${String(ss).padStart(2, '0')}</small>`;   // the hour of the hunt (duel at 12:30) and the time left
+    c.$('huntInfo').innerHTML = `<b class="${this.phase === 'duel' ? 'ot' : ''}">${clock}</b><span>${c.t('hunt.lives')} ${'◆'.repeat(Math.max(0, me.lives))}${'◇'.repeat(Math.max(0, this.p.lives - me.lives))}</span>`;
     // awareness eye (how close I am to spotting him) and my own concealment
     const eye = c.$('eye'); eye.style.setProperty('--k', Math.min(1, s.aware)); eye.classList.toggle('on', s.spotted);
     const cover = this.W.coverAt(me.pos.x, me.pos.z, me.crouch ? 0.9 : 1.6), light = this.W.lightAt(me.pos.x, me.pos.z), gait = me.crouch ? 0.6 : me.speed > 4.6 ? 1.25 : me.speed > 2 ? 1 : 0.8;
-    const exposure = (1 - cover * 0.8) * (this.p.tod === 'night' ? 0.4 + light : 0.8 + light * 0.3) * gait;
+    const night = this.senses.tod === 'night', exposure = me.crouch && inBush(this.W, me.pos.x, me.pos.z) ? 0 : (1 - cover * 0.8) * (night ? 0.4 + light : 0.8 + light * 0.3) * gait;
     const hid = c.$('hidden'); hid.textContent = exposure < 0.45 ? c.t('hunt.hidden') : exposure < 0.8 ? c.t('hunt.partly') : c.t('hunt.exposed'); hid.className = exposure < 0.45 ? 'h' : exposure < 0.8 ? 'p' : 'e';
   }
   end(win, note) {
     if (this.over) return; const c = this.c; this.over = true; c.G.over = true; c.G.phase = 'end'; music.set('off');
+    if (win) { c.ach.add('huntWins'); if (this.phase === 'duel') c.ach.add('noonWins'); if (this.online) c.ach.add('onlineWins'); }
     const s = this.stats; s.time = this.t;
     c.banner(win === null ? '引分' : win ? '勝利' : '死', win ? '#ffd870' : win === null ? '#e8dcc4' : '#ff2a2a', true);
     const coins = win ? 120 : win === null ? 50 : 30; c.addCoins(coins);
@@ -273,6 +317,7 @@ export class Hunt {
   }
   tryRematch() { const c = this.c; if (this.rematch && this.rematch[0] && this.rematch[1] && c.net.slot === 0) { const pair = Math.random() * 3 | 0; c.net.send('hunt', { t: 'restart', pair }); this.p.pair = pair; c.$('result').classList.add('hidden'); this.restart(); } }
   restart() {
+    for (const st of this.stones) st.finish(); this.stones = []; this.throwAt = null;
     for (const p of this.W.props) if (p.broken) { /* the map is rebuilt below */ }
     this.c.arena.setMap('dojo'); this.stats = { start: 0, firstSpot: null, ambush: 0, attacks: 0, deflects: 0, blocks: 0, hitsTaken: 0, dealt: 0, taken: 0, props: 0, time: 0 };
     this.overtime = false; this.respawnT = this.oppRespawnT = -1; this.start();

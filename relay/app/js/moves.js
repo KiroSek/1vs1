@@ -27,7 +27,10 @@ export const MOVES = {
     hit: [0.08, 0.17], cancel: 0.3, next: 'slash3', track: 0.08, lunge: [0, 0.18, 1.0], dmg: 12, post: 20, hitPost: 16, deflPost: 26, range: 2.4, kind: 'slash', dir: 'down' },
   // ---- quickdraw dash: crosses ~5 m in a blink (the Jinsuke opener) ----
   dash: { segs: [['Sword_Dash', 0, 0.26, 0.5], ['Sword_Dash', 0.26, 0.42, 0.14], ['Sword_Dash', 0.42, 1.57, 0.85]],
-    hit: [0.5, 0.64], cancel: 1.05, track: 0.45, lunge: [0.06, 0.32, 2.6], dmg: 13, post: 20, hitPost: 10, deflPost: 26, range: 2.4, kind: 'slash', dir: 'side', glide: true },   // AI gap-closer: the burst rides the stance-swap step
+    hit: [0.5, 0.64], cancel: 1.05, track: 0.45, lunge: [0.06, 0.32, 2.6], dmg: 13, post: 20, hitPost: 10, deflPost: 26, range: 2.4, kind: 'slash', dir: 'side', glide: true },
+  // sprint + E: heavy lunge — run momentum + a long committed thrust of the body, slow to recover into stance
+  lungeHeavy: { segs: [['Sword_Dash', 0, 0.26, 0.34], ['Sword_Dash', 0.26, 0.42, 0.14], ['Sword_Dash', 0.42, 1.57, 0.95]],
+    hit: [0.34, 0.48], cancel: 1.15, track: 0.3, lunge: [0.04, 0.4, 3.0], dmg: 17, post: 30, hitPost: 16, deflPost: 34, range: 2.7, kind: 'slash', dir: 'side', heavy: true, armor: true, commit: true, glide: true, carry: 1, lungeAtk: true },   // AI gap-closer: the burst rides the stance-swap step
   // ---- perilous thrust (危): unblockable; deflect it exactly or step INTO it (Mikiri) ----
   thrust: { segs: [['Sword_Heavy_A', 0, 0.44, 0.75], ['Sword_Heavy_A', 0.44, 0.52, 0.12], ['Sword_Heavy_A', 0.52, 0.73, 0.26], ['Sword_Heavy_A_Rec', 0.1, 1.0, 0.55]],
     hit: [0.75, 0.87], cancel: 1.12, track: 0.66, lunge: [0.55, 0.88, 2.8], dmg: 17, post: 30, hitPost: 12, deflPost: 32, range: 2.9, kind: 'thrust', perilous: true },
@@ -64,7 +67,13 @@ export const MOVES = {
     hit: [0.06, 0.2], cancel: 0.45, track: 0.1, lunge: [9, 9, 0], dmg: 0, post: 35, hitPost: 35, deflPost: 0, range: 2.6, kind: 'vault' },
   // dodge + LMB: quick step-in cut straight out of the dodge (UAL Sword_Regular_A, entered past its wind-up)
   stepCut: { segs: [['Sword_Regular_A', 0.08, 0.18, 0.1], ['Sword_Regular_A', 0.18, 0.3, 0.12], ['Sword_Regular_A', 0.3, 0.43, 0.1], ['Sword_Regular_A_Rec', 0, 0.97, 0.55]],
-    hit: [0.1, 0.22], cancel: 0.32, track: 0.08, lunge: [0, 0.22, 2.0], dmg: 10, post: 15, hitPost: 9, deflPost: 22, range: 2.5, kind: 'slash', dir: 'side' },
+    hit: [0.1, 0.22], cancel: 0.32, next: 'slash2', track: 0.08, lunge: [0, 0.22, 2.0], dmg: 10, post: 15, hitPost: 9, deflPost: 22, range: 2.5, kind: 'slash', dir: 'side' },   // chains on into the light combo
+  // thrown shuriken (Survival): resolved like a light, deflectable blow; never played as an animation
+  hookPull: { segs: [['Kick', 0, 0.2, 0.2]], hit: [0, 0.1], cancel: 0.2, track: 0, lunge: [0, 0, 0], dmg: 7, post: 16, hitPost: 22, deflPost: 0, range: 15, kind: 'projectile', dir: 'side' },   // the boss's chain hook (thrown, never played as an attack)
+  shuriken: { segs: [['Kick', 0, 0.2, 0.2]], hit: [0, 0.1], cancel: 0.2, track: 0, lunge: [0, 0, 0], dmg: 9, post: 14, hitPost: 14, deflPost: 0, range: 30, kind: 'projectile', dir: 'side' },
+  // sprint + LMB: running cut — the body keeps its run momentum through the swing (same clip as the step cut, longer carry)
+  runSlash: { segs: [['Sword_Regular_A', 0.04, 0.18, 0.12], ['Sword_Regular_A', 0.18, 0.3, 0.12], ['Sword_Regular_A', 0.3, 0.43, 0.1], ['Sword_Regular_A_Rec', 0, 0.97, 0.6]],
+    hit: [0.13, 0.25], cancel: 0.42, next: 'slash2', track: 0.1, lunge: [0, 0.24, 1.2], dmg: 10, post: 16, hitPost: 10, deflPost: 24, range: 2.6, kind: 'slash', dir: 'side', carry: 1 },
   // dodge + E: heavy lunging cut out of the dodge (UAL Sword_Dash)
   dashCut: { segs: [['Sword_Dash', 0, 0.24, 0.22], ['Sword_Dash', 0.24, 0.36, 0.12], ['Sword_Dash', 0.36, 0.6, 0.2], ['Sword_Dash', 0.6, 1.57, 0.55]],
     hit: [0.22, 0.34], cancel: 0.54, track: 0.2, lunge: [0.02, 0.18, 1.7], dmg: 15, post: 26, hitPost: 14, deflPost: 28, range: 2.7, kind: 'slash', dir: 'side', heavy: true, armor: true, glide: true },   // a dash: the burst rides the stance-swap step (0.05-0.15), feet planted after
@@ -92,12 +101,12 @@ export const MOVES = {
 // Edge alignment (hasuji): roll of the blade about its own axis, relative to the base grip, so the cutting edge leads the
 // swing. The clips turn the wrist differently (Mixamo vs UAL), so each attack has its own value, measured from the blade
 // motion inside the hit window. The wrist eases into it during the wind-up (Fighter.attachSword). Thrusts / kicks: 0.
-const EDGE = {slash1: 0.51, slash2: 0.1, slash3: 0.14, heavy: 0.34, heavy2: 0.27, heavy3: 0.04, counter: 0.17, dash: 0.13, heavyB: 0.28, heavyC: 0.1, leap: -0.06, crush: 0.14, uppercut: 0.27, plunge: 0.43, stepCut: 0.62, boss1: 0.22, boss2: 0.09, boss3: 0.43, sweep: 0.28, deathblow: -1.35, dashCut: 0.13};
+const EDGE = { runSlash: 0.62, lungeHeavy: 0.13,slash1: 0.51, slash2: 0.1, slash3: 0.14, heavy: 0.34, heavy2: 0.27, heavy3: 0.04, counter: 0.17, dash: 0.13, heavyB: 0.28, heavyC: 0.1, leap: -0.06, crush: 0.14, uppercut: 0.27, plunge: 0.43, stepCut: 0.62, boss1: 0.22, boss2: 0.09, boss3: 0.43, sweep: 0.28, deathblow: -1.35, dashCut: 0.13};
 for (const k in EDGE) if (MOVES[k]) MOVES[k].edge = EDGE[k];
 // Body drive (coil -> release): which way the blade sweeps round the body in the hit window, measured from the clips
 // (+1 = toward the fighter's left, -1 = toward the right), 'down' = vertical chop. Fighter twists the spine against it
 // during the wind-up and unwinds through the cut (COIL in fighter.js). Thrusts, kicks, deathblows: none.
-const SWING = { slash1: 1, slash2: -1, slash3: -1, heavy2: -1, heavy3: -1, counter: -1, dash: -1, heavyB: -1, heavyC: -1, uppercut: -1, stepCut: 1, boss1: 1, boss2: -1, sweep: -1, flameSweep: -1, heavy: 1, leap: 'down', crush: 'down', plunge: 'down', boss3: 'down', dashCut: -1 };
+const SWING = { runSlash: 1, lungeHeavy: -1, slash1: 1, slash2: -1, slash3: -1, heavy2: -1, heavy3: -1, counter: -1, dash: -1, heavyB: -1, heavyC: -1, uppercut: -1, stepCut: 1, boss1: 1, boss2: -1, sweep: -1, flameSweep: -1, heavy: 1, leap: 'down', crush: 'down', plunge: 'down', boss3: 'down', dashCut: -1 };
 for (const k in SWING) if (MOVES[k]) MOVES[k].swing = SWING[k];
 export const ATTACKS = new Set(Object.keys(MOVES));
 export const moveDur = m => { m.warp = null; return m.segs.reduce((s, x) => s + x[3], 0); };
@@ -165,11 +174,13 @@ export const REACT = {
   dodgeL: { segs: [['Dodge_Left', 0.05, 0.62, 0.36], ['Dodge_Left', 0.62, 1.3, 0.3]] },
   dodgeR: { segs: [['Dodge_Right', 0.05, 0.62, 0.36], ['Dodge_Right', 0.62, 1.3, 0.3]] },
   roll: { segs: [['Roll', 0.05, 1.1, 0.62], ['Roll', 1.1, 1.47, 0.18]] },
-  die: { segs: [['MX_DeathBack', 0, 2.4, 2.0]] },          // Mixamo two-handed death, falls back
-  dieFwd: { segs: [['MX_DeathFwd', 0.1, 2.57, 2.1]] },     // falls forward to the knees
+  die: { segs: [['Death01', 0, 2.4, 2.0]] },               // thrown onto the back, lies flat (was MX_DeathBack: sat up mid-fall)
+  dieFwd: { segs: [['Death02', 0, 2.47, 2.0]] },           // pitched forward onto the chest (was MX_DeathFwd: knelt with arms out, the 'driver' pose)
   jump: { segs: [['Jump_Start', 0.12, 0.45, 0.12], ['Jump_Start', 0.45, 1.25, 0.6], ['Jump_Land', 0.05, 0.75, 0.3]] },
   downed: { segs: [['IdleToLay', 0, 2.2, 1.1], ['IdleToLay', 2.2, 2.2, 9999]] },
   roar: { segs: [['Celebration', 0.2, 1.5, 1.5]] },
+  toss: { segs: [['Sword_Idle', 0, 0.8, 0.8]] },            // boss throws a bomb with the off hand (arm by throwArm in fighter.js)
+  hookCast: { segs: [['Sword_Idle', 0, 1.6, 1.6], ['Sword_Idle', 1.6, 1.6, 0.8]] },        // boss casts the chain hook; ended by the ability when the chain is back
   revive: { segs: [['LayToIdle', 0, 1.53, 1.6]] },
   draw: { segs: [['Sword_Enter', 0, 1.3, 1.25]] },
   sheathe: { segs: [['Sword_Exit', 0, 1.3, 1.4]] },
@@ -178,7 +189,7 @@ export const REACT = {
   grabbed: { segs: [['Hit_Stomach', 0, 0.67, 0.75], ['Hit_Knockback', 0, 0.83, 0.85]] },
   // deathblow variants for the victim: from behind (pitched forward), last life (slow collapse to the knees)
   dbBack: { segs: [['Hit_Stomach', 0, 0.3, 0.6], ['Hit_Stomach', 0.3, 0.67, 0.9]] },
-  dbVictim: { segs: [['Hit_Knockback', 0, 0.4, 0.75], ['Hit_Knockback', 0.4, 0.83, 0.75]] },
+  dbVictim: { segs: [['Hit_Stomach', 0, 0.3, 0.22], ['Hit_Stomach', 0.3, 0.32, 0.4], ['Hit_Knockback', 0.3, 0.83, 0.8]] },   // doubles over on the blade, held while it is in, then thrown off as it is drawn out
 };
 for (const k in REACT) REACT[k].dur = moveDur(REACT[k]);
 

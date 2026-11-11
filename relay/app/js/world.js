@@ -61,6 +61,13 @@ function tex(name) {
   const t = mk[name](); t.userData.shared = true; return TX[name] = t;
 }
 const MAT = {};
+export const MIST = { h: 2.6, dens: 0.11, size: 9, opacity: 0.32 };   // bank height (m), sight loss per metre at full thickness, puff size (m), max opacity
+let _mistTex = null;
+function mistTex() {
+  if (_mistTex) return _mistTex; const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d');
+  const g = x.createRadialGradient(32, 32, 0, 32, 32, 32); g.addColorStop(0, 'rgba(255,255,255,0.9)'); g.addColorStop(0.5, 'rgba(255,255,255,0.35)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 64, 64);
+  return _mistTex = new THREE.CanvasTexture(c);
+}
 function mat(name) {
   if (MAT[name]) return MAT[name];
   const S = (o) => new THREE.MeshStandardMaterial(o);
@@ -121,6 +128,47 @@ export class World {
     this.boxes.push(b); const r = Math.hypot(hx, hz); this.addToGrid('b', this.boxes.length - 1, x - r, z - r, x + r, z + r); return b;
   }
   circle(x, z, r, h) { const c = { x, z, r, top: this.ground(x, z) + h, on: true }; this.circles.push(c); this.addToGrid('c', this.circles.length - 1, x - r, z - r, x + r, z + r); return c; }
+  // low round bushes [x, z, s]: clusters of faceted blobs, no collision; a fighter crouching inside one can't be seen from outside
+  shrubs(list) {
+    if (!list.length) return;
+    const R = rng(list.length * 13 + 5), per = 4, inst = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92, flatShading: true }), list.length * per);
+    const M = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), col = new THREE.Color(); let k = 0;
+    for (const [x, z, s] of list) {
+      const y = this.ground(x, z);
+      for (let j = 0; j < per; j++) { const a = R() * 6.283, dd = j ? (0.45 + R() * 0.35) * s : 0, r = (j ? 0.55 + R() * 0.25 : 0.85) * s;
+        M.compose(new V3(x + Math.cos(a) * dd, y + r * 0.5, z + Math.sin(a) * dd), q.setFromEuler(e.set(R(), R() * 6, R())), new V3(r, r * (0.72 + R() * 0.2), r)); inst.setMatrixAt(k, M);
+        inst.setColorAt(k++, col.setHSL(0.24 + R() * 0.07, 0.42, 0.13 + R() * 0.07)); }
+      this.bush(x, z, 1.1 * s, 1.25 * s, 1.6, 'bush');
+    }
+    inst.castShadow = inst.receiveShadow = true; this.group.add(inst);
+  }
+  // banks of ground mist [x, z, r]: soft puffs hugging the ground; how thick they are is set live (mistK, 0..1) by the time of day
+  mist(list) {
+    this.mists = (this.mists || []).concat(list.map(([x, z, r]) => ({ x, z, r }))); this.mistK = this.mistK ?? 1;
+    const R = rng(91), P = [];
+    for (const [x, z, r] of list) { const n = Math.round(r * r / 5) + 4; for (let i = 0; i < n; i++) { const a = R() * 6.283, d = Math.sqrt(R()) * r * 0.9, px = x + Math.cos(a) * d, pz = z + Math.sin(a) * d; P.push(px, this.ground(px, pz) + 0.6 + R() * 1.6, pz); } }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+    const m = this.mistMat = new THREE.PointsMaterial({ map: mistTex(), size: MIST.size, sizeAttenuation: true, transparent: true, opacity: MIST.opacity, depthWrite: false, color: 0xd8dde4 });
+    const pts = new THREE.Points(g, m); pts.frustumCulled = false; pts.renderOrder = 3; pts.userData.noMerge = true; this.group.add(pts);
+    let tt = 0; this.updaters.push(dt => { tt += dt; m.opacity = MIST.opacity * this.mistK; pts.visible = this.mistK > 0.02; pts.position.x = Math.sin(tt * 0.05) * 1.5; return true; });
+  }
+  // castle keep (tenshu) on a dry-stone base: storeys stepping in, each under its own tiled roof
+  keep(x, z, rot, tiers = 3, w = 9, d = 7, opt = {}) {
+    const g = new THREE.Group(), y0 = this.ground(x, z), BH = opt.base ?? 2.8; this.flat(x, z, w / 2 + 2.2, d / 2 + 2.2, y0, rot);
+    const M = { roof: mat('roof'), black: mat('black'), wood: mat('woodDark') };
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(Math.SQRT1_2, Math.SQRT1_2 * 1.14, 1, 4, 1).rotateY(Math.PI / 4).scale(w + 2.2, BH, d + 2.2), mat('lanternStone')); base.position.y = BH / 2; g.add(base);
+    let y = BH;
+    for (let i = 0; i < tiers; i++) {
+      const k = 1 - i * 0.24, ww = w * k, dd = d * k, H = i ? 2.3 : 2.8;
+      const walls = new THREE.Mesh(new THREE.BoxGeometry(ww, H, dd), [mat('plaster'), mat('plaster'), mat('timber'), mat('timber'), opt.lit ? mat('shojiLit') : mat('plaster'), mat('plaster')]); walls.position.y = y + H / 2; grime(walls, 1, 0.3); g.add(walls);
+      for (const sx of [-1, 0, 1]) for (const sz of [-1, 1]) { const p = new THREE.Mesh(new THREE.BoxGeometry(0.22, H, 0.22), M.wood); p.position.set(sx * ww / 2, y + H / 2, sz * dd / 2); g.add(p); }
+      const band = new THREE.Mesh(new THREE.BoxGeometry(ww + 0.1, 0.5, dd + 0.1), M.black); band.position.y = y + H * 0.35; g.add(band);
+      const roof = tiledRoof(M, ww + 2.2, dd + 2.2, 1.3 + i * 0.1); roof.position.y = y + H + 0.05; g.add(roof);
+      y += H + 0.95;
+    }
+    this.add(g, x, z, rot, y0); this.box(x, z, (w + 2.2) / 2 * 1.1, (d + 2.2) / 2 * 1.1, y, rot); this.region(x, z, w / 2 + 2.5, d / 2 + 2.5, 'stone', rot);
+    return g;
+  }
   bush(x, z, r, h, dens, kind) { const f = { x, z, r, top: this.ground(x, z) + h, dens, kind }; this.foliage.push(f); this.addToGrid('f', this.foliage.length - 1, x - r, z - r, x + r, z + r); return f; }
   region(x, z, hx, hz, surface, rot = 0) { this.regions.push({ x, z, hx, hz, c: Math.cos(rot), s: Math.sin(rot), surface }); }
   cellAt(x, z) { return this.grid.get(Math.floor(x / this.cell) + ',' + Math.floor(z / this.cell)); }
@@ -150,12 +198,15 @@ export class World {
   }
   // line of sight from a to b. returns { blocked, grass, bamboo } (metres of foliage crossed)
   los(a, b, step = 0.5) {
-    const d = b.clone().sub(a), L = d.length(), n = Math.max(1, Math.ceil(L / step)); const out = { blocked: false, grass: 0, bamboo: 0 };
+    const d = b.clone().sub(a), L = d.length(), n = Math.max(1, Math.ceil(L / step)); const out = { blocked: false, grass: 0, bamboo: 0, bush: 0, mist: 0 };
     for (let i = 1; i < n; i++) {
       const u = i / n, x = a.x + d.x * u, y = a.y + d.y * u, z = a.z + d.z * u;
       if (this.solidAt(x, y, z)) { out.blocked = true; return out; }
       const cell = this.cellAt(x, z); if (!cell) continue;
       for (const k of cell.f) { const f = this.foliage[k]; if (y < f.top && (x - f.x) ** 2 + (z - f.z) ** 2 < f.r * f.r) out[f.kind] += L / n * f.dens; }
+    }
+    if (this.mists && this.mistK > 0) for (const m of this.mists) {   // banks of ground mist thin out what can be seen through them
+      for (let i = 1; i < n; i++) { const u = i / n, x = a.x + d.x * u, y = a.y + d.y * u, z = a.z + d.z * u; if ((x - m.x) ** 2 + (z - m.z) ** 2 < m.r * m.r && y < this.ground(x, z) + MIST.h) out.mist += L / n * MIST.dens * this.mistK; }
     }
     return out;
   }

@@ -25,30 +25,46 @@
 </div>
 
 <div id="menu" class="screen">
-  <div class="title"><span class="seal">剣</span><h1>KATANA<br>DUEL</h1><p data-i18n="m.tagline">Posture · Parry · Deathblow</p></div>
-  <div class="list" id="mainList">
-    <button data-go="duelMenu"><span data-i18n="m.duel"></span><small data-i18n="m.duel.s"></small></button>
-    <button data-go="huntSetup"><span data-i18n="m.hunt"></span><small data-i18n="m.hunt.s"></small></button>
-    <button data-go="svSetup"><span data-i18n="m.sv"></span><small data-i18n="m.sv.s"></small></button>
-    <button data-go="teamSetup"><span data-i18n="m.team"></span><small data-i18n="m.team.s"></small></button>
-    <button data-go="training" data-i18n="m.training"></button>
-    <button data-go="shop"><span data-i18n="m.shop"></span><small data-i18n="m.shop.s"></small></button>
-    <button data-go="settings" data-i18n="m.settings"></button>
-    <button data-go="quit" data-i18n="m.quit"></button>
+  <div class="mcol">
+    <div class="brand"><svg class="enso" viewBox="0 0 200 200"><defs><filter id="brush"><feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="3" seed="7"/><feDisplacementMap in="SourceGraphic" scale="9"/></filter></defs>
+      <circle cx="100" cy="100" r="78" fill="none" stroke="#8c1418" stroke-width="15" stroke-linecap="round" stroke-dasharray="420 70" transform="rotate(-70 100 100)" filter="url(#brush)" opacity=".85"/>
+      <circle cx="100" cy="100" r="70" fill="none" stroke="#5a0c0e" stroke-width="5" stroke-dasharray="300 140" transform="rotate(30 100 100)" filter="url(#brush)" opacity=".6"/></svg>
+      <div class="kanji">侍</div><h1>KATANA</h1><div class="sub">DUEL</div></div>
+    <div class="list nav" id="mainList">
+      <button data-go="play"><i class="dia"></i><span data-i18n="m.play"></span></button>
+      <button data-go="settings"><i class="dia"></i><span data-i18n="m.options"></span></button>
+      <button data-go="ach"><i class="dia"></i><span data-i18n="m.ach"></span></button>
+      <button data-go="shop"><i class="dia"></i><span data-i18n="m.armory"></span></button>
+      <button data-go="quit"><i class="dia"></i><span data-i18n="m.exit"></span></button>
+    </div>
+    <div class="motto" data-i18n="m.motto"></div>
   </div>
-  <div class="foot" data-i18n="m.fs"></div><div class="rec" id="rec"></div>
+  <div class="rec" id="rec"></div>
   <div class="coins" id="coinMenu"></div>
   <div class="mapsel"><small data-i18n="m.arena"></small><button id="mapPrev">◂</button><span id="mapName"></span><button id="mapNext">▸</button></div>
+  <div class="keyfoot"><span><kbd>E</kbd><b data-i18n="k.select"></b></span><span><kbd>Esc</kbd><b data-i18n="k.back"></b></span></div>
 </div>
 
 <div id="intro" class="screen hidden"><div class="introbox"><div id="inStage"></div><h1 id="inName"></h1><p id="inLine"></p><small data-i18n="intro.skip"></small></div></div>
-<div id="duelMenu" class="screen hidden"><div class="panel narrow"><h2 data-i18n="m.duel"></h2>
-  <button class="big" data-go="gauntlet"><span data-i18n="m.gauntlet"></span></button><button class="big" data-go="ai"><span data-i18n="m.ai"></span></button><button class="big" data-go="online"><span data-i18n="m.online"></span></button>
-  <button class="back" data-go="menu" data-i18n="back"></button></div></div>
+<div id="play" class="screen hidden"><div class="frame">
+  <h2 class="hd"><svg class="mon" viewBox="-50 -50 100 100"><circle r="46" fill="none" stroke="currentColor" stroke-width="5"/><g fill="currentColor"><ellipse rx="9" ry="20" cy="-20" transform="rotate(0)"/><ellipse rx="9" ry="20" cy="-20" transform="rotate(45)"/><ellipse rx="9" ry="20" cy="-20" transform="rotate(90)"/><ellipse rx="9" ry="20" cy="-20" transform="rotate(135)"/><ellipse rx="9" ry="20" cy="-20" transform="rotate(180)"/><ellipse rx="9" ry="20" cy="-20" transform="rotate(225)"/><ellipse rx="9" ry="20" cy="-20" transform="rotate(270)"/><ellipse rx="9" ry="20" cy="-20" transform="rotate(315)"/></g><circle r="9" fill="#0d0a09" stroke="currentColor" stroke-width="4"/></svg><span data-i18n="m.play"></span></h2>
+  <div class="playgrid">
+    <div class="list nav modes">
+      <button data-go="gauntlet" data-pv="gauntlet"><i class="dia"></i><span data-i18n="p.gauntlet"></span></button>
+      <button data-go="ai" data-pv="ai"><i class="dia"></i><span data-i18n="p.ai"></span><small>(<span data-i18n="p.ai.s"></span>)</small></button>
+      <button data-go="svSetup" data-pv="sv"><i class="dia"></i><span data-i18n="p.sv"></span></button>
+      <button data-go="huntSetup" data-pv="hunt"><i class="dia"></i><span data-i18n="p.hunt"></span><small>(<span data-i18n="p.hunt.s"></span>)</small></button>
+      <button data-go="online" data-pv="online"><i class="dia"></i><span data-i18n="p.online"></span><small class="chips"><em data-go="online" data-i18n="p.1v1"></em> | <em data-go="teamSetup" data-i18n="p.2v2"></em></small></button>
+      <button data-go="training" data-pv="training"><i class="dia"></i><span data-i18n="p.training"></span></button>
+    </div>
+    <div class="preview"><div class="pvimg" id="pvImg"></div><p id="pvDesc"></p></div>
+  </div>
+  <div class="keyfoot"><span><kbd>E</kbd><b data-i18n="k.select"></b></span><span><kbd>Esc</kbd><b data-i18n="k.back"></b></span></div>
+</div></div>
 <div id="huntSetup" class="screen hidden"><div class="panel wide"><h2 data-i18n="m.hunt"></h2><p class="msg desc" data-i18n="hs.desc"></p>
   <div class="grid2">
     <label data-i18n="hs.dur"></label><select id="hDur"><option value="5">5 min</option><option value="10" selected>10 min</option><option value="15">15 min</option><option value="20">20 min</option></select>
-    <label data-i18n="hs.tod"></label><select id="hTod"><option value="dusk" data-i18n="tod.dusk"></option><option value="night" data-i18n="tod.night"></option><option value="fog" data-i18n="tod.fog"></option><option value="day" data-i18n="tod.day"></option></select>
+    <label data-i18n="hs.tod"></label><select id="hTod"><option value="cycle" data-i18n="tod.cycle" selected></option><option value="dusk" data-i18n="tod.dusk"></option><option value="night" data-i18n="tod.night"></option><option value="fog" data-i18n="tod.fog"></option><option value="day" data-i18n="tod.day"></option></select>
     <label data-i18n="hs.weather"></label><select id="hWeather"><option value="clear" data-i18n="w.clear"></option><option value="rain" data-i18n="w.rain"></option><option value="wind" data-i18n="w.wind"></option><option value="snow" data-i18n="w.snow"></option></select>
     <label data-i18n="hs.lives"></label><select id="hLives"><option value="1">1</option><option value="2" selected>2</option><option value="3">3</option></select>
   </div>
@@ -57,7 +73,7 @@
   <div class="row split"><input id="hCode" maxlength="4" placeholder="CODE" data-i18n-ph="on.code" autocomplete="off" class="code4"><button class="big" id="hJoin" data-i18n="on.join"></button></div>
   <label><span data-i18n="on.server"></span> <small data-i18n="on.serverHint"></small></label><input id="hSrv" class="srv" placeholder="http://192.168.1.10:3000">
   <div id="hMsg" class="msg"></div><div id="hLobby" class="hidden"><div class="code" id="hRoom"></div><div class="msg" data-i18n="on.wait"></div></div>
-  <button class="back" data-go="menu" data-i18n="back"></button></div></div>
+  <button class="back" data-go="play" data-i18n="back"></button></div></div>
 <div id="svSetup" class="screen hidden"><div class="panel wide"><h2 data-i18n="m.sv"></h2><p class="msg desc" data-i18n="ss.desc"></p>
   <div class="grid2">
     <label data-i18n="ss.map"></label><select id="sMap"><option value="sv_temple" data-i18n="map.sv_temple"></option><option value="sv_village" data-i18n="map.sv_village"></option><option value="sv_castle" data-i18n="map.sv_castle"></option><option value="sv_glade" data-i18n="map.sv_glade"></option><option value="sv_fortress" data-i18n="map.sv_fortress"></option><option value="random" data-i18n="map.random"></option></select>
@@ -70,7 +86,7 @@
   <label><span data-i18n="on.server"></span> <small data-i18n="on.serverHint"></small></label><input id="sSrv" class="srv" placeholder="http://192.168.1.10:3000">
   <div id="sMsg" class="msg"></div><div id="sLobby" class="hidden"><div class="code" id="sRoom"></div><div class="msg" data-i18n="on.wait"></div></div>
   <div id="svBest" class="msg"></div>
-  <button class="back" data-go="menu" data-i18n="back"></button></div></div>
+  <button class="back" data-go="play" data-i18n="back"></button></div></div>
 <div id="upgrades" class="screen hidden"><div class="panel wide"><h2 data-i18n="sv.upTitle"></h2><div id="upList"></div><div id="upInfo" class="msg"></div></div></div>
 <div id="teamSetup" class="screen hidden"><div class="panel wide"><h2 data-i18n="m.team"></h2><p class="msg desc" data-i18n="ts.desc"></p>
   <div class="grid2">
@@ -84,11 +100,17 @@
   <div id="tMsg" class="msg"></div>
   <div id="tLobby" class="hidden"><div class="code" id="tRoom"></div><div id="tSlots" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:10px 0"></div>
     <div class="msg" data-i18n="ts.fill"></div><div class="row"><button class="big" id="tStart" data-i18n="ts.start"></button></div></div>
-  <button class="back" data-go="menu" data-i18n="back"></button></div></div>
-<div id="gdiff" class="screen hidden"><div class="panel"><h2 data-i18n="gd.title"></h2><div id="gdList"></div><div class="msg" data-i18n="gd.note"></div><button class="back" data-go="duelMenu" data-i18n="back"></button></div></div>
-<div id="shop" class="screen hidden"><div class="panel wide"><h2><span data-i18n="shop.title"></span> <span class="coins in" id="coinShop"></span></h2>
-  <div class="tabs"><button class="tab on" data-tab="skins" data-i18n="shop.skins"></button><button class="tab" data-tab="weapons" data-i18n="shop.blades"></button></div>
-  <div id="shopList"></div><div class="msg" id="shopNote"></div><button class="back" data-go="menu" data-i18n="back"></button></div></div>
+  <button class="back" data-go="play" data-i18n="back"></button></div></div>
+<div id="gdiff" class="screen hidden"><div class="panel"><h2 data-i18n="gd.title"></h2><div id="gdList"></div><div class="msg" data-i18n="gd.note"></div><button class="back" data-go="play" data-i18n="back"></button></div></div>
+<div id="shop" class="screen hidden armory">
+  <div class="armtop"><h2 class="hd"><svg class="mon" viewBox="-50 -50 100 100"><circle r="46" fill="none" stroke="currentColor" stroke-width="5"/><g fill="currentColor"><ellipse rx="9" ry="20" cy="-20" transform="rotate(0)"/><ellipse rx="9" ry="20" cy="-20" transform="rotate(45)"/><ellipse rx="9" ry="20" cy="-20" transform="rotate(90)"/><ellipse rx="9" ry="20" cy="-20" transform="rotate(135)"/><ellipse rx="9" ry="20" cy="-20" transform="rotate(180)"/><ellipse rx="9" ry="20" cy="-20" transform="rotate(225)"/><ellipse rx="9" ry="20" cy="-20" transform="rotate(270)"/><ellipse rx="9" ry="20" cy="-20" transform="rotate(315)"/></g><circle r="9" fill="#0d0a09" stroke="currentColor" stroke-width="4"/></svg><span data-i18n="m.armory"></span></h2>
+    <div class="tabs2"><button class="t2" data-arm="weapons" data-i18n="arm.weapons"></button><button class="t2" data-arm="chars" data-i18n="arm.chars"></button></div>
+    <span class="coins in" id="coinShop"></span></div>
+  <button class="armnav l" id="armPrev">‹</button><button class="armnav r" id="armNext">›</button>
+  <div class="arminfo"><h3 id="armName"></h3><p id="armDesc"></p><div class="armprice" id="armPrice"></div><button class="big" id="armBuy"></button></div>
+  <div id="armLocks"></div>
+  <div class="keyfoot"><span><kbd>E</kbd><b id="armKey" data-i18n="k.purchase"></b></span><span><kbd>Esc</kbd><b data-i18n="k.back"></b></span></div>
+</div>
 <div id="perks" class="screen hidden"><div class="panel"><h2 data-i18n="perks.title"></h2><div id="perkList"></div><div id="perkHave" class="msg"></div></div></div>
 <div id="fps"></div><div id="toast"></div>
 
@@ -100,25 +122,27 @@
   <input id="serverUrl" placeholder="http://192.168.1.10:3000">
   <div id="onMsg" class="msg"></div>
   <div id="lobby" class="hidden"><div class="code" id="roomCode"></div><div id="lanInfo" class="msg"></div><div class="msg" data-i18n="on.wait"></div></div>
-  <button class="back" data-go="menu" data-i18n="back"></button>
+  <button class="back" data-go="play" data-i18n="back"></button>
 </div></div>
 
-<div id="settings" class="screen hidden"><div class="panel">
-  <h2 data-i18n="st.title"></h2>
-  <label data-i18n="st.lang"></label><select id="sLang"></select>
-  <label data-i18n="st.quality"></label>
-  <select id="sQuality"><option value="auto" data-i18n="q.auto"></option><option value="low" data-i18n="q.low"></option><option value="med" data-i18n="q.med"></option><option value="high" data-i18n="q.high"></option><option value="ultra" data-i18n="q.ultra"></option></select>
-  <label data-i18n="st.diff"></label>
-  <select id="sDiff"><option value="0" data-i18n="d0"></option><option value="1" data-i18n="d1"></option><option value="2" data-i18n="d2"></option></select>
-  <label><span data-i18n="st.sens"></span> <span id="vSens"></span></label><input type="range" id="sSens" min="0.3" max="3" step="0.1">
-  <label><span data-i18n="st.vol"></span> <span id="vVol"></span></label><input type="range" id="sVol" min="0" max="1" step="0.05">
-  <label><span data-i18n="st.mvol"></span> <span id="vMvol"></span></label><input type="range" id="sMvol" min="0" max="1" step="0.05">
-  <label class="chk"><input type="checkbox" id="sInvert"> <span data-i18n="st.invert"></span></label>
-  <label class="chk"><input type="checkbox" id="sFps"> <span data-i18n="st.fps"></span></label>
-  <label class="chk"><input type="checkbox" id="sAutoCam"> <span data-i18n="st.autocam"></span></label>
-  <label data-i18n="st.controls"></label>
-  <div id="bindList"></div>
-  <button class="back" data-go="menu" data-i18n="back"></button>
+<div id="settings" class="screen hidden"><div class="frame">
+  <h2 class="hd"><svg class="mon" viewBox="-50 -50 100 100"><circle r="46" fill="none" stroke="currentColor" stroke-width="5"/><g fill="currentColor"><ellipse rx="9" ry="20" cy="-20" transform="rotate(0)"/><ellipse rx="9" ry="20" cy="-20" transform="rotate(45)"/><ellipse rx="9" ry="20" cy="-20" transform="rotate(90)"/><ellipse rx="9" ry="20" cy="-20" transform="rotate(135)"/><ellipse rx="9" ry="20" cy="-20" transform="rotate(180)"/><ellipse rx="9" ry="20" cy="-20" transform="rotate(225)"/><ellipse rx="9" ry="20" cy="-20" transform="rotate(270)"/><ellipse rx="9" ry="20" cy="-20" transform="rotate(315)"/></g><circle r="9" fill="#0d0a09" stroke="currentColor" stroke-width="4"/></svg><span data-i18n="st.title"></span></h2>
+  <div class="tabs2 st"><button class="t2 on" data-st="keys" data-i18n="set.keys"></button><button class="t2" data-st="mouse" data-i18n="set.mouse"></button><button class="t2" data-st="sound" data-i18n="set.sound"></button><button class="t2" data-st="gfx" data-i18n="set.gfx"></button><button class="t2" data-st="game" data-i18n="set.game"></button></div>
+  <div class="stbody">
+    <section data-sec="keys" class="on"><div class="keysplit"><div><p class="hint2" data-i18n="st.controls"></p><div id="bindList"></div></div><div class="devs"><svg class="devart" viewBox="0 0 200 120"><g fill="none" stroke="currentColor" stroke-width="2.5"><path d="M50 20h100c26 0 40 22 44 50 4 28-4 46-20 46-14 0-22-12-32-26H58c-10 14-18 26-32 26-16 0-24-18-20-46C10 42 24 20 50 20z"/><path d="M50 52v24M38 64h24"/><circle cx="142" cy="54" r="6"/><circle cx="156" cy="68" r="6"/><circle cx="128" cy="68" r="6"/><circle cx="142" cy="82" r="6"/><circle cx="80" cy="88" r="10"/><circle cx="120" cy="88" r="10"/></g></svg><svg class="devart" viewBox="0 0 120 180"><g fill="none" stroke="currentColor" stroke-width="2.5"><path d="M60 8C30 8 14 34 14 70v40c0 38 20 62 46 62s46-24 46-62V70C106 34 90 8 60 8z"/><path d="M14 72h92M60 8v64"/><rect x="54" y="28" width="12" height="24" rx="6"/><path d="M60 8C60-6 74-10 86-2" opacity=".6"/></g></svg></div></div></section>
+    <section data-sec="mouse"><div class="opts"><label><span data-i18n="st.sens"></span> <span id="vSens"></span></label><input type="range" id="sSens" min="0.3" max="3" step="0.1"><label class="chk"><input type="checkbox" id="sInvert"> <span data-i18n="st.invert"></span></label><label class="chk"><input type="checkbox" id="sAutoCam"> <span data-i18n="st.autocam"></span></label></div><div class="devs"><svg class="devart" viewBox="0 0 120 180"><g fill="none" stroke="currentColor" stroke-width="2.5"><path d="M60 8C30 8 14 34 14 70v40c0 38 20 62 46 62s46-24 46-62V70C106 34 90 8 60 8z"/><path d="M14 72h92M60 8v64"/><rect x="54" y="28" width="12" height="24" rx="6"/><path d="M60 8C60-6 74-10 86-2" opacity=".6"/></g></svg></div></section>
+    <section data-sec="sound"><div class="opts"><label><span data-i18n="st.vol"></span> <span id="vVol"></span></label><input type="range" id="sVol" min="0" max="1" step="0.05"><label><span data-i18n="st.mvol"></span> <span id="vMvol"></span></label><input type="range" id="sMvol" min="0" max="1" step="0.05"></div></section>
+    <section data-sec="gfx"><div class="opts"><label data-i18n="st.quality"></label>
+  <select id="sQuality"><option value="auto" data-i18n="q.auto"></option><option value="low" data-i18n="q.low"></option><option value="med" data-i18n="q.med"></option><option value="high" data-i18n="q.high"></option><option value="ultra" data-i18n="q.ultra"></option></select><label class="chk"><input type="checkbox" id="sFps"> <span data-i18n="st.fps"></span></label></div></section>
+    <section data-sec="game"><div class="opts"><label data-i18n="st.lang"></label><select id="sLang"></select><label data-i18n="st.diff"></label>
+  <select id="sDiff"><option value="0" data-i18n="d0"></option><option value="1" data-i18n="d1"></option><option value="2" data-i18n="d2"></option></select></div></section>
+  </div>
+  <div class="keyfoot"><span><kbd>E</kbd><b data-i18n="k.apply"></b></span><span><kbd>Esc</kbd><b data-i18n="k.back"></b></span></div>
+</div></div>
+<div id="ach" class="screen hidden"><div class="frame">
+  <h2 class="hd"><svg class="mon" viewBox="-50 -50 100 100"><circle r="46" fill="none" stroke="currentColor" stroke-width="5"/><g fill="currentColor"><ellipse rx="9" ry="20" cy="-20" transform="rotate(0)"/><ellipse rx="9" ry="20" cy="-20" transform="rotate(45)"/><ellipse rx="9" ry="20" cy="-20" transform="rotate(90)"/><ellipse rx="9" ry="20" cy="-20" transform="rotate(135)"/><ellipse rx="9" ry="20" cy="-20" transform="rotate(180)"/><ellipse rx="9" ry="20" cy="-20" transform="rotate(225)"/><ellipse rx="9" ry="20" cy="-20" transform="rotate(270)"/><ellipse rx="9" ry="20" cy="-20" transform="rotate(315)"/></g><circle r="9" fill="#0d0a09" stroke="currentColor" stroke-width="4"/></svg><span data-i18n="m.ach"></span><small id="achCount"></small></h2>
+  <div class="achgrid"><div id="achTiles"></div><div class="achcard" id="achCard"></div></div>
+  <div class="keyfoot"><span><kbd>Esc</kbd><b data-i18n="k.back"></b></span></div>
 </div></div>
 
 <div id="pause" class="screen hidden"><div class="panel narrow"><h2 data-i18n="pause.title"></h2>

@@ -12,6 +12,7 @@ const V3 = THREE.Vector3;
 export const TM = {
   winRounds: 2,                       // first team to win 2 rounds takes the match
   intro: 2.4, post: 3.4,              // s: draw + stare-down before a round, pause after the last fighter of a team falls
+  intro1: { bow: 2.8, draw: 4.4, end: 5.5 },   // first round: the teams face each other, bow together, draw (camera: my team, theirs, wide, over my shoulder)
   netRate: 1 / 22,                    // s between snapshots of owned fighters
   spawn: [[-1.7, -4.2], [-1.7, 4.2], [1.7, -4.2], [1.7, 4.2]],   // per slot: team A at -z, team B at +z
   colors: [0x4aa3ff, 0xff5a4a], css: ['#4aa3ff', '#ff5a4a'],
@@ -72,26 +73,29 @@ export class Team {
   }
   // ================= rounds (host decides, everybody resets its own fighters) =================
   newRound(n) {
+    this.c.fx.clearStains();   // blood of the last round is washed away
     this.round = n; this.setPhase('intro');
     if (this.online) this.c.net.send('tm', { t: 'ph', ph: 'intro', n, sc: this.score });
   }
   setPhase(ph, w) {
     const c = this.c; this.phase = ph; this.phaseT = 0;
     if (ph === 'intro') {
-      for (let s = 0; s < 4; s++) if (this.owned(s)) this.respawn(s);
+      const first = this.round === 1; this.introSt = first ? 0 : 2;
+      for (let s = 0; s < 4; s++) if (this.owned(s)) this.respawn(s, first);
+      if (first) c.rig.startCine({ type: 'teams', dur: TM.intro1.end, me: c.G.me, mine: [0, 1, 2, 3].filter(s => this.team(s) === this.team(this.my)).map(s => this.F[s]).filter(Boolean), foes: this.enemiesOf(this.my) });
       c.$('title').innerHTML = `<small>${c.t('tm.round', { n: this.round })}</small><b style="color:${TM.css[0]}">${this.score[0]}</b> : <b style="color:${TM.css[1]}">${this.score[1]}</b>`; c.$('title').classList.add('show');
-      c.rig.snapBehind(c.G.me);
+      if (!first) c.rig.snapBehind(c.G.me);
     } else if (ph === 'fight') { c.$('title').classList.remove('show'); c.banner('斬', '#fff', true); sfx.begin(); for (const f of this.F) if (f && !f.remote) f.invuln = false; }
     else if (ph === 'post') { const mine = w === this.team(this.my); c.banner(mine ? '勝' : '負', mine ? '#ffe2a0' : '#ff6060', true); }
   }
-  respawn(s) {
+  respawn(s, ceremony = false) {
     const f = this.F[s], [x, z] = TM.spawn[s], ally = this.F[s ^ 2];
     f.spawn(x, z, this.team(s) === 0 ? 0 : Math.PI); f.lives = 1; f.hp = f.maxHp; f.posture = 0; f.dead = false;
-    f.invuln = true; f.sheathed = true; f.setAct('draw');
+    f.invuln = true; f.sheathed = true; f.setAct(ceremony ? 'idle' : 'draw');   // the first round draws only after the bow
     if (ally) f.target.x = x;   // no-op for owned fighters, keeps remote targets sane
   }
   hostRounds(rawDt) {
-    if (this.phase === 'intro' && this.phaseT > TM.intro) { this.setPhase('fight'); if (this.online) this.c.net.send('tm', { t: 'ph', ph: 'fight', n: this.round, sc: this.score }); }
+    if (this.phase === 'intro' && this.phaseT > (this.round === 1 ? TM.intro1.end : TM.intro)) { this.setPhase('fight'); if (this.online) this.c.net.send('tm', { t: 'ph', ph: 'fight', n: this.round, sc: this.score }); }
     else if (this.phase === 'fight') {
       const alive = [0, 1].map(t => this.F.filter((f, i) => f && this.team(i) === t && !f.dead).length);
       if (alive[0] === 0 || alive[1] === 0) {
@@ -108,6 +112,10 @@ export class Team {
   step(dt, rawDt, live) {
     const c = this.c, G = c.G, me = G.me;
     this.phaseT += rawDt;
+    if (this.phase === 'intro' && this.introSt < 2) {   // first-round ceremony on every client: all four bow, then the owned fighters draw
+      if (this.introSt === 0 && this.phaseT > TM.intro1.bow) { this.introSt = 1; for (const f of this.F) if (f) f.bow(); }
+      if (this.introSt === 1 && this.phaseT > TM.intro1.draw) { this.introSt = 2; for (let s = 0; s < 4; s++) if (this.F[s] && this.owned(s)) this.F[s].setAct('draw'); }
+    }
     const fight = this.phase === 'fight' && !this.over;
     // my target: chosen by the player via lock-on
     const foes = this.enemiesOf(this.my);
@@ -219,6 +227,7 @@ export class Team {
     if (this.over) return; const c = this.c; this.over = true; this.phase = 'over'; c.G.over = true; c.G.phase = 'end';
     const win = w === this.team(this.my); c.banner(win ? '勝' : '終', win ? '#ffe2a0' : '#e8dcc4', true);
     if (w >= 0) c.addCoins(win ? 90 : 30);
+    if (win && this.online) c.ach.add('onlineWins');
     setTimeout(() => {
       if (c.G.mode !== 'team') return; document.exitPointerLock && document.exitPointerLock();
       c.$('resBig').textContent = w < 0 ? c.t('tm.ended') : win ? c.t('tm.win') : c.t('tm.lose'); c.$('resBig').className = win ? 'win' : 'lose';
